@@ -220,6 +220,40 @@
 
   .pagination[hidden] { display: none; }
 
+  .pagination .pages {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .pagination .pages button {
+    min-width: 26px;
+    padding: 4px 6px;
+    color: var(--ink-muted);
+    font-feature-settings: "tnum" 1;
+    font-variant-numeric: tabular-nums;
+    position: relative;
+  }
+  .pagination .pages button:hover { color: var(--ink); }
+  .pagination .pages button[aria-current="page"] {
+    color: var(--ink);
+    cursor: default;
+  }
+  .pagination .pages button[aria-current="page"]::after {
+    content: "";
+    position: absolute;
+    left: 6px;
+    right: 6px;
+    bottom: -2px;
+    height: 1px;
+    background: var(--ink);
+  }
+  .pagination .pages .ellipsis {
+    color: var(--ink-softer);
+    user-select: none;
+    padding: 0 2px;
+    letter-spacing: 0.02em;
+  }
+
   .pagination-bottom {
     display: flex;
     justify-content: center;
@@ -227,6 +261,47 @@
     border-top: 1px solid var(--border);
   }
   .pagination-bottom[hidden] { display: none; }
+
+  /* ───────── Prominent "Next page" CTA ───────── */
+  .next-cta {
+    display: flex;
+    justify-content: center;
+    padding: clamp(24px, 4vw, 48px) var(--edge) clamp(20px, 3vw, 32px);
+  }
+  .next-cta[hidden] { display: none; }
+
+  .next-cta button {
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+    padding: 15px 30px;
+    background: transparent;
+    border: 1px solid var(--border-strong);
+    border-radius: 2px;
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background-color .25s ease, color .25s ease, border-color .25s ease;
+  }
+  .next-cta button:hover {
+    background: var(--ink);
+    color: #fff;
+    border-color: var(--ink);
+  }
+  .next-cta button .arrow {
+    font-family: var(--serif);
+    font-size: 15px;
+    font-weight: 400;
+    line-height: 1;
+    display: inline-block;
+    transition: transform .3s cubic-bezier(.2,.7,.2,1);
+  }
+  .next-cta button:hover .arrow            { transform: translateX(4px); }
+  .next-cta button[data-loop-back]:hover .arrow { transform: translateX(-4px); }
 
   /* ───────── Grid ───────── */
   .grid {
@@ -472,9 +547,7 @@
 <nav class="toolbar" aria-label="View controls">
   <div class="left pagination" id="paginationTop" hidden>
     <button type="button" data-page-dir="prev" aria-label="Previous page">Previous</button>
-    <span class="indicator">
-      <span id="pageCurrentTop">01</span><span class="sep">/</span><span id="pageTotalTop">01</span>
-    </span>
+    <div class="pages" aria-label="Jump to page"></div>
     <button type="button" data-page-dir="next" aria-label="Next page">Next</button>
   </div>
   <div class="right">
@@ -487,12 +560,16 @@
   <!-- Cards injected here -->
 </main>
 
+<div class="next-cta" id="nextCta" hidden>
+  <button type="button" id="nextCtaBtn">
+    Next page <span class="arrow" aria-hidden="true">→</span>
+  </button>
+</div>
+
 <nav class="pagination-bottom" id="paginationBottomWrap" aria-label="Pagination" hidden>
   <div class="pagination">
     <button type="button" data-page-dir="prev" aria-label="Previous page">Previous</button>
-    <span class="indicator">
-      <span id="pageCurrentBottom">01</span><span class="sep">/</span><span id="pageTotalBottom">01</span>
-    </span>
+    <div class="pages" aria-label="Jump to page"></div>
     <button type="button" data-page-dir="next" aria-label="Next page">Next</button>
   </div>
 </nav>
@@ -513,15 +590,8 @@
   /* Pagination refs */
   const paginationTop    = document.getElementById('paginationTop');
   const paginationBottom = document.getElementById('paginationBottomWrap');
-  const pageCurrentEls   = [
-    document.getElementById('pageCurrentTop'),
-    document.getElementById('pageCurrentBottom'),
-  ];
-  const pageTotalEls     = [
-    document.getElementById('pageTotalTop'),
-    document.getElementById('pageTotalBottom'),
-  ];
-  const pageDirButtons   = document.querySelectorAll('[data-page-dir]');
+  const nextCtaWrap      = document.getElementById('nextCta');
+  const nextCtaBtn       = document.getElementById('nextCtaBtn');
 
   /* ─── Mode detection ─────────────────────────────────────────
      Mobile / touch / small-viewport devices use static posters.
@@ -732,20 +802,75 @@
   };
 
   /* ─── Pagination UI ──────────────────────────────────────── */
-  const updatePaginationUI = (page, totalPages, total) => {
-    const pad = (n) => String(n).padStart(2, '0');
-    pageCurrentEls.forEach(el => { if (el) el.textContent = pad(page); });
-    pageTotalEls.forEach(el   => { if (el) el.textContent = pad(totalPages); });
 
+  /* Compact numbered list:
+     ≤ 7 pages → show every page.
+     > 7 pages → first, last, and a window around current, with ellipses. */
+  const buildPageList = (current, total) => {
+    if (total <= 7) {
+      return Array.from({ length: total }, (_, i) => i + 1);
+    }
+    if (current <= 3) {
+      return [1, 2, 3, 4, 5, '…', total];
+    }
+    if (current >= total - 2) {
+      return [1, '…', total - 4, total - 3, total - 2, total - 1, total];
+    }
+    return [1, '…', current - 1, current, current + 1, '…', total];
+  };
+
+  const renderPageList = (container, current, total) => {
+    container.innerHTML = '';
+    const frag = document.createDocumentFragment();
+    for (const p of buildPageList(current, total)) {
+      if (p === '…') {
+        const span = document.createElement('span');
+        span.className = 'ellipsis';
+        span.setAttribute('aria-hidden', 'true');
+        span.textContent = '…';
+        frag.appendChild(span);
+      } else {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.dataset.pageNum = String(p);
+        btn.textContent = String(p).padStart(2, '0');
+        btn.setAttribute('aria-label', `Page ${p}`);
+        if (p === current) btn.setAttribute('aria-current', 'page');
+        frag.appendChild(btn);
+      }
+    }
+    container.appendChild(frag);
+  };
+
+  const updatePaginationUI = (page, totalPages, total) => {
     const show = total > 0 && totalPages > 1;
     paginationTop.hidden    = !show;
     paginationBottom.hidden = !show;
+    nextCtaWrap.hidden      = !show;
+    if (!show) return;
 
-    pageDirButtons.forEach(btn => {
+    // Numbered page lists (both top and bottom share this markup).
+    document.querySelectorAll('.pagination .pages').forEach(container => {
+      renderPageList(container, page, totalPages);
+    });
+
+    // Prev/Next disabled states at boundaries.
+    document.querySelectorAll('[data-page-dir]').forEach(btn => {
       const dir = btn.dataset.pageDir;
       btn.disabled = (dir === 'prev' && page <= 1) ||
                      (dir === 'next' && page >= totalPages);
     });
+
+    // Prominent CTA: forward on earlier pages, loop-back on the last one.
+    if (page >= totalPages) {
+      nextCtaBtn.innerHTML = '<span class="arrow" aria-hidden="true">←</span> Back to first page';
+      nextCtaBtn.setAttribute('aria-label', 'Back to first page');
+      nextCtaBtn.dataset.loopBack = 'true';
+    } else {
+      nextCtaBtn.innerHTML = `Next page <span class="arrow" aria-hidden="true">→</span>`;
+      nextCtaBtn.setAttribute('aria-label', `Go to page ${page + 1} of ${totalPages}`);
+      delete nextCtaBtn.dataset.loopBack;
+    }
   };
 
   const goToPage = (n) => {
@@ -783,11 +908,23 @@
     });
   });
 
-  pageDirButtons.forEach(btn => {
-    btn.addEventListener('click', () => {
-      if (btn.disabled) return;
-      goToPage(currentPage + (btn.dataset.pageDir === 'next' ? 1 : -1));
+  /* Event delegation on both pagination strips — handles Prev, Next,
+     and the dynamically-rendered numbered page buttons in one place. */
+  document.querySelectorAll('.pagination').forEach(pg => {
+    pg.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (!btn || btn.disabled) return;
+
+      if (btn.dataset.pageDir === 'prev')       goToPage(currentPage - 1);
+      else if (btn.dataset.pageDir === 'next')  goToPage(currentPage + 1);
+      else if (btn.dataset.pageNum)             goToPage(Number(btn.dataset.pageNum));
     });
+  });
+
+  /* Prominent CTA: forward on earlier pages, loops to page 1 on the last. */
+  nextCtaBtn.addEventListener('click', () => {
+    const totalPages = Math.max(1, Math.ceil(visuals.length / PER_PAGE));
+    goToPage(currentPage >= totalPages ? 1 : currentPage + 1);
   });
 
   // Re-fit scalers on resize (no-op in static mode).
