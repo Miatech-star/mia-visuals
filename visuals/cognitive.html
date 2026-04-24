@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Cognitive Field · v0.1</title>
+<title>Cognitive Field · Mia 3</title>
 <style>
   :root {
     --ink: #e9edf5;
@@ -14,6 +14,7 @@
     --edge-hot: rgba(255, 255, 255, 0.32);
     --mono: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
     --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --ease: cubic-bezier(0.16, 1, 0.3, 1);
   }
   * { box-sizing: border-box; }
   html, body {
@@ -22,11 +23,12 @@
     background: #04050a;
     color: var(--ink);
     font-family: var(--sans);
-    cursor: grab;
+    cursor: default;
     -webkit-font-smoothing: antialiased;
   }
-  body.grabbing { cursor: grabbing; }
-  body.hover { cursor: pointer; }
+  body.live { cursor: grab; }
+  body.live.grabbing { cursor: grabbing; }
+  body.live.hover { cursor: pointer; }
   canvas { display: block; position: fixed; inset: 0; z-index: 1; }
 
   body::before {
@@ -39,6 +41,7 @@
       radial-gradient(ellipse 60% 40% at 50% 50%, rgba(40,40,80,0.06) 0%, transparent 70%);
   }
 
+  /* ============== HUD ============== */
   .brand {
     position: fixed; top: 20px; left: 22px; z-index: 12;
     font-family: var(--mono); font-size: 10px;
@@ -79,6 +82,18 @@
   }
   .hints span { color: var(--ink-dim); }
 
+  /* fade-in HUD elements after intro */
+  .hud-fade {
+    opacity: 0;
+    transition: opacity 1600ms var(--ease);
+  }
+  .hud-fade.show { opacity: 1; }
+
+  /* brand fades in early but stays subtle */
+  .brand { opacity: 0; transition: opacity 2400ms var(--ease); }
+  .brand.show { opacity: 1; }
+
+  /* ============== LABELS ============== */
   #labels, #sublabels {
     position: fixed; inset: 0;
     pointer-events: none; z-index: 10;
@@ -94,11 +109,12 @@
     text-transform: uppercase;
     white-space: nowrap;
     pointer-events: none;
-    transition: opacity 280ms ease, border-color 280ms ease;
+    transition: border-color 280ms ease, background 280ms ease;
     backdrop-filter: blur(6px);
     -webkit-backdrop-filter: blur(6px);
     user-select: none;
     will-change: transform, opacity;
+    opacity: 0;
   }
   .label::before, .label::after {
     content: ''; position: absolute;
@@ -119,8 +135,6 @@
     background: rgba(12, 14, 24, 0.7);
   }
   .label.hot .stat { opacity: 0.85; }
-  .label.dim { opacity: 0.22; }
-  .label.hidden { opacity: 0; }
 
   .sub-label {
     position: absolute; left: 0; top: 0;
@@ -147,6 +161,7 @@
   }
   .sub-label.show { opacity: 0.9; }
 
+  /* ============== FOCUS PANEL ============== */
   .focus-panel {
     position: fixed; top: 50%; left: 22px;
     transform: translateY(-50%) translateX(-12px);
@@ -159,7 +174,7 @@
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     opacity: 0; pointer-events: none;
-    transition: opacity 450ms ease, transform 450ms cubic-bezier(0.2, 0.7, 0.2, 1);
+    transition: opacity 450ms ease, transform 450ms var(--ease);
   }
   .focus-panel.show {
     opacity: 1;
@@ -194,6 +209,131 @@
   }
   .focus-panel .release:hover { color: var(--ink); }
 
+  /* ============== INTRO OVERLAY ============== */
+  .intro-overlay {
+    position: fixed; inset: 0; z-index: 50;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at center,
+      rgba(4,5,10,0.0) 0%, rgba(4,5,10,0.55) 80%);
+    pointer-events: auto;
+    opacity: 1;
+    transition: opacity 600ms var(--ease);
+  }
+  .intro-overlay.gone {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .intro-mark {
+    font-family: var(--mono);
+    font-size: 13px;
+    letter-spacing: 0.4em;
+    color: var(--ink);
+    margin-bottom: 8px;
+    font-weight: 500;
+  }
+  .intro-sub {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 44px;
+  }
+  .intro-begin {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.32em;
+    color: var(--ink);
+    background: rgba(8, 10, 18, 0.65);
+    border: 1px solid var(--edge-hot);
+    padding: 14px 28px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+    transition: background 280ms ease, transform 280ms ease, border-color 280ms ease;
+    text-transform: uppercase;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    position: relative;
+  }
+  .intro-begin::before, .intro-begin::after {
+    content: ''; position: absolute;
+    width: 6px; height: 6px;
+    border: 1px solid var(--edge-hot);
+  }
+  .intro-begin::before {
+    top: -1px; left: -1px;
+    border-right: none; border-bottom: none;
+  }
+  .intro-begin::after {
+    bottom: -1px; right: -1px;
+    border-left: none; border-top: none;
+  }
+  .intro-begin:hover {
+    background: rgba(20, 22, 38, 0.85);
+    border-color: rgba(255, 255, 255, 0.5);
+  }
+  .intro-begin .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #7fe070;
+    box-shadow: 0 0 10px #7fe070;
+    animation: pulse 2.8s ease-in-out infinite;
+  }
+  .intro-hint {
+    margin-top: 32px;
+    font-family: var(--mono);
+    font-size: 8px;
+    letter-spacing: 0.36em;
+    color: var(--ink-faint);
+    text-transform: uppercase;
+  }
+
+  /* ============== SUBTITLES ============== */
+  .subtitle {
+    position: fixed;
+    bottom: 96px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 11;
+    max-width: min(720px, 84vw);
+    padding: 0 24px;
+    text-align: center;
+    font-family: var(--sans);
+    font-size: 17px;
+    font-weight: 300;
+    letter-spacing: 0.005em;
+    line-height: 1.4;
+    color: var(--ink);
+    pointer-events: none;
+    opacity: 1;
+    transition: opacity 500ms var(--ease);
+    text-shadow: 0 1px 14px rgba(0, 0, 0, 0.6);
+  }
+  .subtitle.fade-out { opacity: 0; }
+  .subtitle .word {
+    display: inline-block;
+    opacity: 0;
+    filter: blur(6px);
+    transform: translateY(4px);
+    transition: opacity 700ms var(--ease),
+                filter 700ms var(--ease),
+                transform 700ms var(--ease);
+    will-change: opacity, filter, transform;
+  }
+  .subtitle .word.show {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0);
+  }
+  .subtitle .space {
+    display: inline-block;
+    width: 0.3em;
+  }
+
+  /* ============== ERROR OVERLAY ============== */
   #err {
     position: fixed;
     top: 50%; left: 50%;
@@ -225,17 +365,18 @@
 </style>
 </head>
 <body>
-  <div class="brand">
-    <div class="mark">COGNITIVE FIELD</div>
-    <div class="sub">semantic activation · v0.1</div>
+  <!-- HUD: starts hidden, fades in after intro -->
+  <div class="brand" id="hud-brand">
+    <div class="mark">MIA 3</div>
+    <div class="sub">cognitive field · semantic activation</div>
   </div>
 
-  <div class="status">
+  <div class="status hud-fade" id="hud-status">
     <div><span class="pulse"></span>BASELINE · <span id="globalAct">0.00</span></div>
     <div style="opacity: 0.6; margin-top: 4px;">DRAG · ZOOM · CLICK REGION</div>
   </div>
 
-  <div class="hints"><span>ESC</span> RELEASE FOCUS</div>
+  <div class="hints hud-fade" id="hud-hints"><span>ESC</span> RELEASE FOCUS</div>
 
   <div id="labels"></div>
   <div id="sublabels"></div>
@@ -247,6 +388,24 @@
     <div class="release" id="focusRelease">↵ RELEASE · ESC</div>
   </div>
 
+  <!-- Subtitle line -->
+  <div class="subtitle" id="subtitle"></div>
+
+  <!-- Intro overlay -->
+  <div class="intro-overlay" id="introOverlay">
+    <div class="intro-mark">MIA 3</div>
+    <div class="intro-sub">cognitive field</div>
+    <button class="intro-begin" id="beginBtn">
+      <span class="dot"></span>
+      <span>BEGIN SESSION</span>
+    </button>
+    <div class="intro-hint">audio will begin</div>
+  </div>
+
+  <!-- Audio (no controls) -->
+  <audio id="introAudio" preload="auto" src="audio/mia_intro.mp3"></audio>
+
+  <!-- Error overlay -->
   <div id="err"><div class="tag">SYSTEM ERROR</div><div id="errMsg"></div></div>
 
   <script>
@@ -282,11 +441,13 @@
   import * as THREE from 'three';
   import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
+  // ======================================================================
+  // SCENE
+  // ======================================================================
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(
     55, window.innerWidth / window.innerHeight, 0.1, 500
   );
-  camera.position.set(0, 2, 48);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -302,9 +463,20 @@
   controls.rotateSpeed = 0.55;
   controls.panSpeed = 0.6;
   controls.zoomSpeed = 0.8;
+  controls.enabled = false; // disabled until 'live' phase
 
   const clock = new THREE.Clock();
 
+  // ======================================================================
+  // PHASE STATE MACHINE
+  // ======================================================================
+  let phase = 'idle';            // 'idle' | 'intro' | 'live'
+  let introStartT = 0;           // wall-clock time when intro began
+  const INTRO_DURATION = 11.0;   // covers all subtitles + brief settle
+
+  // ======================================================================
+  // REGIONS
+  // ======================================================================
   const REGIONS = [
     { name:'Emotional Core',    color:0xff5d5b, pos:[  0, -0.5,  0], r:6.2, n:2400,
       subs:['PRIMARY','SECONDARY','UNSPOKEN','RESIDUAL'] },
@@ -335,6 +507,8 @@
     region.activity = 0.5;
     region.targetActivity = 0.5;
     region.burstUntil = 0;
+    // Initial reveal: only Emotional Core barely visible at idle
+    region.revealT = (i === 0) ? 0.45 : 0.0;
     const n = region.subs.length;
     region.subPositions = region.subs.map((name, k) => {
       const angle = (k / n) * Math.PI * 2 + 0.6;
@@ -353,7 +527,24 @@
 
   const NUM_R = REGIONS.length;
 
-  // Data-texture activity lookup (avoids dynamic uniform-array indexing)
+  // Reveal cascade — propagates outward from Emotional Core during the long
+  // "I have mapped..." subtitle. Each region eases from 0 to 1 over 1.6s.
+  const REVEAL_DURATION = 1.6;
+  const REVEAL_SCHEDULE = [
+    { idx: 2, start: 2.3 },  // Concept Layer (closest, ~12.4)
+    { idx: 9, start: 2.8 },  // Body Signal
+    { idx: 4, start: 3.3 },  // Conflict Map
+    { idx: 8, start: 3.8 },  // Identity Field
+    { idx: 6, start: 4.3 },  // Attachment Signal
+    { idx: 3, start: 4.8 },  // Narrative Engine
+    { idx: 7, start: 5.3 },  // Forecast Engine
+    { idx: 5, start: 5.9 },  // Pattern Detector
+    { idx: 1, start: 6.5 },  // Memory Center (furthest)
+  ];
+
+  // ======================================================================
+  // ACTIVITY DATA TEXTURE — R = activity (0..1.275), G = revealT (0..1)
+  // ======================================================================
   const ATEX_W = 16;
   const activityBytes = new Uint8Array(ATEX_W * 4);
   const activityTex = new THREE.DataTexture(
@@ -367,8 +558,10 @@
 
   function writeActivityTex() {
     for (let i = 0; i < NUM_R; i++) {
-      activityBytes[i * 4] = Math.max(0, Math.min(255,
+      activityBytes[i * 4]     = Math.max(0, Math.min(255,
         Math.round(REGIONS[i].activity * 200)));
+      activityBytes[i * 4 + 1] = Math.max(0, Math.min(255,
+        Math.round(REGIONS[i].revealT * 255)));
     }
     activityTex.needsUpdate = true;
   }
@@ -389,6 +582,9 @@
   }
   const circleTex = makeCircleTexture();
 
+  // ======================================================================
+  // PARTICLES
+  // ======================================================================
   const TOTAL = REGIONS.reduce((s, r) => s + r.n, 0);
   const positions     = new Float32Array(TOTAL * 3);
   const colors        = new Float32Array(TOTAL * 3);
@@ -472,7 +668,9 @@
 
       void main() {
         float u = (aRegion + 0.5) / uTexW;
-        float activity = texture2D(uActivityTex, vec2(u, 0.5)).r * (255.0 / 200.0);
+        vec4 sampled = texture2D(uActivityTex, vec2(u, 0.5));
+        float activity = sampled.r * (255.0 / 200.0);
+        float revealT  = sampled.g;  // already 0..1
 
         vec3 pos = position;
         float t = uTime;
@@ -488,7 +686,7 @@
         float flicker = mix(0.65, 1.0, slow * fast);
 
         float hoverBoost = (uHover > -0.5 && abs(aRegion - uHover) < 0.5) ? 1.45 : 1.0;
-        float intensity = aBase * activity * flicker * hoverBoost;
+        float intensity = aBase * activity * flicker * hoverBoost * revealT;
 
         float sizePx = aSize * intensity * 2.4;
         gl_PointSize = sizePx * (230.0 / -mvPosition.z) * uPixelRatio;
@@ -524,13 +722,12 @@
     depthWrite: false,
   });
 
-  // Seed the activity texture so particles are visible on frame 1
   writeActivityTex();
 
   const particles = new THREE.Points(geom, particleMat);
   scene.add(particles);
 
-  // Deep-field dust
+  // Background dust
   {
     const N = 900;
     const pos = new Float32Array(N * 3);
@@ -545,7 +742,7 @@
       color: 0x8aa0c5,
       size: 0.7,
       transparent: true,
-      opacity: 0.38,
+      opacity: 0.32,
       map: circleTex,
       alphaTest: 0.02,
       blending: THREE.AdditiveBlending,
@@ -555,7 +752,9 @@
     scene.add(new THREE.Points(g, m));
   }
 
-  // Synapses
+  // ======================================================================
+  // SYNAPSES
+  // ======================================================================
   const synapseGroup = new THREE.Group();
   scene.add(synapseGroup);
   const synapses = [];
@@ -592,13 +791,12 @@
       depthWrite: false,
     });
     const line = new THREE.Line(g, lineMat);
+    line.frustumCulled = false;
     synapseGroup.add(line);
 
     const pulseGeom = new THREE.BufferGeometry();
     pulseGeom.setAttribute('position',
       new THREE.BufferAttribute(new Float32Array([0,0,0]), 3));
-    // Skip frustum culling — the pulse is a single moving point, bounding
-    // sphere would be stale anyway, and skipping avoids any NaN path.
     pulseGeom.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 50);
     const pulseMat = new THREE.PointsMaterial({
       color: mixColor,
@@ -612,7 +810,6 @@
     });
     const pulse = new THREE.Points(pulseGeom, pulseMat);
     pulse.frustumCulled = false;
-    line.frustumCulled = false;
     synapseGroup.add(pulse);
 
     return {
@@ -635,9 +832,11 @@
 
   function updateSynapses() {
     const t = clock.getElapsedTime();
-    if (synapses.length < MAX_SYNAPSES && Math.random() < 0.09) {
+    const isLive = phase === 'live';
+
+    if (isLive && synapses.length < MAX_SYNAPSES && Math.random() < 0.09) {
       const ranked = REGIONS
-        .map(r => ({ i: r.index, a: r.activity }))
+        .map(r => ({ i: r.index, a: r.activity * r.revealT }))
         .sort((a, b) => b.a - a.a)
         .slice(0, 6);
       const A = ranked[Math.floor(Math.random() * ranked.length)];
@@ -660,7 +859,6 @@
       const focusDim = focusT > 0.1 ? (1 - focusT * 0.85) : 1;
       s.lineMat.opacity = env * s.peak * focusDim;
 
-      // getPoint (parametric), NOT getPointAt (arc-length, can NaN on degenerate curves)
       const pPos = s.curve.getPoint(prog);
       s.pulseGeom.attributes.position.setXYZ(0, pPos.x, pPos.y, pPos.z);
       s.pulseGeom.attributes.position.needsUpdate = true;
@@ -668,7 +866,9 @@
     }
   }
 
-  // Pick meshes (invisible spheres for raycasting)
+  // ======================================================================
+  // PICK MESHES
+  // ======================================================================
   const pickMeshes = REGIONS.map((region) => {
     const g = new THREE.SphereGeometry(region.r * 1.2, 14, 10);
     const m = new THREE.MeshBasicMaterial({
@@ -681,7 +881,9 @@
     return mesh;
   });
 
-  // Labels
+  // ======================================================================
+  // LABELS
+  // ======================================================================
   const labelContainer = document.getElementById('labels');
   const labels = REGIONS.map((region) => {
     const el = document.createElement('div');
@@ -713,26 +915,32 @@
         .addScaledVector(L.offsetDir, L.region.r * 0.6 + 1.2);
       v.copy(anchor).project(camera);
       const behind = v.z > 1 || v.z < -1;
-      if (behind) { L.el.classList.add('hidden'); continue; }
-      L.el.classList.remove('hidden');
+
+      // Reveal-driven opacity: label appears as its region materializes
+      const revealAlpha = Math.min(1, Math.max(0, (L.region.revealT - 0.5) * 2.2));
+      const dim = focusRegion !== -1 && focusRegion !== L.region.index;
+      const dimMul = dim ? 0.22 : 1;
+      L.el.style.opacity = behind ? 0 : (revealAlpha * dimMul);
+
+      if (behind) continue;
 
       const x = (v.x * 0.5 + 0.5) * width;
       const y = (-v.y * 0.5 + 0.5) * height;
       L.el.style.transform =
         'translate3d(calc(' + x + 'px - 50%), calc(' + y + 'px - 50%), 0)';
 
-      L.firingEl.textContent = L.region.activity.toFixed(2);
+      L.firingEl.textContent = (L.region.activity * L.region.revealT).toFixed(2);
 
       const isHot = hoveredRegion === L.region.index
-                 || L.region.activity > 0.88
+                 || (L.region.activity * L.region.revealT) > 0.88
                  || focusRegion === L.region.index;
       L.el.classList.toggle('hot', isHot);
-      L.el.classList.toggle('dim',
-        focusRegion !== -1 && focusRegion !== L.region.index);
     }
   }
 
-  // Sub-labels
+  // ======================================================================
+  // SUB-LABELS + SUB-NODES (focus-mode)
+  // ======================================================================
   const sublabelContainer = document.getElementById('sublabels');
   let activeSubLabels = [];
 
@@ -769,7 +977,6 @@
     }
   }
 
-  // Sub-nodes (bright markers inside focused region)
   const SUB_MAX = 8;
   const subNodeGeom = new THREE.BufferGeometry();
   const subNodePos = new Float32Array(SUB_MAX * 3);
@@ -812,35 +1019,63 @@
     subNodeMat.opacity += (1.0 - subNodeMat.opacity) * 0.07;
   }
 
-  // Interaction
+  // ======================================================================
+  // CAMERA — intro path + focus path
+  // ======================================================================
+  const INTRO_CAM_POS    = new THREE.Vector3(2, 1, 14);
+  const INTRO_CAM_TARGET = new THREE.Vector3(0, -0.5, 0);
+  const DEFAULT_CAM_POS  = new THREE.Vector3(0, 2, 48);
+  const DEFAULT_TARGET   = new THREE.Vector3(0, 0, 0);
+
+  // Set initial position
+  camera.position.copy(INTRO_CAM_POS);
+  controls.target.copy(INTRO_CAM_TARGET);
+  controls.update();
+
+  const targetCamPos    = DEFAULT_CAM_POS.clone();
+  const targetCamTarget = DEFAULT_TARGET.clone();
+  let focusT = 0;
+  let transitionUntil = 0;
+
+  function updateIntroCamera(introT) {
+    // Camera is mostly still for the first 0.8s, then eases out to the
+    // default position over the remainder of the intro
+    const totalDuration = 9.5;
+    const startDelay = 0.8;
+    let p = (introT - startDelay) / (totalDuration - startDelay);
+    p = Math.max(0, Math.min(1, p));
+    // ease-out cubic
+    const e = 1 - Math.pow(1 - p, 3);
+    camera.position.lerpVectors(INTRO_CAM_POS, DEFAULT_CAM_POS, e);
+    controls.target.lerpVectors(INTRO_CAM_TARGET, DEFAULT_TARGET, e);
+  }
+
+  // ======================================================================
+  // INTERACTION (gated on phase === 'live')
+  // ======================================================================
   const raycaster = new THREE.Raycaster();
   const mouse = new THREE.Vector2();
   let hoveredRegion = -1;
   let focusRegion = -1;
 
-  const DEFAULT_CAM_POS = new THREE.Vector3(0, 2, 48);
-  const DEFAULT_TARGET  = new THREE.Vector3(0, 0, 0);
-  const targetCamPos    = DEFAULT_CAM_POS.clone();
-  const targetCamTarget = DEFAULT_TARGET.clone();
-  let focusT = 0;
-  let transitionUntil = 0;  // camera is lerped only while now < transitionUntil
-
   let downX = 0, downY = 0, isDown = false;
 
   renderer.domElement.addEventListener('pointerdown', (e) => {
+    if (phase !== 'live') return;
     isDown = true;
     downX = e.clientX; downY = e.clientY;
     document.body.classList.add('grabbing');
   });
   window.addEventListener('pointerup', (e) => {
     document.body.classList.remove('grabbing');
-    if (!isDown) return;
+    if (phase !== 'live' || !isDown) return;
     isDown = false;
     const dx = e.clientX - downX;
     const dy = e.clientY - downY;
     if (Math.hypot(dx, dy) < 5) handleClick(e);
   });
   window.addEventListener('pointermove', (e) => {
+    if (phase !== 'live') return;
     mouse.x =  (e.clientX / window.innerWidth)  * 2 - 1;
     mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
     raycaster.setFromCamera(mouse, camera);
@@ -916,7 +1151,9 @@
     if (e.key === 'Escape') releaseFocus();
   });
 
-  // Activity dynamics
+  // ======================================================================
+  // ACTIVITY DYNAMICS
+  // ======================================================================
   let nextWave = 4 + Math.random() * 3;
   function triggerWaves(t) {
     if (t < nextWave) return;
@@ -932,9 +1169,26 @@
     });
   }
 
+  function updateReveals(introT) {
+    // Emotional Core: ramp from 0.45 to 1.0 over the first 1.6s of intro
+    const coreRamp = Math.min(1, introT / 1.6);
+    REGIONS[0].revealT = 0.45 + coreRamp * 0.55;
+
+    for (const r of REVEAL_SCHEDULE) {
+      const local = (introT - r.start) / REVEAL_DURATION;
+      let v;
+      if (local <= 0) v = 0;
+      else if (local >= 1) v = 1;
+      else v = 1 - Math.pow(1 - local, 3); // ease-out cubic
+      REGIONS[r.idx].revealT = v;
+    }
+  }
+
   function updateActivity(dt) {
     const t = clock.getElapsedTime();
-    triggerWaves(t);
+    const isLive = phase === 'live';
+
+    if (isLive) triggerWaves(t);
 
     let globalSum = 0;
     REGIONS.forEach((region, i) => {
@@ -942,19 +1196,19 @@
       const a2 = 0.15 * Math.sin(t * 0.71 + i * 2.77) * Math.cos(t * 0.44 + i);
       let target = a1 + a2;
 
-      if (Math.random() < 0.0015) {
+      if (isLive && Math.random() < 0.0015) {
         region.burstUntil = Math.max(region.burstUntil, t + 0.8 + Math.random() * 1.2);
       }
       if (t < region.burstUntil) {
         target = Math.max(target, 0.88 + Math.random() * 0.12);
       }
-      if (hoveredRegion === i) target = Math.min(1.15, target + 0.25);
-      if (focusRegion === i)   target = Math.min(1.2,  target + 0.15);
+      if (isLive && hoveredRegion === i) target = Math.min(1.15, target + 0.25);
+      if (focusRegion === i)             target = Math.min(1.2,  target + 0.15);
 
       target = Math.max(0.28, Math.min(1.15, target));
       region.targetActivity = target;
       region.activity += (target - region.activity) * Math.min(1, dt * 2.4);
-      globalSum += region.activity;
+      globalSum += region.activity * region.revealT;
     });
 
     writeActivityTex();
@@ -963,7 +1217,108 @@
     if (globalEl) globalEl.textContent = (globalSum / REGIONS.length).toFixed(2);
   }
 
-  // Loop
+  // ======================================================================
+  // SUBTITLE SYSTEM — word-by-word blur+focus reveal
+  // ======================================================================
+  const SUBTITLES = [
+    { start: 0,    end: 1.0,   text: 'Hi Vito...' },
+    { start: 1.5,  end: 2.5,   text: 'Welcome to Mia 3.' },
+    { start: 3.0,  end: 6.5,   text: 'I have mapped 1 year of thoughts, beliefs, and feelings happening in your life.' },
+    { start: 7.0,  end: 8.5,   text: 'There are many things we can talk about.' },
+    { start: 9.0,  end: 10.25, text: 'Where would you like to start?' },
+  ];
+
+  const subtitleEl = document.getElementById('subtitle');
+  const subtitleTimers = [];
+
+  function showSubtitle(text, duration) {
+    // Clear any pending word/fadeout timers from this line
+    subtitleEl.innerHTML = '';
+    subtitleEl.classList.remove('fade-out');
+
+    const words = text.split(' ');
+    // Stagger word reveals across roughly the first half of the line so the
+    // line settles into full focus before the next one starts
+    const revealWindow = Math.min(duration * 0.55, 1.4);
+    const stagger = words.length > 1 ? revealWindow / (words.length - 1) : 0;
+
+    words.forEach((word, i) => {
+      const span = document.createElement('span');
+      span.className = 'word';
+      span.textContent = word;
+      subtitleEl.appendChild(span);
+      if (i < words.length - 1) {
+        const sp = document.createElement('span');
+        sp.className = 'space';
+        sp.innerHTML = '&nbsp;';
+        subtitleEl.appendChild(sp);
+      }
+      const t = setTimeout(() => {
+        span.classList.add('show');
+      }, stagger * i * 1000);
+      subtitleTimers.push(t);
+    });
+
+    // Start the fade-out a bit before the line's end
+    const fadeOutAt = Math.max(0, (duration - 0.45) * 1000);
+    const tFade = setTimeout(() => {
+      subtitleEl.classList.add('fade-out');
+    }, fadeOutAt);
+    subtitleTimers.push(tFade);
+  }
+
+  function scheduleSubtitles() {
+    SUBTITLES.forEach((s) => {
+      const tShow = setTimeout(() => {
+        showSubtitle(s.text, s.end - s.start);
+      }, s.start * 1000);
+      subtitleTimers.push(tShow);
+    });
+  }
+
+  // ======================================================================
+  // INTRO → LIVE TRANSITION
+  // ======================================================================
+  function startIntro() {
+    if (phase !== 'idle') return;
+    phase = 'intro';
+    introStartT = clock.getElapsedTime();
+
+    // Brand fades in early — system identifying itself
+    document.getElementById('hud-brand').classList.add('show');
+
+    // Schedule subtitles
+    scheduleSubtitles();
+
+    // Try to play the audio (will silently fail if file missing — visuals
+    // are clock-driven so the sequence still runs)
+    const audio = document.getElementById('introAudio');
+    if (audio) {
+      const playPromise = audio.play();
+      if (playPromise && playPromise.catch) {
+        playPromise.catch((err) => console.warn('Audio playback failed:', err));
+      }
+    }
+
+    // Hand off to live phase after the intro completes
+    setTimeout(() => {
+      phase = 'live';
+      controls.enabled = true;
+      document.getElementById('hud-status').classList.add('show');
+      document.getElementById('hud-hints').classList.add('show');
+    }, INTRO_DURATION * 1000);
+  }
+
+  document.getElementById('beginBtn').addEventListener('click', () => {
+    document.getElementById('introOverlay').classList.add('gone');
+    document.body.classList.add('live'); // cursor changes
+    // Wait for overlay fade to be mostly complete before starting voice
+    setTimeout(() => startIntro(), 380);
+  });
+
+  // ======================================================================
+  // ANIMATION LOOP
+  // ======================================================================
   function animate() {
     requestAnimationFrame(animate);
     const dt = Math.min(0.05, clock.getDelta());
@@ -971,13 +1326,18 @@
 
     particleMat.uniforms.uTime.value = t;
 
+    if (phase === 'intro') {
+      const introT = t - introStartT;
+      updateReveals(introT);
+      updateIntroCamera(introT);
+    }
+
     updateActivity(dt);
     updateSynapses();
     updateSubNodes();
 
-    // Only lerp camera while actively transitioning — otherwise the user's
-    // drag/zoom would be fought by the lerp pulling back to target every frame
-    if (t < transitionUntil) {
+    // Focus camera transitions (only used in live phase)
+    if (phase === 'live' && t < transitionUntil) {
       camera.position.lerp(targetCamPos, 0.08);
       controls.target.lerp(targetCamTarget, 0.08);
     }
@@ -987,8 +1347,8 @@
 
     controls.update();
 
-    // Scroll/zoom out past a threshold while focused → return to main view
-    if (focusRegion >= 0 && t > transitionUntil + 0.2) {
+    // Scroll-out-while-focused → release focus
+    if (phase === 'live' && focusRegion >= 0 && t > transitionUntil + 0.2) {
       const r = REGIONS[focusRegion];
       const d = camera.position.distanceTo(r.position);
       if (d > r.r * 9) releaseFocus();
