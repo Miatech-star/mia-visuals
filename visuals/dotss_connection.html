@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Relational Field</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #f4f4f6; cursor: none; }
+    canvas { display: block; position: fixed; inset: 0; cursor: none; z-index: 0; }
+    #pills { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
+
+    .pill {
+      position: absolute;
+      transform: translate(-50%, -50%);
+      white-space: nowrap;
+      border-radius: 4px;
+      font: 400 10.5px system-ui, -apple-system, sans-serif;
+      padding: 5px 10px;
+      pointer-events: none;
+      cursor: none;
+      user-select: none;
+      opacity: 0;
+    }
+    .pill.solo { background: rgba(238,237,244,0.93); border: 0.8px solid rgba(50,45,70,0.28); color: rgba(28,24,42,1); }
+    .pill.pair { background: rgba(242,236,255,0.93); border: 0.8px solid rgba(100,72,170,0.36); color: rgba(58,30,110,1); }
+    .pill.live { pointer-events: all; }
+    .pill.solo.live:hover { border-color: rgba(50,45,70,0.58); background: rgba(230,228,242,0.97); }
+    .pill.pair.live:hover { border-color: rgba(100,72,170,0.62); background: rgba(236,228,255,0.97); }
+
+    /* ── floating detail card ─────────────────────────── */
+    #card {
+      position: fixed;
+      width: 276px;
+      background: #f7f6fb;
+      border: 0.8px solid rgba(60,50,90,0.13);
+      border-radius: 14px;
+      overflow: hidden;
+      z-index: 300;
+      opacity: 0;
+      transform: scale(0.94) translateY(8px);
+      transition: opacity 0.16s ease, transform 0.16s ease;
+      pointer-events: none;
+      cursor: none;
+    }
+    #card.open { opacity: 1; transform: scale(1) translateY(0); pointer-events: all; }
+
+    #card-top {
+      padding: 13px 14px 0;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    #card-kind {
+      display: flex; align-items: center; gap: 5px;
+      font: 400 8.5px system-ui; color: rgba(110,95,145,0.72);
+      text-transform: uppercase; letter-spacing: 0.07em;
+    }
+    #card-kind-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: rgba(110,95,145,0.55); flex-shrink: 0;
+    }
+    #card.pair-mode #card-kind { color: rgba(88,48,148,0.75); }
+    #card.pair-mode #card-kind-dot { background: rgba(88,48,148,0.55); }
+
+    #card-close {
+      width: 22px; height: 22px; border-radius: 50%;
+      border: 0.7px solid rgba(60,50,90,0.12);
+      background: rgba(60,50,90,0.05);
+      color: rgba(60,50,90,0.45);
+      font: 400 14px/22px system-ui;
+      text-align: center;
+      cursor: none; user-select: none;
+    }
+    #card-close:hover { background: rgba(60,50,90,0.10); color: rgba(60,50,90,0.70); }
+
+    #card-body { padding: 8px 14px 16px; }
+
+    #card-title {
+      font: 500 15px/1.3 system-ui;
+      color: rgba(16,12,26,1);
+      margin: 9px 0 9px;
+    }
+    #card-desc {
+      font: 400 12px/1.65 system-ui;
+      color: rgba(38,32,58,0.82);
+      margin-bottom: 14px;
+    }
+    .cs { margin-bottom: 11px; }
+    .cs-label {
+      font: 400 8px system-ui;
+      color: rgba(110,95,145,0.62);
+      text-transform: uppercase; letter-spacing: 0.07em;
+      margin-bottom: 5px;
+    }
+    .cs-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+    .cs-tag {
+      font: 400 9.5px system-ui;
+      color: rgba(38,32,58,0.72);
+      background: rgba(60,50,90,0.06);
+      border: 0.6px solid rgba(60,50,90,0.11);
+      border-radius: 3px; padding: 3px 7px;
+    }
+    .cs-tag.person {
+      font-weight: 500;
+      color: rgba(14,12,22,0.82);
+      background: rgba(14,12,22,0.07);
+      border-color: rgba(14,12,22,0.14);
+    }
+    #card-feels {
+      font: italic 11px/1.62 system-ui;
+      color: rgba(80,65,115,0.68);
+      border-top: 0.6px solid rgba(60,50,90,0.09);
+      padding-top: 11px;
+      margin-top: 2px;
+    }
+
+    /* ── dom cursor dot ─────────────────────────────────── */
+    #cur {
+      position: fixed; width: 7px; height: 7px;
+      background: rgba(10,8,16,0.88); border-radius: 50%;
+      pointer-events: none; z-index: 9999;
+      transform: translate(-50%,-50%);
+      transition: width .08s, height .08s;
+    }
+    #cur.big { width: 11px; height: 11px; background: rgba(10,8,16,0.78); }
+    #cur.big::after {
+      content: ''; position: absolute; inset: -5px; border-radius: 50%;
+      border: 0.8px solid rgba(10,8,16,0.18);
+    }
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="pills"></div>
+
+<!-- floating detail card -->
+<div id="card">
+  <div id="card-top">
+    <div id="card-kind"><div id="card-kind-dot"></div><span id="card-kind-txt">pattern</span></div>
+    <div id="card-close">×</div>
+  </div>
+  <div id="card-body">
+    <div id="card-title"></div>
+    <div id="card-desc"></div>
+    <div class="cs" id="cs-triggers"><div class="cs-label">triggers</div><div class="cs-tags" id="card-triggers"></div></div>
+    <div class="cs" id="cs-people"><div class="cs-label">related</div><div class="cs-tags" id="card-people"></div></div>
+    <div id="card-feels"></div>
+  </div>
+</div>
+
+<div id="cur"></div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════
+   PATTERN DATA
+   ═══════════════════════════════════════════════════════════ */
+const PD = {
+  /* ── Jake ──────────────────────────── */
+  'safe harbor': { kind:'solo', people:['Jake'], desc:'You instinctively designate one person as your emotional refuge, allowing yourself to relax in ways you rarely do elsewhere.', triggers:['conflict with others','feeling unheard','emotional exhaustion'], feels:'Relief. Like you can finally put something down.' },
+  'low conflict': { kind:'solo', people:['Jake'], desc:'You bend, smooth over, and absorb discomfort rather than risk rupture — even when the cost is your own needs.', triggers:['raised voices','silence after disagreement','perceived disappointment'], feels:'A constant low hum of vigilance, always tracking the room\'s temperature.' },
+  'emotional anchor': { kind:'solo', people:['Jake'], desc:'You rely on one person to stabilize your internal state when everything else feels uncertain or too much.', triggers:['anxiety spikes','major life transitions','feeling unmoored'], feels:'A gravitational pull toward that person when the ground shifts.' },
+  /* ── Sofia ─────────────────────────── */
+  'mirroring': { kind:'solo', people:['Sofia'], desc:'You unconsciously take on the emotional tone, language, and even opinions of the people you care about most.', triggers:['desire for approval','fear of rejection','new relationship energy'], feels:'Like dissolving into the other person, then wondering where you went.' },
+  'warmth exchange': { kind:'solo', people:['Sofia'], desc:'You give and receive affection through sustained presence and small consistent acts of care.', triggers:['feeling disconnected','emotional coldness nearby','need for closeness'], feels:'A quiet mutual understanding that you\'re both simply showing up.' },
+  'softness': { kind:'solo', people:['Sofia'], desc:'An innate gentleness in how you hold others\' vulnerability — which sometimes masks how rarely you show your own.', triggers:['others in pain','tense situations','being needed'], feels:'Like being a container for everyone else\'s feelings.' },
+  /* ── Priya ─────────────────────────── */
+  'achievement bonding': { kind:'solo', people:['Priya'], desc:'You connect more easily through shared goals and accomplishments than through emotional vulnerability or stillness.', triggers:['uncertainty','idleness','fear of being seen as ordinary'], feels:'A rush of closeness when you\'re both excelling at something.' },
+  'conditional worth': { kind:'solo', people:['Priya'], desc:'Your sense of lovability feels tied to performance — what you produce, achieve, or provide for others.', triggers:['failure','criticism','being surpassed'], feels:'Like you\'re constantly justifying your right to be here.' },
+  'performance anxiety': { kind:'solo', people:['Priya'], desc:'A pervasive fear that if you stop delivering at a high level, the connection — or the love — will dissolve.', triggers:['stillness','perceived inadequacy','comparison with others'], feels:'Exhaustion from running a race that never ends and has no finish line.' },
+  /* ── Ethan ─────────────────────────── */
+  'humor shield': { kind:'solo', people:['Ethan'], desc:'You use wit and lightness to deflect from emotional exposure, keeping things safe through laughter.', triggers:['vulnerability in the air','direct personal questions','emotional intensity'], feels:'The laugh lands. But something underneath stays untouched.' },
+  'surface depth': { kind:'solo', people:['Ethan'], desc:'You\'re engaging, curious, and warm — up to a certain depth. Then an invisible door quietly closes.', triggers:['real intimacy','being truly seen','conversations that get too close'], feels:'Standing at the edge of something and choosing, again, not to jump.' },
+  'deflection': { kind:'solo', people:['Ethan'], desc:'You redirect attention or emotion outward — into humor, analysis, or other people — rather than receiving it directly.', triggers:['care directed at you','earnest emotion','being asked to be vulnerable'], feels:'An automatic steering away from whatever is most real right now.' },
+  /* ── Marco ─────────────────────────── */
+  'push-pull': { kind:'solo', people:['Marco'], desc:'You cycle between pulling someone close and distancing yourself, often without awareness of what\'s driving the shift.', triggers:['perceived vulnerability','fear of abandonment','closeness becoming too real'], feels:'A pull toward someone immediately followed by an urge to create space.' },
+  'testing loyalty': { kind:'solo', people:['Marco'], desc:'You unconsciously create situations to see if someone will stay, even if the test risks pushing them away.', triggers:['trust issues','past betrayals','emotional investment'], feels:'A quiet dare: prove you won\'t leave like the others did.' },
+  'power play': { kind:'solo', people:['Marco'], desc:'You reestablish a sense of control in relationships when you feel destabilized, overlooked, or exposed.', triggers:['feeling powerless','perceived disrespect','emotional exposure'], feels:'Reaching for solid ground by shifting the weight in the room.' },
+  /* ── Luna ──────────────────────────── */
+  'freedom vs closeness': { kind:'solo', people:['Luna'], desc:'You crave deep connection but become restless when intimacy begins to feel constraining or like a demand.', triggers:['expectations','routine','commitment conversations'], feels:'Wanting in and out at the same time, and feeling guilty about both.' },
+  'overwhelm triggers': { kind:'solo', people:['Luna'], desc:'Emotional intensity — yours or others\' — can cause a sudden shutdown or retreat that feels involuntary.', triggers:['high emotional stakes','conflict','feeling responsible for others\' pain'], feels:'A circuit breaker flipping off to protect the whole system.' },
+  'disappearing': { kind:'solo', people:['Luna'], desc:'When overwhelmed, you withdraw completely — no explanation, no timeline, just absence until the pressure passes.', triggers:['sensory or emotional overload','feeling trapped','unresolved tension'], feels:'The only way to breathe again is to become unreachable for a while.' },
+  /* ── Alex ──────────────────────────── */
+  'emotional walls': { kind:'solo', people:['Alex'], desc:'You\'ve built a self-sufficient internal world where emotional dependency feels like a risk you\'d rather not take.', triggers:['vulnerability','past betrayals','someone getting close too fast'], feels:'Safety inside the wall. Loneliness too, but that\'s manageable.' },
+  'mixed signals': { kind:'solo', people:['Alex'], desc:'You attract people toward you while simultaneously signaling you\'re unavailable, leaving relationships in a holding pattern.', triggers:['fear of commitment','desire for connection','internal ambivalence'], feels:'Standing in a doorway — neither fully inside nor out.' },
+  'intimacy fear': { kind:'solo', people:['Alex'], desc:'True closeness triggers an alarm — not because you don\'t want it, but because of what it might cost you.', triggers:['being clearly seen','reciprocal vulnerability','love that asks something of you'], feels:'A contraction right when things start to feel most real.' },
+  /* ── Maya ──────────────────────────── */
+  'empathic merger': { kind:'solo', people:['Maya'], desc:'You absorb others\' emotional states so deeply that the boundary between your feelings and theirs becomes unclear.', triggers:['others in distress','emotional openness','being in the presence of pain'], feels:'Carrying something that isn\'t yours, and not knowing how to put it down.' },
+  'over-giving': { kind:'solo', people:['Maya'], desc:'You give without limits, often until you\'re empty, then wonder why no one noticed you\'d disappeared in the process.', triggers:['feeling inadequate','needing to justify your presence','fear of being a burden'], feels:'Love expressed as labor. Constant, generous, quietly exhausting.' },
+  'losing self': { kind:'solo', people:['Maya'], desc:'In deep relationships, your own needs, preferences, and perspective slowly erode in favor of the other person\'s.', triggers:['strong personalities','fear of conflict','intense attachment'], feels:'Looking in the mirror and not quite recognizing who you\'ve become.' },
+  /* ── Sam ────────────────────────────── */
+  'avoidance': { kind:'solo', people:['Sam'], desc:'You navigate relationships by staying just beyond the reach of real vulnerability — close enough to feel connected, far enough to feel safe.', triggers:['intimacy','emotional demands','being asked to commit'], feels:'A constant, low-key retreat that looks a lot like independence.' },
+  'withdrawal': { kind:'solo', people:['Sam'], desc:'Under pressure, you go inward and silent, cutting off contact as a form of self-protection without quite intending to.', triggers:['conflict','feeling misunderstood','emotional overwhelm'], feels:'Pulling all the drawbridges up at once.' },
+  'quiet distance': { kind:'solo', people:['Sam'], desc:'You maintain space in relationships without naming it, leaving others to interpret your absence on their own terms.', triggers:['unspoken resentment','discomfort','need for autonomy'], feels:'Distance as a language you speak fluently but never quite admit to.' },
+  /* ── Lea ────────────────────────────── */
+  'over-attachment': { kind:'solo', people:['Lea'], desc:'You form intense bonds quickly and struggle to calibrate the level of closeness you need from another person.', triggers:['connection','approval','feeling temporarily abandoned'], feels:'A gravitational pull toward someone that can become suffocating to both of you.' },
+  'need for validation': { kind:'solo', people:['Lea'], desc:'Your sense of security in a relationship depends heavily on consistent external reassurance that things are still okay.', triggers:['uncertainty','silence','ambiguous messages'], feels:'A constant question running underneath everything: are we still okay?' },
+  'clinginess': { kind:'solo', people:['Lea'], desc:'You hold on tight to relationships, especially when they feel threatened, sometimes in ways that accelerate the very loss you fear.', triggers:['perceived withdrawal','jealousy','fear of replacement'], feels:'Gripping something with both hands while watching it slip away anyway.' },
+  /* ── Jordan ─────────────────────────── */
+  'passive aggression': { kind:'solo', people:['Jordan'], desc:'Unexpressed frustration finds its way out through indirect behavior — silence, delays, or subtle sabotage that never gets named.', triggers:['feeling powerless','resentment building','conflict avoidance'], feels:'Saying yes with your mouth while your body says no.' },
+  'emotional unavailability': { kind:'solo', people:['Jordan'], desc:'You remain functionally present in relationships while keeping your emotional core carefully inaccessible.', triggers:['intimacy','being asked how you really feel','vulnerability from others'], feels:'Watching yourself from a slight distance, going through all the right motions.' },
+  'stonewalling': { kind:'solo', people:['Jordan'], desc:'In conflict, you shut down completely — no response, no engagement, no resolution, just absence where a person should be.', triggers:['feeling flooded','sustained criticism','perceived attacks'], feels:'A wall going up so fast you don\'t even know you built it.' },
+  /* ── River ──────────────────────────── */
+  'codependency': { kind:'solo', people:['River'], desc:'Your sense of identity and wellbeing becomes entangled with the state of your relationship, making it hard to know where you end.', triggers:['instability in the relationship','being alone','your partner\'s distress'], feels:'Only okay when they\'re okay. Their mood is your weather.' },
+  'self-sacrifice': { kind:'solo', people:['River'], desc:'You chronically deprioritize your own needs in service of others\', framing it as love rather than recognizing it as loss.', triggers:['others\' needs becoming visible','guilt','fear of being seen as selfish'], feels:'A kind of nobility that\'s slowly eating you alive.' },
+  'nurturing': { kind:'solo', people:['River'], desc:'You find deep purpose in caring for others — a genuine gift that can also become a way of avoiding your own unmet needs.', triggers:['others\' vulnerability','being needed','emptiness when not in a caretaking role'], feels:'Most alive when someone else needs you. Unmoored when they don\'t.' },
+
+  /* ── Jake + Sofia ───────────────────── */
+  'safe bond': { kind:'pair', people:['Jake','Sofia'], desc:'A relationship that functions as a consistent container — not perfect, but reliably soft and available when things get hard.', triggers:['external stress','either person feeling unseen','life pulling you apart'], feels:'Like coming home to something that holds without needing an explanation.' },
+  'mutual warmth': { kind:'pair', people:['Jake','Sofia'], desc:'An active, maintained current of care and affection that both people tend to with small consistent gestures.', triggers:['emotional distance','life pressure','cold stretches between you'], feels:'A fire that doesn\'t go out if both people keep feeding it.' },
+  'emotional reliance': { kind:'pair', people:['Jake','Sofia'], desc:'A functional dependency that feels nourishing until one person needs more than the other can sustainably give.', triggers:['major stress','imbalance in emotional capacity','external crises'], feels:'Leaning on a wall and slowly realizing the wall is also leaning on you.' },
+  /* ── Jake + Ethan ───────────────────── */
+  'comfort without depth': { kind:'pair', people:['Jake','Ethan'], desc:'A relationship built on ease and familiarity that both people tacitly agree not to push too far beyond.', triggers:['major life changes in either person','one of you wanting more'], feels:'Warm, contained. A little flat in the places that matter most.' },
+  'humor bridge': { kind:'pair', people:['Jake','Ethan'], desc:'Laughter is the primary language — a genuine connection that also functions as a lid on anything that gets too real.', triggers:['emotional gravity','seriousness in the air','one of you being sincere'], feels:'You can laugh together endlessly and still somehow miss each other.' },
+  'safe distance': { kind:'pair', people:['Jake','Ethan'], desc:'Both people maintain closeness at a managed range — real connection, without the risk of full exposure or real stakes.', triggers:['anything that would require genuine vulnerability'], feels:'Close enough to matter. Far enough to feel safe.' },
+  /* ── Jake + Luna ────────────────────── */
+  'attachment anxiety': { kind:'pair', people:['Jake','Luna'], desc:'One person needs reassurance the other finds suffocating; neither can quite name what\'s happening between them.', triggers:['silence','unmet bids for closeness','plans that don\'t materialize'], feels:'A constant low hum: are we okay? Are you still here?' },
+  'push-pull distance': { kind:'pair', people:['Jake','Luna'], desc:'One person pursues while the other retreats — and they keep swapping roles without ever realizing it.', triggers:['imbalance in need or investment','either person feeling overwhelmed'], feels:'Dancing out of sync in slow motion, both wondering why it keeps happening.' },
+  'tangled signals': { kind:'pair', people:['Jake','Luna'], desc:'Mixed messages that neither person fully decodes, leaving both permanently unsure of where they actually stand.', triggers:['ambivalence in either person','unspoken expectations','fear of directness'], feels:'Reading between lines that were never there.' },
+  /* ── Sofia + Maya ───────────────────── */
+  'empathic enmeshment': { kind:'pair', people:['Sofia','Maya'], desc:'Both people feel each other\'s emotions so intensely that the boundary between them dissolves into a shared atmosphere.', triggers:['distress in either person','shared vulnerability','emotional activation'], feels:'So attuned you\'re not sure anymore whose feeling it actually is.' },
+  'over-giving loop': { kind:'pair', people:['Sofia','Maya'], desc:'Each person tries to out-care the other, creating a cycle where neither can fully receive what the other is offering.', triggers:['guilt','fear of being a burden','love expressed as service rather than presence'], feels:'Two people trying to hand each other a door, neither willing to walk through first.' },
+  'blurred boundaries': { kind:'pair', people:['Sofia','Maya'], desc:'The emotional distinction between self and other becomes unclear, creating closeness and confusion in equal measure.', triggers:['deep vulnerability','conflict','one person changing or pulling back'], feels:'Beautiful and disorienting, like two rivers merging.' },
+  /* ── Sofia + Lea ────────────────────── */
+  'validation spiral': { kind:'pair', people:['Sofia','Lea'], desc:'Both people seek reassurance from each other in a loop that never quite satisfies either one for very long.', triggers:['insecurity','external stress','any crack in the relationship'], feels:'Constantly checking the temperature and never quite trusting the reading.' },
+  'mirror dynamic': { kind:'pair', people:['Sofia','Lea'], desc:'Each person reflects the other\'s emotional state with such fidelity that neither can find stable ground.', triggers:['emotional activation','self-doubt','conflict'], feels:'Looking for yourself in a mirror that keeps moving.' },
+  'neediness exchange': { kind:'pair', people:['Sofia','Lea'], desc:'Two people who both need a great deal, alternating between filling and depleting each other in an ongoing rhythm.', triggers:['stress','feeling unseen','emotional scarcity'], feels:'A relationship that can be nourishing and exhausting in the same hour.' },
+  /* ── Marco + Alex ───────────────────── */
+  'power struggle': { kind:'pair', people:['Marco','Alex'], desc:'A chronic pattern of competing for dominance or control, often disguised as disagreements about something else entirely.', triggers:['feeling disrespected','any sign of advantage in the other person','perceived weakness'], feels:'Exhausting. Like a chess match that never ends and has no prize.' },
+  'trust deficit': { kind:'pair', people:['Marco','Alex'], desc:'Neither person fully believes the other won\'t betray them, creating a relationship built on managed exposure and half-truths.', triggers:['past wounds resurfacing','ambiguity','any perceived dishonesty'], feels:'Connection through glass — visible but never quite real.' },
+  'dominance clash': { kind:'pair', people:['Marco','Alex'], desc:'Both people need to be the one in control, which means every interaction carries a subtle bid for the upper hand.', triggers:['loss of control','vulnerability','feeling outmaneuvered or overlooked'], feels:'Respect wrapped tightly around rivalry.' },
+  /* ── Marco + Ethan ──────────────────── */
+  'avoidance pact': { kind:'pair', people:['Marco','Ethan'], desc:'Both people tacitly agree not to go deep, maintaining a functional and enjoyable connection safely on the surface.', triggers:['emotional weight being introduced','someone from outside pushing deeper'], feels:'A mutual unspoken agreement: lights on, curtains closed.' },
+  'deflection mirror': { kind:'pair', people:['Marco','Ethan'], desc:'Each person deflects vulnerability in similar ways, which creates understanding between them — and a hall of mirrors.', triggers:['real emotion','directness from either side','sincerity that can\'t be laughed off'], feels:'I see you avoiding. I won\'t push. A quiet pact of mutual protection.' },
+  'surface bond': { kind:'pair', people:['Marco','Ethan'], desc:'A real connection deliberately maintained at a shallow level — not pretend, just mutually agreed to be enough as-is.', triggers:['anything that would demand more than this'], feels:'Comfortable. A little sad sometimes, when you catch yourself wondering what else it could be.' },
+  /* ── Luna + Sam ─────────────────────── */
+  'freedom pact': { kind:'pair', people:['Luna','Sam'], desc:'A mutual understanding that neither person will demand more from the other than they\'re freely willing to give.', triggers:['external pressure to define things','one person quietly starting to want more'], feels:'Liberating, until you realize one of you has changed the terms.' },
+  'parallel loneliness': { kind:'pair', people:['Luna','Sam'], desc:'Two people who fiercely protect their independence and end up spending it alone — together.', triggers:['the absence of depth accumulating over time','a crisis that reveals the distance'], feels:'Being in the same room as someone and still somehow missing them.' },
+  'mutual avoidance': { kind:'pair', people:['Luna','Sam'], desc:'Both people dance around anything that would require them to be fully present with each other.', triggers:['real intimacy','conflict','anything that can\'t be kept light'], feels:'A dance where both people know the steps and neither will name the music.' },
+  /* ── Priya + Jordan ─────────────────── */
+  'unmet needs': { kind:'pair', people:['Priya','Jordan'], desc:'Both people carry needs they can\'t quite articulate, so they orbit each other without ever quite landing.', triggers:['silence','failed bids for connection','feeling persistently overlooked'], feels:'A hunger that neither person knows how to name, let alone feed.' },
+  'performance vs withdrawal': { kind:'pair', people:['Priya','Jordan'], desc:'One person shows up through output and achievement; the other through absence — and neither strategy reaches the other.', triggers:['emotional distance','stress','perceived inadequacy from either side'], feels:'Two different languages, spoken across a gap that keeps widening.' },
+  'emotional mismatch': { kind:'pair', people:['Priya','Jordan'], desc:'One person wants depth and vulnerability; the other can only manage function and managed distance.', triggers:['emotional requests','intimacy','one person\'s vulnerability meeting the other\'s shutdown'], feels:'The ache of reaching for someone who is present but not there.' },
+  /* ── Maya + River ───────────────────── */
+  'caretaker loop': { kind:'pair', people:['Maya','River'], desc:'Both people take care of each other in ways that prevent either from being truly fragile or truly held.', triggers:['distress','need','any moment of real vulnerability between them'], feels:'Two nurses in a hospital where neither is allowed to be the patient.' },
+  'self-sacrifice bond': { kind:'pair', people:['Maya','River'], desc:'The relationship is held together by mutual self-abandonment — each person giving what they don\'t quite have.', triggers:['the other person\'s visible needs','guilt','love itself'], feels:'Beautiful and quietly devastating. Built on what neither can afford to give.' },
+  'codependent warmth': { kind:'pair', people:['Maya','River'], desc:'Real love expressed through unhealthy fusion, where genuine care and quiet control are wound tightly together.', triggers:['the other person\'s suffering','fear of abandonment','the depth of feeling between them'], feels:'Warm and suffocating. Like being loved just a little too hard.' },
+  /* ── Sam + River ────────────────────── */
+  'quiet withdrawal': { kind:'pair', people:['Sam','River'], desc:'Both people pull back at the same time, creating silences that grow until they become the texture of the relationship.', triggers:['emotional weight','unresolved tension','the need for space from both sides at once'], feels:'A conversation that keeps getting postponed until neither person remembers what it was about.' },
+  'peaceful disconnect': { kind:'pair', people:['Sam','River'], desc:'A relationship that functions through comfortable detachment — no conflict, no closeness, no real risk taken.', triggers:['the absence of anything that requires more from either person'], feels:'Still. Not unhappy. Not quite whole.' },
+  'unspoken distance': { kind:'pair', people:['Sam','River'], desc:'Something unsaid that gradually becomes the shape of the relationship — both people aware of it, neither naming it.', triggers:['avoided conversations','resentment left to sit','time passing without resolution'], feels:'The loudest silence in the room.' },
+};
+
+/* ═══════════════════════════════════════════════════════════
+   PEOPLE
+   ═══════════════════════════════════════════════════════════ */
+const PEOPLE = [
+  { name:'Jake',   pos:[-820,-430,-680], reveal:0, patterns:[ {label:'safe harbor',offset:[190,-130,55]},{label:'low conflict',offset:[-165,95,-45]},{label:'emotional anchor',offset:[85,185,70]} ] },
+  { name:'Sofia',  pos:[ 640,-570, 180], reveal:0, patterns:[ {label:'mirroring',offset:[-160,-110,50]},{label:'warmth exchange',offset:[165,80,-55]},{label:'softness',offset:[-60,175,40]} ] },
+  { name:'Priya',  pos:[-560,  80,-340], reveal:0, patterns:[ {label:'achievement bonding',offset:[170,-120,45]},{label:'conditional worth',offset:[-125,-155,-60]},{label:'performance anxiety',offset:[-150,90,-30]} ] },
+  { name:'Ethan',  pos:[ 380,-680, 310], reveal:0, patterns:[ {label:'humor shield',offset:[-155,-85,60]},{label:'surface depth',offset:[130,-155,-40]},{label:'deflection',offset:[-90,150,55]} ] },
+  { name:'Marco',  pos:[-950, 310,-110], reveal:0, patterns:[ {label:'push-pull',offset:[190,-90,-50]},{label:'testing loyalty',offset:[-130,-155,65]},{label:'power play',offset:[-170,88,40]} ] },
+  { name:'Luna',   pos:[ 120, -90,-760], reveal:0, patterns:[ {label:'freedom vs closeness',offset:[-215,-70,45]},{label:'overwhelm triggers',offset:[90,-180,-50]},{label:'disappearing',offset:[-115,160,60]} ] },
+  { name:'Alex',   pos:[ 860, 140,-250], reveal:0, patterns:[ {label:'emotional walls',offset:[170,-125,45]},{label:'mixed signals',offset:[-125,-150,-60]},{label:'intimacy fear',offset:[135,120,75]} ] },
+  { name:'Maya',   pos:[-240, 520,-580], reveal:0, patterns:[ {label:'empathic merger',offset:[-165,-105,50]},{label:'over-giving',offset:[115,-165,-45]},{label:'losing self',offset:[150,90,-55]} ] },
+  { name:'Sam',    pos:[ 750, 480,-450], reveal:0, patterns:[ {label:'avoidance',offset:[175,-100,55]},{label:'withdrawal',offset:[-135,-135,-50]},{label:'quiet distance',offset:[105,155,65]} ] },
+  { name:'Lea',    pos:[-680,-600, 260], reveal:0, patterns:[ {label:'over-attachment',offset:[165,-120,50]},{label:'need for validation',offset:[-115,-148,-60]},{label:'clinginess',offset:[138,115,70]} ] },
+  { name:'Jordan', pos:[ 420, 650,-160], reveal:0, patterns:[ {label:'passive aggression',offset:[-160,-95,55]},{label:'emotional unavailability',offset:[115,-158,-45]},{label:'stonewalling',offset:[-128,132,60]} ] },
+  { name:'River',  pos:[-380, 680, 290], reveal:0, patterns:[ {label:'codependency',offset:[-170,-100,50]},{label:'self-sacrifice',offset:[115,-160,-45]},{label:'nurturing',offset:[142,95,-55]} ] },
+];
+const personMap={};
+PEOPLE.forEach(p=>{personMap[p.name]=p;});
+
+/* ═══════════════════════════════════════════════════════════
+   PAIRS
+   ═══════════════════════════════════════════════════════════ */
+const PAIRS_RAW=[
+  {a:'Jake',b:'Sofia',   patterns:[{label:'safe bond',mo:[60,-80,30]},{label:'mutual warmth',mo:[-70,50,-20]},{label:'emotional reliance',mo:[30,110,45]}]},
+  {a:'Jake',b:'Ethan',   patterns:[{label:'comfort without depth',mo:[50,-60,25]},{label:'humor bridge',mo:[-65,45,-20]},{label:'safe distance',mo:[30,90,40]}]},
+  {a:'Jake',b:'Luna',    patterns:[{label:'attachment anxiety',mo:[55,-70,30]},{label:'push-pull distance',mo:[-60,40,-25]},{label:'tangled signals',mo:[25,100,40]}]},
+  {a:'Sofia',b:'Maya',   patterns:[{label:'empathic enmeshment',mo:[50,-65,30]},{label:'over-giving loop',mo:[-60,50,-20]},{label:'blurred boundaries',mo:[30,100,40]}]},
+  {a:'Sofia',b:'Lea',    patterns:[{label:'validation spiral',mo:[55,-70,25]},{label:'mirror dynamic',mo:[-60,45,-20]},{label:'neediness exchange',mo:[30,95,40]}]},
+  {a:'Marco',b:'Alex',   patterns:[{label:'power struggle',mo:[50,-65,30]},{label:'trust deficit',mo:[-60,50,-25]},{label:'dominance clash',mo:[30,95,40]}]},
+  {a:'Marco',b:'Ethan',  patterns:[{label:'avoidance pact',mo:[55,-70,25]},{label:'deflection mirror',mo:[-65,45,-20]},{label:'surface bond',mo:[30,100,40]}]},
+  {a:'Luna',b:'Sam',     patterns:[{label:'freedom pact',mo:[50,-65,30]},{label:'parallel loneliness',mo:[-60,50,-20]},{label:'mutual avoidance',mo:[30,95,40]}]},
+  {a:'Priya',b:'Jordan', patterns:[{label:'unmet needs',mo:[55,-70,30]},{label:'performance vs withdrawal',mo:[-65,50,-25]},{label:'emotional mismatch',mo:[30,100,40]}]},
+  {a:'Maya',b:'River',   patterns:[{label:'caretaker loop',mo:[50,-65,30]},{label:'self-sacrifice bond',mo:[-60,50,-20]},{label:'codependent warmth',mo:[30,95,40]}]},
+  {a:'Sam',b:'River',    patterns:[{label:'quiet withdrawal',mo:[55,-70,25]},{label:'peaceful disconnect',mo:[-65,45,-20]},{label:'unspoken distance',mo:[30,100,40]}]},
+];
+function pairKey(a,b){return[a,b].sort().join('||');}
+const PAIRS={};
+PAIRS_RAW.forEach(p=>{PAIRS[pairKey(p.a,p.b)]={...p,reveal:0};});
+
+/* ═══════════════════════════════════════════════════════════
+   CONFIG
+   ═══════════════════════════════════════════════════════════ */
+const BG='#f4f4f6',COUNT=260,COUNT_FILL=480,RANGE=1200,CONNECT_R=208,MAX_LINES=6;
+const ATTRACT_F=0.014,SPRING=0.05,DAMP=0.80,AUTO_ROT=0.00052;
+const REVEAL_R=175,PAIR_R=230,REVEAL_SPD=0.045,PIN_MS=5000;
+
+/* ═══════════════════════════════════════════════════════════
+   STATE
+   ═══════════════════════════════════════════════════════════ */
+let W,H,camTheta=0,camPhi=0.15,camFov=500;
+let dragging=false,dSX=0,dSY=0,dT0=0,dP0=0;
+let particles=[],fillDots=[];
+const mouse={x:-9999,y:-9999};
+const pinnedPersons={},pinnedPairs={};
+const hoveredPersons=new Set(),hoveredPairs=new Set();
+
+const canvas=document.getElementById('c');
+const ctx=canvas.getContext('2d');
+const pillBox=document.getElementById('pills');
+const card=document.getElementById('card');
+const cardKindTxt=document.getElementById('card-kind-txt');
+const cardTitle=document.getElementById('card-title');
+const cardDesc=document.getElementById('card-desc');
+const cardTriggers=document.getElementById('card-triggers');
+const cardPeople=document.getElementById('card-people');
+const cardFeels=document.getElementById('card-feels');
+const cardClose=document.getElementById('card-close');
+const curDot=document.getElementById('cur');
+
+/* ═══════════════════════════════════════════════════════════
+   FLOATING CARD
+   ═══════════════════════════════════════════════════════════ */
+function showCard(label,ex,ey){
+  const d=PD[label]; if(!d) return;
+  card.className=d.kind==='pair'?'pair-mode':'';
+  cardKindTxt.textContent=d.kind==='pair'?'shared pattern':'pattern';
+  cardTitle.textContent=label;
+  cardDesc.textContent=d.desc;
+  cardTriggers.innerHTML=d.triggers.map(t=>`<span class="cs-tag">${t}</span>`).join('');
+  cardPeople.innerHTML=d.people.map(p=>`<span class="cs-tag person">${p}</span>`).join('');
+  cardFeels.textContent=d.feels;
+  // position
+  const cw=276,ch=310,mg=14;
+  let x=ex+18, y=ey-ch/2;
+  if(x+cw>W-mg) x=ex-cw-18;
+  y=Math.max(mg,Math.min(y,H-ch-mg));
+  card.style.left=x+'px'; card.style.top=y+'px';
+  requestAnimationFrame(()=>card.classList.add('open'));
+}
+function hideCard(){ card.classList.remove('open'); }
+
+cardClose.addEventListener('mousedown',e=>{e.stopPropagation();hideCard();});
+card.addEventListener('mousedown',e=>e.stopPropagation());
+window.addEventListener('keydown',e=>{if(e.key==='Escape')hideCard();});
+
+/* ═══════════════════════════════════════════════════════════
+   DOM PILLS
+   ═══════════════════════════════════════════════════════════ */
+function makePill(label,kind,key){
+  const el=document.createElement('div');
+  el.className=`pill ${kind}`;
+  el.textContent=label;
+  el._key=key; el._kind=kind; el._label=label;
+  pillBox.appendChild(el);
+  el.addEventListener('mouseenter',()=>{
+    curDot.classList.add('big');
+    kind==='solo'?hoveredPersons.add(key):hoveredPairs.add(key);
+  });
+  el.addEventListener('mouseleave',()=>{
+    curDot.classList.remove('big');
+    kind==='solo'?hoveredPersons.delete(key):hoveredPairs.delete(key);
+  });
+  el.addEventListener('mousedown',e=>{
+    e.stopPropagation();
+    if(kind==='solo') pinnedPersons[key]=Date.now()+PIN_MS;
+    else              pinnedPairs[key]=Date.now()+PIN_MS;
+    showCard(label,e.clientX,e.clientY);
+  });
+  return el;
+}
+
+PEOPLE.forEach(p=>p.patterns.forEach(pat=>{pat._el=makePill(pat.label,'solo',p.name);}));
+Object.entries(PAIRS).forEach(([k,pair])=>pair.patterns.forEach(pat=>{pat._el=makePill(pat.label,'pair',k);}));
+pillBox.addEventListener('mousemove',e=>{mouse.x=e.clientX;mouse.y=e.clientY;});
+
+/* ═══════════════════════════════════════════════════════════
+   CURSOR
+   ═══════════════════════════════════════════════════════════ */
+window.addEventListener('mousemove',e=>{
+  curDot.style.left=e.clientX+'px'; curDot.style.top=e.clientY+'px';
+});
+
+/* ═══════════════════════════════════════════════════════════
+   PARTICLES
+   ═══════════════════════════════════════════════════════════ */
+function rp(){return[(Math.random()-.5)*RANGE*2,(Math.random()-.5)*RANGE*2,(Math.random()-.5)*RANGE*2];}
+function rs(){const r=Math.random();if(r<.6)return.5+Math.random()*1.2;if(r<.88)return 1.8+Math.random()*2;return 4+Math.random()*4.5;}
+function mkP(){const[rx,ry,rz]=rp();return{rx,ry,rz,x:rx,y:ry,z:rz,vx:0,vy:0,size:rs(),sx:0,sy:0,_pr:null};}
+function mkF(){const[rx,ry,rz]=rp();return{rx,ry,rz,size:.3+Math.random()*1.1,alpha:.08+Math.random()*.18,sx:0,sy:0,_pr:null};}
+
+function init(){
+  W=canvas.width=window.innerWidth; H=canvas.height=window.innerHeight;
+  particles=Array.from({length:COUNT},mkP);
+  fillDots =Array.from({length:COUNT_FILL},mkF);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   PROJECTION
+   ═══════════════════════════════════════════════════════════ */
+function proj(wx,wy,wz){
+  const cT=Math.cos(camTheta),sT=Math.sin(camTheta);
+  const x1=wx*cT+wz*sT,y1=wy,z1=-wx*sT+wz*cT;
+  const cP=Math.cos(camPhi),sP=Math.sin(camPhi);
+  const x2=x1,y2=y1*cP-z1*sP,z2=y1*sP+z1*cP;
+  const dz=z2+RANGE+camFov,sc=camFov/Math.max(dz,40);
+  return{sx:W/2+x2*sc,sy:H/2+y2*sc,scale:sc,pz:z2};
+}
+
+/* ═══════════════════════════════════════════════════════════
+   INPUT
+   ═══════════════════════════════════════════════════════════ */
+window.addEventListener('mousemove',e=>{
+  if(dragging){camTheta=dT0+(e.clientX-dSX)*.007;camPhi=Math.max(-1.2,Math.min(1.2,dP0+(e.clientY-dSY)*.005));}
+  mouse.x=e.clientX;mouse.y=e.clientY;
+});
+window.addEventListener('mousedown',e=>{
+  if(card.classList.contains('open')&&!card.contains(e.target)) hideCard();
+  dragging=true;dSX=e.clientX;dSY=e.clientY;dT0=camTheta;dP0=camPhi;
+});
+window.addEventListener('mouseup',()=>{dragging=false;});
+window.addEventListener('mouseleave',()=>{dragging=false;mouse.x=-9999;mouse.y=-9999;});
+window.addEventListener('wheel',e=>{camFov=Math.max(200,Math.min(2500,camFov-e.deltaY*.9));},{passive:true});
+let t0=null;
+window.addEventListener('touchstart',e=>{t0={x:e.touches[0].clientX,y:e.touches[0].clientY,theta:camTheta,phi:camPhi};mouse.x=e.touches[0].clientX;mouse.y=e.touches[0].clientY;},{passive:true});
+window.addEventListener('touchmove',e=>{e.preventDefault();const tx=e.touches[0].clientX,ty=e.touches[0].clientY;if(t0){camTheta=t0.theta+(tx-t0.x)*.007;camPhi=Math.max(-1.2,Math.min(1.2,t0.phi+(ty-t0.y)*.005));}mouse.x=tx;mouse.y=ty;},{passive:false});
+window.addEventListener('touchend',()=>{t0=null;mouse.x=-9999;mouse.y=-9999;});
+window.addEventListener('resize',init);
+
+/* ═══════════════════════════════════════════════════════════
+   DRAW
+   ═══════════════════════════════════════════════════════════ */
+function ln(x1,y1,x2,y2,col,lw){ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.strokeStyle=col;ctx.lineWidth=lw;ctx.stroke();}
+function rrect(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();}
+function drawPersonPill(name,cx,cy,alpha){
+  ctx.font='500 11px system-ui,-apple-system,sans-serif';
+  const tw=ctx.measureText(name).width,pw=tw+18,ph=22,pr=5,px=cx-pw/2,py=cy-ph/2;
+  rrect(px,py,pw,ph,pr);ctx.fillStyle=`rgba(14,12,20,${alpha.toFixed(3)})`;ctx.fill();
+  ctx.fillStyle=`rgba(238,234,250,${alpha.toFixed(3)})`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(name,cx,cy);
+}
+
+function draw(){
+  requestAnimationFrame(draw);
+  camTheta+=AUTO_ROT;
+  const now=Date.now();
+  ctx.fillStyle=BG;ctx.fillRect(0,0,W,H);
+
+  for(const p of fillDots){p._pr=proj(p.rx,p.ry,p.rz);p.sx=p._pr.sx;p.sy=p._pr.sy;}
+  for(const p of particles){
+    const pr=proj(p.x,p.y,p.z);p._pr=pr;p.sx=pr.sx;p.sy=pr.sy;
+    const dsx=mouse.x-p.sx,dsy=mouse.y-p.sy,sd=Math.sqrt(dsx*dsx+dsy*dsy);
+    if(sd<CONNECT_R*1.6&&sd>1){const f=(1-sd/(CONNECT_R*1.6))*ATTRACT_F*pr.scale;p.vx+=dsx*f;p.vy+=dsy*f;}
+    p.vx+=(p.rx-p.x)*SPRING;p.vy+=(p.ry-p.y)*SPRING;p.vx*=DAMP;p.vy*=DAMP;p.x+=p.vx;p.y+=p.vy;
+  }
+
+  /* reveal logic */
+  const near=[];
+  for(const p of PEOPLE){const pr=proj(...p.pos),d=Math.hypot(mouse.x-pr.sx,mouse.y-pr.sy);if(d<PAIR_R)near.push({person:p,dist:d});}
+  near.sort((a,b)=>a.dist-b.dist);
+  let activePair=null;
+  if(near.length>=2){const k=pairKey(near[0].person.name,near[1].person.name);if(PAIRS[k])activePair=PAIRS[k];}
+  const pairNames=activePair?new Set([activePair.a,activePair.b]):new Set();
+  const singleActive=near.find(o=>o.dist<REVEAL_R&&!pairNames.has(o.person.name));
+
+  for(const p of PEOPLE){
+    const on=pinnedPersons[p.name]&&now<pinnedPersons[p.name];
+    const hov=hoveredPersons.has(p.name)&&p.reveal>0.05;
+    const active=on||hov||(!pairNames.has(p.name)&&singleActive&&singleActive.person===p);
+    p.reveal=active?Math.min(1,p.reveal+REVEAL_SPD):Math.max(0,p.reveal-REVEAL_SPD*.55);
+  }
+  for(const k in PAIRS){
+    const pair=PAIRS[k];
+    const on=pinnedPairs[k]&&now<pinnedPairs[k];
+    const hov=hoveredPairs.has(k)&&pair.reveal>0.05;
+    pair.reveal=(activePair===pair||on||hov)?Math.min(1,pair.reveal+REVEAL_SPD):Math.max(0,pair.reveal-REVEAL_SPD*.55);
+  }
+  const maxR=Math.max(...PEOPLE.map(p=>p.reveal),...Object.values(PAIRS).map(p=>p.reveal));
+
+  /* field connectors */
+  const fa=Math.max(0,1-maxR*1.5);
+  if(fa>0.01){
+    particles.map(p=>({p,d:Math.hypot(mouse.x-p.sx,mouse.y-p.sy)})).filter(o=>o.d<CONNECT_R).sort((a,b)=>a.d-b.d).slice(0,MAX_LINES).forEach(({p,d})=>{
+      const t=(1-d/CONNECT_R)*fa;ln(p.sx,p.sy,mouse.x,mouse.y,`rgba(10,10,10,${(t*.78).toFixed(3)})`,0.8+(1-d/CONNECT_R));
+    });
+  }
+
+  /* particles */
+  [...fillDots.map(p=>({sx:p.sx,sy:p.sy,pz:p._pr.pz,sc:p._pr.scale,sz:p.size,al:p.alpha,f:true})),
+   ...particles.map(p=>({sx:p.sx,sy:p.sy,pz:p._pr.pz,sc:p._pr.scale,sz:p.size,al:null,f:false}))]
+  .sort((a,b)=>a.pz-b.pz).forEach(d=>{
+    const s=Math.max(.3,d.sz*Math.min(2.2,.25+d.sc*2));const a=d.f?Math.min(1,d.al*d.sc*2.2):Math.min(.92,.18+d.sc*1.1);
+    ctx.beginPath();ctx.arc(d.sx,d.sy,s/2,0,Math.PI*2);ctx.fillStyle=`rgba(10,10,10,${a.toFixed(3)})`;ctx.fill();
+  });
+
+  /* pair networks */
+  for(const k in PAIRS){
+    const pair=PAIRS[k];if(pair.reveal<=.01)continue;
+    const rev=pair.reveal,pA=personMap[pair.a],pB=personMap[pair.b];
+    const prA=proj(...pA.pos),prB=proj(...pB.pos);
+    const spP=pair.patterns.map(pat=>proj((pA.pos[0]+pB.pos[0])/2+pat.mo[0],(pA.pos[1]+pB.pos[1])/2+pat.mo[1],(pA.pos[2]+pB.pos[2])/2+pat.mo[2]));
+    for(const sp of spP) ln(mouse.x,mouse.y,sp.sx,sp.sy,`rgba(80,40,150,${(rev*.13).toFixed(3)})`,.5);
+    for(const sp of spP){ln(prA.sx,prA.sy,sp.sx,sp.sy,`rgba(60,30,120,${(rev*.30).toFixed(3)})`,.6+rev*.4);ln(prB.sx,prB.sy,sp.sx,sp.sy,`rgba(60,30,120,${(rev*.30).toFixed(3)})`,.6+rev*.4);}
+    ln(prA.sx,prA.sy,prB.sx,prB.sy,`rgba(50,22,105,${(rev*.40).toFixed(3)})`,.8+rev*.6);
+    ln(mouse.x,mouse.y,prA.sx,prA.sy,`rgba(14,10,22,${(rev*.56).toFixed(3)})`,1+rev*.5);
+    ln(mouse.x,mouse.y,prB.sx,prB.sy,`rgba(14,10,22,${(rev*.56).toFixed(3)})`,1+rev*.5);
+    spP.forEach(sp=>{const ps=Math.max(2,3*sp.scale*1.8);ctx.beginPath();ctx.arc(sp.sx,sp.sy,ps,0,Math.PI*2);ctx.fillStyle=`rgba(80,40,160,${(rev*.68).toFixed(3)})`;ctx.fill();});
+    for(const pr of[prA,prB]){ctx.beginPath();ctx.arc(pr.sx,pr.sy,Math.max(10,30*pr.scale),0,Math.PI*2);ctx.strokeStyle=`rgba(80,40,160,${(rev*.16).toFixed(3)})`;ctx.lineWidth=1;ctx.stroke();}
+  }
+
+  /* individual networks */
+  for(const person of PEOPLE){
+    if(person.reveal<=.01)continue;
+    const rev=person.reveal,ppr=proj(...person.pos);
+    const pp=person.patterns.map(pat=>proj(person.pos[0]+pat.offset[0],person.pos[1]+pat.offset[1],person.pos[2]+pat.offset[2]));
+    for(const pd of pp) ln(mouse.x,mouse.y,pd.sx,pd.sy,`rgba(18,15,28,${(rev*.15).toFixed(3)})`,.5);
+    for(const pd of pp) ln(ppr.sx,ppr.sy,pd.sx,pd.sy,`rgba(18,15,28,${(rev*.36).toFixed(3)})`,.6+rev*.5);
+    ln(mouse.x,mouse.y,ppr.sx,ppr.sy,`rgba(14,10,22,${(rev*.58).toFixed(3)})`,1+rev*.6);
+    ctx.beginPath();ctx.arc(ppr.sx,ppr.sy,Math.max(10,30*ppr.scale),0,Math.PI*2);ctx.strokeStyle=`rgba(18,14,30,${(rev*.14).toFixed(3)})`;ctx.lineWidth=1;ctx.stroke();
+    pp.forEach(pd=>{const ps=Math.max(2,3*pd.scale*1.8);ctx.beginPath();ctx.arc(pd.sx,pd.sy,ps,0,Math.PI*2);ctx.fillStyle=`rgba(25,22,36,${(rev*.70).toFixed(3)})`;ctx.fill();});
+  }
+
+  /* person dots */
+  for(const person of PEOPLE){
+    const pr=proj(...person.pos),sz=Math.max(4.5,5.5*pr.scale*2.2);
+    const anyR=Math.max(person.reveal,...Object.values(PAIRS).filter(p=>p.a===person.name||p.b===person.name).map(p=>p.reveal));
+    if(anyR>.01){ctx.beginPath();ctx.arc(pr.sx,pr.sy,sz+5,0,Math.PI*2);ctx.fillStyle=`rgba(20,16,32,${(anyR*.10).toFixed(3)})`;ctx.fill();}
+    ctx.beginPath();ctx.arc(pr.sx,pr.sy,sz,0,Math.PI*2);ctx.fillStyle='rgba(12,10,18,0.92)';ctx.fill();
+  }
+
+  /* person labels */
+  for(const person of PEOPLE){
+    const pr=proj(...person.pos);
+    const anyR=Math.max(person.reveal,...Object.values(PAIRS).filter(p=>p.a===person.name||p.b===person.name).map(p=>p.reveal));
+    drawPersonPill(person.name,pr.sx,pr.sy-26,0.50+anyR*0.50);
+  }
+
+  /* update DOM pill positions */
+  for(const person of PEOPLE){
+    const rev=person.reveal,vis=rev>0.04;
+    person.patterns.forEach(pat=>{
+      const pr2=proj(person.pos[0]+pat.offset[0],person.pos[1]+pat.offset[1],person.pos[2]+pat.offset[2]);
+      const ps=Math.max(2,3*pr2.scale*1.8);
+      pat._el.style.left=pr2.sx+'px'; pat._el.style.top=(pr2.sy+ps+14)+'px';
+      pat._el.style.opacity=vis?(rev*.92).toFixed(3):'0';
+      pat._el.classList.toggle('live',vis);
+    });
+  }
+  for(const k in PAIRS){
+    const pair=PAIRS[k],rev=pair.reveal,vis=rev>0.04;
+    const pA=personMap[pair.a],pB=personMap[pair.b];
+    pair.patterns.forEach(pat=>{
+      const sp=proj((pA.pos[0]+pB.pos[0])/2+pat.mo[0],(pA.pos[1]+pB.pos[1])/2+pat.mo[1],(pA.pos[2]+pB.pos[2])/2+pat.mo[2]);
+      const ps=Math.max(2,3*sp.scale*1.8);
+      pat._el.style.left=sp.sx+'px'; pat._el.style.top=(sp.sy+ps+14)+'px';
+      pat._el.style.opacity=vis?(rev*.94).toFixed(3):'0';
+      pat._el.classList.toggle('live',vis);
+    });
+  }
+}
+
+init();
+draw();
+</script>
+</body>
+</html>

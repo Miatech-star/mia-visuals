@@ -1,0 +1,1112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Digital Brain</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@300;400&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#020509}
+canvas{display:block;position:fixed;inset:0;cursor:default}
+canvas.draggable{cursor:grab}
+canvas.dragging{cursor:grabbing}
+#vignette{position:fixed;inset:0;pointer-events:none;z-index:2;background:radial-gradient(ellipse at 50% 42%,transparent 26%,rgba(2,5,9,0.82) 90%)}
+#bloom{position:fixed;inset:0;pointer-events:none;z-index:1;background:radial-gradient(ellipse at 50% 48%,rgba(38,175,168,0.022) 0%,transparent 58%)}
+#curtain{position:fixed;inset:0;background:#020509;z-index:20;pointer-events:none;animation:lift 3s cubic-bezier(.4,0,.2,1) forwards}
+@keyframes lift{0%,40%{opacity:1}100%{opacity:0}}
+#ui{position:fixed;inset:0;pointer-events:none;z-index:5;font-family:'Syne',system-ui,sans-serif}
+#ctx{position:absolute;top:34px;left:38px;font-size:9px;font-weight:400;letter-spacing:0.28em;text-transform:uppercase;color:rgba(155,188,212,0.26);transition:color 1s}
+#dot{position:absolute;top:38px;right:38px;width:4px;height:4px;border-radius:50%;background:rgba(48,208,198,0.5);animation:breathe 3.4s ease-in-out infinite}
+@keyframes breathe{0%,100%{opacity:.22;transform:scale(1)}50%{opacity:.72;transform:scale(1.7)}}
+#hint{position:absolute;bottom:40px;left:50%;transform:translateX(-50%);font-size:9px;font-weight:300;letter-spacing:0.30em;text-transform:uppercase;color:rgba(148,180,208,0.28);white-space:nowrap;text-align:center;transition:opacity 1s}
+#back{position:absolute;bottom:40px;right:38px;font-family:'Syne',system-ui,sans-serif;font-size:9px;font-weight:300;letter-spacing:0.24em;text-transform:uppercase;color:rgba(148,180,208,0.22);opacity:0;transition:opacity 0.7s,color 0.3s;pointer-events:all;cursor:pointer;background:none;border:none;padding:0}
+#back:hover{color:rgba(48,208,198,0.60)}
+#panel{position:absolute;bottom:88px;left:50%;transform:translateX(-50%);text-align:center;opacity:0;transition:opacity 0.7s;pointer-events:none;min-width:200px}
+#panel .pn{font-size:15px;font-weight:400;letter-spacing:0.26em;text-transform:uppercase;color:rgba(48,208,198,0.98);margin-bottom:10px;text-shadow:0 0 24px rgba(48,208,198,0.30)}
+#panel .pr{width:30px;height:1px;margin:0 auto 10px;background:linear-gradient(90deg,transparent,rgba(48,208,198,0.45),transparent)}
+#panel .pm{font-size:9px;font-weight:300;letter-spacing:0.22em;color:rgba(175,205,225,0.65)}
+#panel .pi{
+  margin-top:12px;
+  font-size:10px;font-weight:300;line-height:1.65;
+  color:rgba(165,200,222,0.58);
+  max-width:280px;margin-left:auto;margin-right:auto;
+  font-style:italic;letter-spacing:0.02em;
+}
+#ltog{
+  position:absolute;bottom:40px;left:38px;
+  font-family:'Syne',system-ui,sans-serif;
+  font-size:9px;font-weight:400;letter-spacing:0.22em;text-transform:uppercase;
+  color:rgba(165,198,222,0.70);
+  background:rgba(4,12,24,0.88);
+  border:1px solid rgba(48,208,198,0.35);
+  border-radius:22px;padding:6px 14px 5px;
+  cursor:pointer;pointer-events:all;
+  transition:color 0.25s,border-color 0.25s,box-shadow 0.25s,background 0.25s;
+  display:flex;align-items:center;gap:8px;
+}
+#ltog:hover{color:rgba(200,230,242,0.95);border-color:rgba(48,208,198,0.62);background:rgba(3,18,32,0.95);}
+#ltog.on{color:rgba(48,208,198,1.0);border-color:rgba(48,208,198,0.80);background:rgba(2,22,38,0.96);box-shadow:0 0 14px rgba(48,208,198,0.18);}
+#ltog-dot{width:7px;height:7px;border-radius:50%;border:1.5px solid currentColor;transition:background 0.2s,border-color 0.2s;flex-shrink:0;}
+#ltog.on #ltog-dot{background:rgba(48,208,198,1.0);border-color:rgba(48,208,198,1.0);}
+#dbar{position:absolute;right:38px;top:50%;transform:translateY(-50%);width:1px;height:72px;background:linear-gradient(180deg,transparent,rgba(148,180,208,0.10),transparent);opacity:0;transition:opacity 0.5s}
+#dmk{position:absolute;left:-1.5px;width:4px;height:4px;border-radius:50%;background:rgba(48,208,198,0.45);top:0%;transition:top 0.5s cubic-bezier(.4,0,.2,1)}
+
+/* ── PILL LABELS ─────────────────────────────────────────────── */
+.lpill{
+  display:inline-block;
+  padding:5px 13px 4px;
+  border-radius:24px;
+  background:rgba(4,12,24,0.92);
+  border:1px solid rgba(48,208,198,0.38);
+  backdrop-filter:blur(10px);
+  -webkit-backdrop-filter:blur(10px);
+  transition:opacity 0.3s,border-color 0.25s,box-shadow 0.25s;
+}
+.lpill.lhub{
+  padding:7px 20px 6px;
+  border-color:rgba(48,208,198,0.62);
+  background:rgba(3,16,30,0.94);
+  box-shadow:0 0 20px rgba(48,208,198,0.14);
+}
+.lpill.lsm{
+  padding:3px 10px 3px;
+  border-color:rgba(48,208,198,0.22);
+  background:rgba(4,10,20,0.86);
+}
+.lpill.lactive{
+  border-color:rgba(48,208,198,0.90) !important;
+  background:rgba(3,22,38,0.96) !important;
+  box-shadow:0 0 22px rgba(48,208,198,0.28) !important;
+}
+.lpill.lhover{
+  border-color:rgba(48,208,198,0.75) !important;
+  box-shadow:0 0 16px rgba(48,208,198,0.20) !important;
+}
+
+/* ── HOVER TOOLTIP — for unlabeled or small nodes ────────────── */
+#htip{
+  position:fixed;pointer-events:none;z-index:9;
+  font-family:'Syne',system-ui,sans-serif;
+  font-size:8px;font-weight:400;letter-spacing:0.22em;text-transform:uppercase;
+  color:rgba(200,225,238,0.95);
+  background:rgba(3,12,24,0.92);
+  border:1px solid rgba(48,208,198,0.42);
+  border-radius:18px;padding:4px 11px 3px;
+  opacity:0;transition:opacity 0.15s;
+  transform:translateX(-50%);white-space:nowrap;
+  box-shadow:0 0 14px rgba(48,208,198,0.12);
+}
+</style>
+</head>
+<body>
+<div id="bloom"></div>
+<div id="vignette"></div>
+<div id="curtain"></div>
+<div id="ui">
+  <div id="ctx">Digital Brain</div>
+  <div id="dot"></div>
+  <div id="hint">Scroll up to explore</div>
+  <button id="back">← Return</button>
+  <div id="panel">
+    <div class="pn" id="pn">You</div>
+    <div class="pr"></div>
+    <div class="pm" id="pm">0 connections</div>
+    <div class="pi" id="pi"></div>
+  </div>
+  <div id="dbar"><div id="dmk"></div></div>
+  <div id="htip"></div>
+  <button id="ltog"><span id="ltog-dot"></span>Labels</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+'use strict';
+
+const W = window.innerWidth, H = window.innerHeight;
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(W, H);
+renderer.setClearColor(0x020509, 1);
+document.body.insertBefore(renderer.domElement, document.getElementById('bloom'));
+
+const scene = new THREE.Scene();
+scene.fog   = new THREE.Fog(0x020509, 60, 280);
+const camera = new THREE.PerspectiveCamera(52, W / H, 0.1, 800);
+camera.position.set(0, 22, 230);
+
+let _s = 7331;
+const rng  = () => { _s = (_s * 16807) % 2147483647; return (_s - 1) / 2147483646; };
+const rngN = () => Math.sqrt(-2 * Math.log(rng() + 1e-9)) * Math.cos(2 * Math.PI * rng());
+
+// ══════════════════════════════════════════════════════════════════════════
+//  GRAPH
+// ══════════════════════════════════════════════════════════════════════════
+const nodes = [], edges = [], adj = [];
+
+const CLUSTERS = [
+  [  0,   0,   0,   0,   9.5, 225 ],
+  [  1,  25,   7,  -9,   6.2,  98 ],
+  [  2, -22,  -6,  12,   5.8,  88 ],
+  [  3,   9, -23,  10,   5.4,  80 ],
+  [  4, -16,  20, -13,   5.2,  74 ],
+  [  5,  32, -12,   5,   4.9,  62 ],
+  [  6,  -9,  27,  18,   4.6,  55 ],
+  [  7,  48,   5, -22,   6.4,  48 ],
+  [  8, -42,  -9,   8,   5.9,  44 ],
+  [  9,   5, -48,  -9,   5.5,  40 ],
+  [ 10, -26,  42, -28,   5.0,  36 ],
+  [ 11,  22,  35,  26,   4.6,  32 ],
+];
+
+for (const [id, cx, cy, cz, r, n] of CLUSTERS) {
+  for (let i = 0; i < n; i++) {
+    let pos;
+    if (i > 6 && rng() < 0.22) {
+      const ref = nodes[nodes.length - 1 - Math.floor(rng() * 4)];
+      if (ref && ref.cluster === id) {
+        pos = new THREE.Vector3(ref.pos.x + rngN()*1.4, ref.pos.y + rngN()*1.4, ref.pos.z + rngN()*1.4);
+      }
+    }
+    if (!pos) {
+      const rad = Math.pow(rng(), 0.42) * r, th = rng()*Math.PI*2, ph = Math.acos(2*rng()-1);
+      pos = new THREE.Vector3(cx+rad*Math.sin(ph)*Math.cos(th)+rngN()*.45, cy+rad*Math.sin(ph)*Math.sin(th)+rngN()*.45, cz+rad*Math.cos(ph)+rngN()*.45);
+    }
+    nodes.push({ id: nodes.length, pos, cluster: id, tier: rng()<.030?2:rng()<.14?1:0 });
+  }
+}
+for (let i = 0; i < 380; i++) {
+  const th=rng()*Math.PI*2, ph=Math.acos(2*rng()-1), r=.35+Math.pow(rng(),.55)*.65;
+  nodes.push({ id:nodes.length, pos:new THREE.Vector3((38+rng()*60)*r*Math.sin(ph)*Math.cos(th),(28+rng()*42)*r*Math.sin(ph)*Math.sin(th),(44+rng()*68)*r*Math.cos(ph)), cluster:-1, tier:0 });
+}
+
+// ── CONTENT ──────────────────────────────────────────────────────────────
+const HUB_LABELS = ['You','Self-Worth','Performance','Relationships','Inner Critic','The Body','Belonging','Control','Intimacy','Visibility','Memory','Becoming'];
+const INNER_LABELS = [
+  ['the gap between masks','the self no one sees','running from stillness','who am I becoming'],
+  ['fear of disappointing mom','people-pleasing','imposter feeling','tying worth to output','shrinking to be liked','proving I deserve love'],
+  ['perfectionism spiral','job interview nerves','school presentation fear','overexplaining to be understood','rehearsing conversations','terrified of being wrong'],
+  ['argument with Jennifer','fear of abandonment','freezing after conflict','wanting reassurance after silence','reading tone into text','holding back what I mean'],
+  ['3am overthinking','rereading before I send','replaying what I said','shame spiral at night','never feeling enough','why did I say that'],
+  ['body insecurity at the gym','comparing in the mirror','not taking up space','going numb under stress','disconnecting from body'],
+  ['shrinking in group conversations','feeling like the outsider','performing to fit in','always being misunderstood','code-switching to belong'],
+  ['anxiety spiral','catastrophizing quietly','needing to plan everything','stuck choosing nothing','controlling what I can'],
+  ['fear of being vulnerable','wanting to be truly known','trust after being hurt','staying at the surface on purpose'],
+  ['wanting to be seen','terrified of being seen','hiding potential on purpose','making myself smaller'],
+  ['childhood shame I still carry','things I should have said','who I was before this','the moment it all shifted'],
+  ['who I want to become','wasted potential fear','the version I keep postponing','building slowly in private'],
+];
+
+// ── SEMANTIC NAMES for unlabeled nodes (per-cluster vocabulary) ───────────
+const CLUSTER_VOCAB = [
+  ['Core Pattern','Deep Belief','Inner Voice','Self Layer','Identity Root','Core Wound','Hidden Layer','Origin Point','Emotional Base','Root Story','Self Image','Central Fear'],
+  ['Worth Doubt','Approval Need','Earned Love','Proving Ground','Value Question','Invisible Standard','Love Condition','Self-Esteem Dip','Validation Loop','Achievement Trap','Enough Question','Worthy Moment'],
+  ['Performance Fear','Failure Ghost','Pressure Point','Output Trap','Standard Loop','Competence Fear','Expectation Weight','Result Anxiety','Proving Pressure','Judgment Dread','Success Anxiety','Achievement Need'],
+  ['Attachment Fear','Connection Need','Trust Wound','Bond Pattern','Closeness Block','Safety Reflex','Rejection Memory','Relationship Echo','Dependency Fear','Bond Rupture','Love Condition','Intimacy Ladder'],
+  ['Self-Critical Loop','Judgment Voice','Shame Trigger','Doubt Spiral','Critic Memory','Inner Verdict','Shame Archive','Regret Loop','Internal Attack','Negative Script','Harsh Standard','Self-Blame Pattern'],
+  ['Body Tension','Physical Memory','Somatic Block','Body Signal','Stress Response','Physical Shutdown','Embodied Fear','Muscle Memory','Nervous Reflex','Body Story','Sensation Block','Physical Imprint'],
+  ['Belonging Search','Outsider Reflex','Group Anxiety','Identity Shift','Social Mask','Acceptance Need','Tribe Fear','Exclusion Memory','Community Wound','Fit Question','Group Role','Fitting Pattern'],
+  ['Control Behavior','Safety Loop','Certainty Need','Risk Avoidance','Planning Reflex','Order Seeking','Worry Pattern','Predictability Need','Threat Scan','Containment Drive','Future Control','Anxiety Anchor'],
+  ['Intimacy Block','Closeness Fear','Vulnerability Cost','Exposed Feeling','Trust Test','Emotional Wall','Bonding Risk','Open Wound','Depth Limit','Reveal Fear','Skin Boundary','Known Dread'],
+  ['Visibility Fear','Hiding Pattern','Expression Block','Seen Anxiety','Attention Dread','Spotlight Fear','Public Shrink','Exposure Risk','Recognition Block','Stage Fear','Presence Block','Watched Feeling'],
+  ['Memory Echo','Past Wound','Old Story','Childhood Loop','Remembered Pain','Unhealed Mark','Time Imprint','Origin Scene','Past Self','Before Moment','Archive Entry','Historical Pattern'],
+  ['Future Block','Growth Edge','Becoming Fear','Change Resistance','Potential Ceiling','Next Step Block','Vision Limit','Evolution Pause','Threshold Fear','Unlived Life','Future Self Gap','Possibility Block'],
+];
+
+// Returns a semantic name for any node (uses explicit label if set, else vocab)
+function getNodeName(n) {
+  if (n.label) return n.label;
+  if (n.cluster < 0) {
+    const s=['Distant Echo','Background Signal','Peripheral Thought','Ambient Trace','Subconscious Drift','Remote Echo','Outer Pattern','Faint Memory'];
+    return s[n.id % s.length];
+  }
+  const vocab = CLUSTER_VOCAB[n.cluster] || CLUSTER_VOCAB[0];
+  return vocab[n.id % vocab.length];
+}
+
+// Panel title: labeled nodes show label; unlabeled show "Node N — Semantic Name"
+function getPanelTitle(n) {
+  if (n.label) return n.label;
+  const vocab = CLUSTER_VOCAB[n.cluster] || CLUSTER_VOCAB[0];
+  return `Node ${n.id} — ${vocab[n.id % vocab.length]}`;
+}
+
+// Panel insight text — per label or cluster fallback
+const NODE_INSIGHTS = new Map([
+  ['You','The center from which everything else radiates. All your patterns, wounds, and possibilities converge here.'],
+  ['Self-Worth','How you measure your own value — often tied to performance, approval, or love that felt conditional early on.'],
+  ['Performance','The drive to prove, achieve, and meet standards that may have never actually been yours to begin with.'],
+  ['Relationships','Where your deepest fears and greatest longings meet — the arena where old wounds still quietly run the show.'],
+  ['Inner Critic','The internal voice that keeps score, replays mistakes, and mistakes harshness for high standards.'],
+  ['The Body','Where everything lands eventually. The body keeps a record the mind often tries to skip past.'],
+  ['Belonging','The quiet search for a place where you can stop performing and simply be received as you are.'],
+  ['Control','A strategy for managing fear — the belief that enough planning can keep the worst from happening.'],
+  ['Intimacy','The gap between being known and being truly seen. Closeness where the risk of rejection lives.'],
+  ['Visibility','The tension between wanting to matter and fearing what it actually means when you do.'],
+  ['Memory','The stories still running in the background, shaping how you read the present through the past.'],
+  ['Becoming','The unfinished version of yourself — always a few steps ahead, always requiring a risk not yet taken.'],
+  ['fear of disappointing mom','When love felt conditional on performance, disappointing those who raised you becomes the deepest fear.'],
+  ['3am overthinking','When the noise stops, the mind fills the silence with everything that feels unresolved or unsafe.'],
+  ['rereading before I send','Each re-read is a small audit — checking whether your true self is too much, or not enough.'],
+  ['argument with Jennifer','Not just the words — the old fear underneath that conflict means something irreparable has begun.'],
+  ['body insecurity at the gym','The body becomes a site of judgment when you learn early that how you look is how you are valued.'],
+  ['perfectionism spiral','The gap between the standard and the result is where shame lives. Perfectionism tries to close it before anyone notices.'],
+  ['wanting reassurance after silence','Silence can feel like withdrawal — the anxious mind fills the gap with its worst predictions.'],
+  ['shrinking in group conversations','Taking up less space can feel like safety when visibility once felt dangerous.'],
+  ['fear of abandonment','The deepest relational fear: that eventual departure is inevitable, and that you will not survive it.'],
+  ['people-pleasing','When your own needs feel secondary to keeping peace — a strategy born from needing approval to feel okay.'],
+  ['late-night overthinking','The mind running its loops when defenses drop. Rarely productive — mostly a way to feel in control of what you can\'t.'],
+  ['imposter feeling','The gap between how others see you and how you feel inside — the quiet terror of being found out.'],
+  ['the gap between masks','The exhaustion of maintaining different versions of yourself, and the longing to just be one person.'],
+  ['the self no one sees','The version that exists before performance and approval — quieter, more uncertain, and often more real.'],
+]);
+const CLUSTER_INSIGHTS = [
+  'A core pattern shaping how you experience yourself beneath the surface.',
+  'A recurring question about your own worth, activated by comparison or pressure.',
+  'Where achievement becomes both identity and threat — the cost of doing over simply being.',
+  'A place where old attachment patterns play out in the people closest to you today.',
+  'The internal judge that has mistaken cruelty for high standards your whole life.',
+  'Where stress and emotion settle before the mind has a chance to process them.',
+  'The search for a place you can stop performing and simply be received as you are.',
+  'An attempt to feel safe through predictability — managing the future to prevent loss.',
+  'The threshold between surface connection and the kind of closeness that feels truly risky.',
+  'The space where wanting to be seen and fearing it exist in constant tension.',
+  'A story from the past that the present is still trying to make sense of.',
+  'The unbuilt future you — held back by a resistance that feels like reasonableness.',
+];
+function getNodeInsight(n){
+  if(n.label&&NODE_INSIGHTS.has(n.label)) return NODE_INSIGHTS.get(n.label);
+  const ci=n.cluster>=0&&n.cluster<CLUSTER_INSIGHTS.length?n.cluster:0;
+  return CLUSTER_INSIGHTS[ci];
+}
+
+let hubIdx = 0;
+{ let hd = Infinity; nodes.forEach((n,i) => { if(n.cluster===0){const d=n.pos.length();if(d<hd){hd=d;hubIdx=i;}} }); }
+nodes[hubIdx].tier=3; nodes[hubIdx].label=HUB_LABELS[0]; nodes[hubIdx].pos.set(.12,.08,.18);
+
+for (let cid=1;cid<CLUSTERS.length;cid++) {
+  const [id,cx,cy,cz]=CLUSTERS[cid]; const cc=new THREE.Vector3(cx,cy,cz);
+  let best=-1,bd=Infinity;
+  nodes.forEach((n,i)=>{ if(n.cluster===id){const d=n.pos.distanceTo(cc);if(d<bd){bd=d;best=i;}} });
+  if(best>=0){nodes[best].tier=Math.max(nodes[best].tier,2);nodes[best].label=HUB_LABELS[cid];}
+}
+for (let cid=0;cid<Math.min(CLUSTERS.length,INNER_LABELS.length);cid++) {
+  const [id,cx,cy,cz]=CLUSTERS[cid];
+  const cc=cid===0?new THREE.Vector3(0,0,0):new THREE.Vector3(cx,cy,cz);
+  const pool=nodes.filter(n=>n.cluster===id&&!n.label).sort((a,b)=>a.pos.distanceTo(cc)-b.pos.distanceTo(cc));
+  for(let k=0;k<Math.min(INNER_LABELS[cid].length,pool.length);k++){
+    pool[k].label=INNER_LABELS[cid][k]; if(pool[k].tier===0)pool[k].tier=1;
+  }
+}
+
+for (const [id] of CLUSTERS) {
+  const isMain=(id===0), cn=nodes.filter(n=>n.cluster===id), mxD=isMain?6.5:4.9;
+  for(let i=0;i<cn.length;i++){let ec=0;for(let j=i+1;j<cn.length&&ec<8;j++){if(cn[i].pos.distanceTo(cn[j].pos)<mxD&&rng()<.50){edges.push([cn[i].id,cn[j].id]);ec++;}}}
+}
+for(let i=0;i<CLUSTERS.length;i++){for(let j=i+1;j<CLUSTERS.length;j++){
+  const na=nodes.filter(n=>n.cluster===CLUSTERS[i][0]),nb=nodes.filter(n=>n.cluster===CLUSTERS[j][0]);
+  const cnt=(i===0||j===0)?5:(i<=6&&j<=6)?2:1;
+  for(let k=0;k<cnt;k++){const a=na[Math.floor(rng()*na.length)],b=nb[Math.floor(rng()*nb.length)];if(a&&b)edges.push([a.id,b.id]);}
+}}
+nodes.forEach(()=>adj.push([]));
+for(const [a,b] of edges){adj[a].push(b);adj[b].push(a);}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  NODE SHADER — luminous discs
+// ══════════════════════════════════════════════════════════════════════════
+const NODE_VERT = `
+uniform float uTime; attribute float aSize; attribute vec3 aColor; attribute float aImp; attribute float aPhase;
+varying vec3 vColor; varying float vImp; varying float vDist;
+void main(){
+  vColor=aColor;vImp=aImp;
+  vec4 mv=modelViewMatrix*vec4(position,1.0);vDist=-mv.z;
+  float s=aSize;
+  if(aImp>2.5)s*=1.0+0.17*sin(uTime*1.88+aPhase);
+  else if(aImp>1.5)s*=1.0+0.07*sin(uTime*1.35+aPhase);
+  float sp=s*(330.0/max(vDist,.8));
+  float mx=aImp>2.5?58.0:aImp>1.5?44.0:aImp>.5?28.0:9.0;
+  gl_PointSize=clamp(sp,.5,mx);gl_Position=projectionMatrix*mv;
+}`;
+const NODE_FRAG = `
+varying vec3 vColor;varying float vImp;varying float vDist;
+void main(){
+  vec2 uv=gl_PointCoord*2.0-1.0;float d=length(uv);if(d>1.0)discard;
+  vec3 col=vColor;float alpha=0.0;
+  if(vImp>2.5){float core=1.0-smoothstep(0.0,.18,d);float inner=(1.0-smoothstep(.10,.52,d))*.62;float corona=(1.0-smoothstep(.36,1.0,d))*.26;alpha=clamp(core*1.12+inner+corona,0.0,1.0);col=mix(col,vec3(.90,1.0,.98),core*.52);col+=vec3(.04,.18,.26)*corona;}
+  else if(vImp>1.5){float core=1.0-smoothstep(0.0,.24,d);float glow=(1.0-smoothstep(.14,.82,d))*.40;alpha=clamp(core+glow,0.0,1.0);col=mix(col,vec3(1.0),core*.30);}
+  else if(vImp>.5){float core=(1.0-smoothstep(0.0,.30,d))*.80;float haze=(1.0-smoothstep(.22,.78,d))*.16;alpha=core+haze;}
+  else{alpha=(1.0-smoothstep(0.0,.52,d))*.44;}
+  float fog=1.0-clamp((vDist-44.0)/170.0,0.0,1.0);alpha*=fog;if(alpha<.008)discard;
+  gl_FragColor=vec4(col,alpha);
+}`;
+
+const nCount=nodes.length;
+const posArr=new Float32Array(nCount*3),colArr=new Float32Array(nCount*3),sizeArr=new Float32Array(nCount),impArr=new Float32Array(nCount),phaseArr=new Float32Array(nCount);
+const T_COLS=[[.18,.27,.40],[.38,.56,.72],[.64,.80,.90],[.22,.82,.78]];
+const T_SZ=[1.0,2.6,5.5,11.5];
+nodes.forEach((n,i)=>{
+  posArr[i*3]=n.pos.x;posArr[i*3+1]=n.pos.y;posArr[i*3+2]=n.pos.z;
+  const c=T_COLS[n.tier];colArr[i*3]=c[0];colArr[i*3+1]=c[1];colArr[i*3+2]=c[2];
+  sizeArr[i]=T_SZ[n.tier];impArr[i]=n.tier;phaseArr[i]=rng()*Math.PI*2;
+});
+const origColArr=Float32Array.from(colArr),origSizeArr=Float32Array.from(sizeArr);
+const nodeGeo=new THREE.BufferGeometry();
+nodeGeo.setAttribute('position',new THREE.BufferAttribute(posArr,3));
+nodeGeo.setAttribute('aColor',new THREE.BufferAttribute(colArr,3));
+nodeGeo.setAttribute('aSize',new THREE.BufferAttribute(sizeArr,1));
+nodeGeo.setAttribute('aImp',new THREE.BufferAttribute(impArr,1));
+nodeGeo.setAttribute('aPhase',new THREE.BufferAttribute(phaseArr,1));
+const nodeMat=new THREE.ShaderMaterial({vertexShader:NODE_VERT,fragmentShader:NODE_FRAG,uniforms:{uTime:{value:0}},transparent:true,depthWrite:false,blending:THREE.AdditiveBlending});
+const nodePoints=new THREE.Points(nodeGeo,nodeMat);nodePoints.frustumCulled=false;scene.add(nodePoints);
+
+// ══════════════════════════════════════════════════════════════════════════
+//  EDGE SHADER  — depth-faded + TRAVELING LIGHT through connectors
+//  Each edge gets a unique phase/speed → a continuous light travels A→B,
+//  resets, travels again — never flashing, always in motion
+// ══════════════════════════════════════════════════════════════════════════
+const EDGE_VERT = `
+attribute vec3 aEC; varying vec3 vEC; varying float vDist;
+void main(){
+  vEC=aEC; vec4 mv=modelViewMatrix*vec4(position,1.0);
+  vDist=-mv.z; gl_Position=projectionMatrix*mv;
+}`;
+
+const EDGE_FRAG = `
+varying vec3 vEC; varying float vDist;
+void main(){
+  float fog=1.0-clamp((vDist-28.0)/185.0,0.0,1.0);
+  if(fog<0.012)discard;
+  gl_FragColor=vec4(vEC,fog);
+}`;
+
+const eCount=edges.length;
+const ePosArr=new Float32Array(eCount*6);
+const eColArr=new Float32Array(eCount*6);
+
+edges.forEach(([a,b],i)=>{
+  const na=nodes[a],nb=nodes[b],pa=na.pos,pb=nb.pos;
+  ePosArr[i*6+0]=pa.x;ePosArr[i*6+1]=pa.y;ePosArr[i*6+2]=pa.z;
+  ePosArr[i*6+3]=pb.x;ePosArr[i*6+4]=pb.y;ePosArr[i*6+5]=pb.z;
+  const intra=(na.cluster===nb.cluster&&na.cluster>=0),mt=Math.max(na.tier,nb.tier);
+  const br=mt>=3?[.075,.155,.210]:mt>=2?[.055,.110,.162]:intra&&mt>=1?[.030,.062,.100]:intra?[.016,.036,.060]:[.007,.016,.028];
+  eColArr[i*6+0]=br[0];eColArr[i*6+1]=br[1];eColArr[i*6+2]=br[2];
+  eColArr[i*6+3]=br[0];eColArr[i*6+4]=br[1];eColArr[i*6+5]=br[2];
+});
+const eColBackup=Float32Array.from(eColArr);
+
+const edgeGeo=new THREE.BufferGeometry();
+edgeGeo.setAttribute('position',new THREE.BufferAttribute(ePosArr,3));
+edgeGeo.setAttribute('aEC',     new THREE.BufferAttribute(eColArr,3));
+
+const edgeMat=new THREE.ShaderMaterial({
+  vertexShader:EDGE_VERT, fragmentShader:EDGE_FRAG,
+  transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
+});
+const edgeLines=new THREE.LineSegments(edgeGeo,edgeMat);
+edgeLines.frustumCulled=false;
+scene.add(edgeLines);
+
+// ── HIGHLIGHT EDGES ───────────────────────────────────────────────────────
+const HL_VERT=`varying float vDist;void main(){vec4 mv=modelViewMatrix*vec4(position,1.0);vDist=-mv.z;gl_Position=projectionMatrix*mv;}`;
+const HL_FRAG=`uniform float uTime;varying float vDist;void main(){float fog=1.0-clamp((vDist-8.0)/55.0,0.0,1.0);float p=0.68+0.32*sin(uTime*2.2);float a=fog*p*0.62;if(a<0.018)discard;gl_FragColor=vec4(0.18,0.82,0.76,a);}`;
+let hlEdgeLines=null;
+function buildHlEdges(idx){
+  if(hlEdgeLines){scene.remove(hlEdgeLines);hlEdgeLines.geometry.dispose();hlEdgeLines.material.dispose();hlEdgeLines=null;}
+  const nb=new Set(adj[idx]);nb.add(idx);
+  const rel=edges.filter(([a,b])=>nb.has(a)&&nb.has(b));if(!rel.length)return;
+  const pos=new Float32Array(rel.length*6);
+  rel.forEach(([a,b],i)=>{const pa=nodes[a].pos,pb=nodes[b].pos;pos[i*6]=pa.x;pos[i*6+1]=pa.y;pos[i*6+2]=pa.z;pos[i*6+3]=pb.x;pos[i*6+4]=pb.y;pos[i*6+5]=pb.z;});
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  const m=new THREE.ShaderMaterial({vertexShader:HL_VERT,fragmentShader:HL_FRAG,uniforms:{uTime:{value:0}},transparent:true,depthWrite:false,blending:THREE.AdditiveBlending});
+  hlEdgeLines=new THREE.LineSegments(g,m);hlEdgeLines.frustumCulled=false;scene.add(hlEdgeLines);
+}
+
+// ── HUB GLOW + RIPPLES ───────────────────────────────────────────────────
+function makeGlowTex(inner,outer){
+  const cv=document.createElement('canvas');cv.width=cv.height=128;const cx=cv.getContext('2d');
+  const g=cx.createRadialGradient(64,64,0,64,64,64);g.addColorStop(0,inner);g.addColorStop(.4,outer);g.addColorStop(1,'rgba(0,0,0,0)');
+  cx.fillStyle=g;cx.fillRect(0,0,128,128);return new THREE.CanvasTexture(cv);
+}
+const gTexHub=makeGlowTex('rgba(50,212,204,0.92)','rgba(24,112,112,0.08)');
+const gTexHalo=makeGlowTex('rgba(34,152,192,0.50)','rgba(8,44,78,0.02)');
+const gTexSec=makeGlowTex('rgba(128,182,212,0.68)','rgba(44,72,110,0.04)');
+function glowPts(flat,tex,sz,op){
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(flat),3));
+  const m=new THREE.PointsMaterial({size:sz,map:tex,blending:THREE.AdditiveBlending,transparent:true,depthWrite:false,opacity:op,fog:false});
+  const p=new THREE.Points(g,m);p.frustumCulled=false;scene.add(p);return p;
+}
+const hp=[nodes[hubIdx].pos.x,nodes[hubIdx].pos.y,nodes[hubIdx].pos.z];
+const glowHub=glowPts(hp,gTexHub,5.8,.80);
+const glowHalo=glowPts(hp,gTexHalo,20.0,.08);
+const impN=nodes.filter(n=>n.tier===2);
+const impPos=new Float32Array(impN.length*3);impN.forEach((n,i)=>{impPos[i*3]=n.pos.x;impPos[i*3+1]=n.pos.y;impPos[i*3+2]=n.pos.z;});
+const glowSec=glowPts([...impPos],gTexSec,2.8,.30);
+
+// ── HOVER GLOW — one bright point that tracks the hovered node ───────────
+const hoverGlowPos=new Float32Array(3);
+const hoverGlowGeo=new THREE.BufferGeometry();
+hoverGlowGeo.setAttribute('position',new THREE.BufferAttribute(hoverGlowPos,3));
+const hoverGlowMat=new THREE.PointsMaterial({size:7.5,map:gTexHub,blending:THREE.AdditiveBlending,transparent:true,depthWrite:false,opacity:0,fog:false});
+const hoverGlowPts=new THREE.Points(hoverGlowGeo,hoverGlowMat);
+hoverGlowPts.frustumCulled=false;
+scene.add(hoverGlowPts);
+const ripples=[];
+for(let i=0;i<3;i++){
+  const geo=new THREE.RingGeometry(.04,.12,56);
+  const mat=new THREE.MeshBasicMaterial({color:0x2dd8d0,transparent:true,opacity:0,side:THREE.DoubleSide,blending:THREE.AdditiveBlending,depthWrite:false,fog:false});
+  const mesh=new THREE.Mesh(geo,mat);mesh.position.copy(nodes[hubIdx].pos);scene.add(mesh);
+  ripples.push({mesh,phase:i/3});
+}
+
+// ── BACKGROUND ────────────────────────────────────────────────────────────
+const nebPos=new Float32Array(720*3);
+for(let i=0;i<720;i++){const th=Math.random()*Math.PI*2,ph=Math.acos(2*Math.random()-1),r=60+Math.random()*150;nebPos[i*3]=r*.88*Math.sin(ph)*Math.cos(th);nebPos[i*3+1]=r*.62*Math.sin(ph)*Math.sin(th);nebPos[i*3+2]=r*1.10*Math.cos(th);}
+const nebGeo=new THREE.BufferGeometry();nebGeo.setAttribute('position',new THREE.BufferAttribute(nebPos,3));
+scene.add(new THREE.Points(nebGeo,new THREE.PointsMaterial({color:0x12223a,size:.15,transparent:true,opacity:.36})));
+const starPos=new Float32Array(2400*3);
+for(let i=0;i<2400;i++){const r=145+Math.random()*295,th=Math.random()*Math.PI*2,ph=Math.acos(2*Math.random()-1);starPos[i*3]=r*Math.sin(ph)*Math.cos(th);starPos[i*3+1]=r*Math.sin(ph)*Math.sin(th);starPos[i*3+2]=r*Math.cos(ph);}
+const starGeo=new THREE.BufferGeometry();starGeo.setAttribute('position',new THREE.BufferAttribute(starPos,3));
+scene.add(new THREE.Points(starGeo,new THREE.PointsMaterial({color:0x1e2e44,size:.13,transparent:true,opacity:.42})));
+
+// ── PICK ─────────────────────────────────────────────────────────────────
+const pickArr=new Float32Array(nCount*3);nodes.forEach((n,i)=>{pickArr[i*3]=n.pos.x;pickArr[i*3+1]=n.pos.y;pickArr[i*3+2]=n.pos.z;});
+const pickGeo=new THREE.BufferGeometry();pickGeo.setAttribute('position',new THREE.BufferAttribute(pickArr,3));
+const pickPts=new THREE.Points(pickGeo,new THREE.PointsMaterial({size:1.5,visible:false}));scene.add(pickPts);
+
+// ══════════════════════════════════════════════════════════════════════════
+//  PILL LABELS — DOM, projected to screen
+// ══════════════════════════════════════════════════════════════════════════
+const labelWrap=document.createElement('div');
+labelWrap.style.cssText='position:fixed;inset:0;pointer-events:none;z-index:6;font-family:"Syne",system-ui,sans-serif;';
+document.body.appendChild(labelWrap);
+
+const labeledNodes=nodes.filter(n=>n.tier>=1); // tier-1+ gets a label element (explicit or vocab)
+const labelEls=labeledNodes.map(n=>{
+  const el=document.createElement('div');
+  el.textContent=getNodeName(n);
+  n._hasExplicit=!!n.label; // track: was this explicitly named?
+  if(n.tier>=3){
+    el.classList.add('lpill','lhub');
+    el.style.fontSize='11px';el.style.fontWeight='400';el.style.letterSpacing='0.22em';
+  }else if(n.tier>=2){
+    el.classList.add('lpill');
+    el.style.fontSize='9px';el.style.fontWeight='400';el.style.letterSpacing='0.20em';
+  }else{
+    el.classList.add('lpill','lsm');
+    el.style.fontSize='8px';el.style.fontWeight='300';el.style.letterSpacing='0.16em';
+  }
+  el.style.cssText+='position:absolute;text-transform:uppercase;transform:translateX(-50%);white-space:nowrap;pointer-events:none;opacity:0;color:rgba(162,202,222,0.70);text-shadow:0 0 12px rgba(48,208,198,0.15);';
+  labelWrap.appendChild(el);
+  return{el,node:n};
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+//  NODE COLORS
+// ══════════════════════════════════════════════════════════════════════════
+function resetNodes(){
+  const ca=nodeGeo.getAttribute('aColor'),sa=nodeGeo.getAttribute('aSize');
+  ca.array.set(origColArr);sa.array.set(origSizeArr);ca.needsUpdate=true;sa.needsUpdate=true;
+}
+function highlightNeighborhood(idx){
+  const nb=new Set(adj[idx]);nb.add(idx);
+  const ca=nodeGeo.getAttribute('aColor'),sa=nodeGeo.getAttribute('aSize');
+  for(let i=0;i<nCount;i++){
+    const n=nodes[i];const b=i*3;
+    if(i===idx){
+      ca.array[b]=1.0;ca.array[b+1]=1.0;ca.array[b+2]=1.0;sa.array[i]=origSizeArr[i]*2.6;
+    }else if(nb.has(i)){
+      ca.array[b]=.24;ca.array[b+1]=.82;ca.array[b+2]=.78;sa.array[i]=origSizeArr[i]*1.45;
+    }else if(n.cluster===activeClusterIdx&&n.tier>=2){
+      // Active cluster important hubs stay visible as secondary context
+      ca.array[b]=.48;ca.array[b+1]=.65;ca.array[b+2]=.80;sa.array[i]=origSizeArr[i]*1.3;
+    }else{
+      ca.array[b]=.032;ca.array[b+1]=.050;ca.array[b+2]=.085;sa.array[i]=origSizeArr[i]*.40;
+    }
+  }
+  ca.needsUpdate=true;sa.needsUpdate=true;
+}
+function dimEdges(){const a=edgeGeo.getAttribute('aEC');for(let i=0;i<a.array.length;i++)a.array[i]*=.12;a.needsUpdate=true;}
+function restoreEdges(){const a=edgeGeo.getAttribute('aEC');a.array.set(eColBackup);a.needsUpdate=true;}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  SPRING CAMERA
+// ══════════════════════════════════════════════════════════════════════════
+const tgtPos=new THREE.Vector3(0,14,96),tgtLook=new THREE.Vector3(0,0,0),camLook=new THREE.Vector3(0,2,0);
+const camVel=new THREE.Vector3(),lookVel=new THREE.Vector3();
+const CAM_K=.062,CAM_D=.80,LOOK_K=.095,LOOK_D=.80;
+function springStep(){
+  camVel.x+=(tgtPos.x-camera.position.x)*CAM_K; camVel.y+=(tgtPos.y-camera.position.y)*CAM_K; camVel.z+=(tgtPos.z-camera.position.z)*CAM_K;
+  camVel.multiplyScalar(CAM_D); camera.position.add(camVel);
+  lookVel.x+=(tgtLook.x-camLook.x)*LOOK_K; lookVel.y+=(tgtLook.y-camLook.y)*LOOK_K; lookVel.z+=(tgtLook.z-camLook.z)*LOOK_K;
+  lookVel.multiplyScalar(LOOK_D); camLook.add(lookVel); camera.lookAt(camLook);
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  SPHERICAL ORBIT  — drag rotation around current focus
+// ══════════════════════════════════════════════════════════════════════════
+const CLUSTER_ORB={r:22,phi:1.17,theta:0,center:new THREE.Vector3(0,0,0)};
+const FOCUS_ORB={center:new THREE.Vector3(),r:7.8,phi:Math.PI/4,theta:0};
+
+// ── DRAG with INERTIA ─────────────────────────────────────────────────────
+const drag={
+  theta:{cur:0,vel:0,tgt:0},
+  phi:  {cur:0,vel:0,tgt:0},
+  K:.042, D:.83,
+  maxT:.55, maxP:.32,
+};
+let isDragging=false, dragPrev={x:0,y:0};
+let lastDeltaTheta=0, lastDeltaPhi=0;  // for inertia
+let inertiaTimer=null;
+function resetDrag(){drag.theta.cur=0;drag.theta.vel=0;drag.theta.tgt=0;drag.phi.cur=0;drag.phi.vel=0;drag.phi.tgt=0;lastDeltaTheta=0;lastDeltaPhi=0;}
+function springDrag(ax){ax.vel+=(ax.tgt-ax.cur)*drag.K;ax.vel*=drag.D;ax.cur+=ax.vel;}
+
+// Canvas starts grabbable immediately
+renderer.domElement.classList.add('draggable');
+
+renderer.domElement.addEventListener('mousedown',e=>{
+  if(e.button!==0)return;
+  isDragging=true;dragPrev.x=e.clientX;dragPrev.y=e.clientY;lastDeltaTheta=0;lastDeltaPhi=0;
+  if(inertiaTimer){clearTimeout(inertiaTimer);inertiaTimer=null;}
+  renderer.domElement.classList.remove('draggable');renderer.domElement.classList.add('dragging');
+});
+window.addEventListener('mousemove',e=>{
+  if(!isDragging)return;
+  const dx=(e.clientX-dragPrev.x)/W,dy=(e.clientY-dragPrev.y)/H;
+  dragPrev.x=e.clientX;dragPrev.y=e.clientY;
+  lastDeltaTheta=-dx*2.8;lastDeltaPhi=dy*2.0;
+  drag.theta.tgt=THREE.MathUtils.clamp(drag.theta.tgt+lastDeltaTheta,-drag.maxT,drag.maxT);
+  drag.phi.tgt  =THREE.MathUtils.clamp(drag.phi.tgt  +lastDeltaPhi,  -drag.maxP,drag.maxP);
+});
+window.addEventListener('mouseup',()=>{
+  if(!isDragging)return;
+  isDragging=false;
+  renderer.domElement.classList.remove('dragging');
+  renderer.domElement.classList.add('draggable');
+  const S=window.__STATE;
+  if(S===0){
+    // OVERVIEW: hold position on release — scene stays where you left it
+    drag.theta.tgt=THREE.MathUtils.clamp(drag.theta.cur+lastDeltaTheta*3,-drag.maxT,drag.maxT);
+    drag.phi.tgt  =THREE.MathUtils.clamp(drag.phi.cur  +lastDeltaPhi  *3,-drag.maxP,drag.maxP);
+    // No timer — stays put until next drag or until dive resets
+  }else{
+    // CLUSTER / FOCUS: inertia then spring back to neutral framing
+    drag.theta.tgt=THREE.MathUtils.clamp(drag.theta.cur+lastDeltaTheta*6,-drag.maxT,drag.maxT);
+    drag.phi.tgt  =THREE.MathUtils.clamp(drag.phi.cur  +lastDeltaPhi  *6,-drag.maxP,drag.maxP);
+    inertiaTimer=setTimeout(()=>{drag.theta.tgt=0;drag.phi.tgt=0;inertiaTimer=null;},620);
+  }
+});
+// Touch
+renderer.domElement.addEventListener('touchstart',e=>{
+  isDragging=true;dragPrev.x=e.touches[0].clientX;dragPrev.y=e.touches[0].clientY;lastDeltaTheta=0;lastDeltaPhi=0;
+},{passive:true});
+window.addEventListener('touchmove',e=>{
+  if(!isDragging)return;
+  const dx=(e.touches[0].clientX-dragPrev.x)/W,dy=(e.touches[0].clientY-dragPrev.y)/H;
+  dragPrev.x=e.touches[0].clientX;dragPrev.y=e.touches[0].clientY;
+  lastDeltaTheta=-dx*2.8;lastDeltaPhi=dy*2.0;
+  drag.theta.tgt=THREE.MathUtils.clamp(drag.theta.tgt+lastDeltaTheta,-drag.maxT,drag.maxT);
+  drag.phi.tgt  =THREE.MathUtils.clamp(drag.phi.tgt  +lastDeltaPhi,  -drag.maxP,drag.maxP);
+},{passive:true});
+window.addEventListener('touchend',()=>{
+  isDragging=false;
+  const S=window.__STATE;
+  if(S===0){
+    drag.theta.tgt=THREE.MathUtils.clamp(drag.theta.cur+lastDeltaTheta*3,-drag.maxT,drag.maxT);
+    drag.phi.tgt  =THREE.MathUtils.clamp(drag.phi.cur  +lastDeltaPhi  *3,-drag.maxP,drag.maxP);
+  }else{
+    drag.theta.tgt=THREE.MathUtils.clamp(drag.theta.cur+lastDeltaTheta*6,-drag.maxT,drag.maxT);
+    drag.phi.tgt  =THREE.MathUtils.clamp(drag.phi.cur  +lastDeltaPhi  *6,-drag.maxP,drag.maxP);
+    inertiaTimer=setTimeout(()=>{drag.theta.tgt=0;drag.phi.tgt=0;inertiaTimer=null;},620);
+  }
+});
+
+// Apply spherical orbit + drag to tgtPos
+const _sph=new THREE.Spherical();
+function applyOrbit(center,r,basePhi,baseTheta){
+  const phi  =THREE.MathUtils.clamp(basePhi  +drag.phi.cur,   .10,Math.PI-.10);
+  const theta=baseTheta+drag.theta.cur;
+  _sph.set(r,phi,theta);
+  tgtPos.copy(center).add(new THREE.Vector3().setFromSpherical(_sph));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  STATE MACHINE
+// ══════════════════════════════════════════════════════════════════════════
+const STATE={OVERVIEW:0,DIVING:1,CLUSTER:2,NODE_FOCUS:3};
+let state=STATE.OVERVIEW; window.__STATE=0; let activeNodeIdx=-1;
+let activeClusterIdx=0;  // cluster whose labels stay persistently visible
+let hoveredNodeIdx=-1;   // node under cursor (tight visual threshold)
+let focusTargetIdx=-1;   // highest-tier node near cursor (focus intent)
+let scrollFocusAccum=0;
+let showAllLabels=false;
+const elCtx=document.getElementById('ctx'),elHint=document.getElementById('hint'),elBack=document.getElementById('back');
+const elPanel=document.getElementById('panel'),elPn=document.getElementById('pn'),elPm=document.getElementById('pm');
+const elPi=document.getElementById('pi');
+const elDBar=document.getElementById('dbar'),elDMk=document.getElementById('dmk');
+const elHTip=document.getElementById('htip');
+const elLtog=document.getElementById('ltog');
+elLtog.addEventListener('click',()=>{
+  showAllLabels=!showAllLabels;
+  elLtog.classList.toggle('on',showAllLabels);
+});
+
+function setDepth(p){elDBar.style.opacity=p>.05?'.55':'0';elDMk.style.top=(p*92)+'%';}
+function setState(s){state=s;window.__STATE=s;}
+
+// Boost tier-2+ nodes in the active cluster so they visually stand out
+function boostActiveCluster(){
+  const ca=nodeGeo.getAttribute('aColor'),sa=nodeGeo.getAttribute('aSize');
+  nodes.forEach((n,i)=>{
+    if(n.cluster===activeClusterIdx){
+      if(n.tier>=2){
+        ca.array[i*3]=.84;ca.array[i*3+1]=.95;ca.array[i*3+2]=1.0;
+        sa.array[i]=origSizeArr[i]*2.0;
+      }else if(n.tier>=1){
+        ca.array[i*3]=Math.min(1,origColArr[i*3]*1.5);
+        ca.array[i*3+1]=Math.min(1,origColArr[i*3+1]*1.35);
+        ca.array[i*3+2]=Math.min(1,origColArr[i*3+2]*1.2);
+        sa.array[i]=origSizeArr[i]*1.25;
+      }
+    }
+  });
+  ca.needsUpdate=true;sa.needsUpdate=true;
+}
+
+function goOverview(){
+  setState(STATE.OVERVIEW);activeNodeIdx=-1;activeClusterIdx=0;resetDrag();
+  CLUSTER_ORB.center.set(0,0,0); // reset orbit center to main cluster
+  elCtx.textContent='Digital Brain';
+  elHint.style.opacity='1';elHint.textContent='Scroll up to explore';
+  elBack.style.opacity='0';elPanel.style.opacity='0';
+  setDepth(0);glowSec.material.opacity=.30;
+  if(hlEdgeLines){scene.remove(hlEdgeLines);hlEdgeLines.geometry.dispose();hlEdgeLines.material.dispose();hlEdgeLines=null;}
+  resetNodes();restoreEdges();
+  renderer.domElement.classList.remove('dragging');
+  renderer.domElement.classList.add('draggable');
+}
+
+function goCluster(){
+  setState(STATE.CLUSTER);
+  // r depends on cluster size: main cluster gets 22, satellite clusters get 18
+  CLUSTER_ORB.r=activeClusterIdx===0?22:18;
+  const clName=activeClusterIdx===0?'Core Cluster':(HUB_LABELS[activeClusterIdx]?HUB_LABELS[activeClusterIdx]+' Cluster':'Cluster');
+  elCtx.textContent=clName;
+  elHint.style.opacity='1';elHint.textContent='Drag to inspect  ·  Click a node';
+  elBack.style.opacity='1';elPanel.style.opacity='0';
+  setDepth(.45);glowSec.material.opacity=.30;
+  resetNodes();restoreEdges();boostActiveCluster(); // brighten important nodes here
+  if(hlEdgeLines){scene.remove(hlEdgeLines);hlEdgeLines.geometry.dispose();hlEdgeLines.material.dispose();hlEdgeLines=null;}
+  renderer.domElement.classList.add('draggable');
+}
+
+// Dive toward the main cluster (cluster 0 / You)
+function goDive(){
+  if(state!==STATE.OVERVIEW)return;setState(STATE.DIVING);
+  CLUSTER_ORB.center.set(0,0,0);CLUSTER_ORB.r=22;activeClusterIdx=0;
+  drag.theta.tgt=0;drag.phi.tgt=0;
+  if(inertiaTimer){clearTimeout(inertiaTimer);inertiaTimer=null;}
+  elCtx.textContent='\u2014';elHint.style.opacity='0';setDepth(.22);
+}
+
+// Navigate to any cluster from any state — works from OVERVIEW, CLUSTER, NODE_FOCUS
+function goDiveToCluster(cid){
+  const cl=CLUSTERS.find(c=>c[0]===cid);
+  if(cl){CLUSTER_ORB.center.set(cl[1],cl[2],cl[3]);}
+  else{CLUSTER_ORB.center.set(0,0,0);}
+  CLUSTER_ORB.r=cid===0?22:18;
+  activeClusterIdx=cid;
+  setState(STATE.DIVING);
+  drag.theta.tgt=0;drag.phi.tgt=0;
+  if(inertiaTimer){clearTimeout(inertiaTimer);inertiaTimer=null;}
+  elCtx.textContent='\u2014';elHint.style.opacity='0';setDepth(.22);
+  // Reset node colors so the new cluster can boost when we arrive
+  if(hlEdgeLines){scene.remove(hlEdgeLines);hlEdgeLines.geometry.dispose();hlEdgeLines.material.dispose();hlEdgeLines=null;}
+  resetNodes();restoreEdges();elPanel.style.opacity='0';
+}
+
+function goNodeFocus(idx){
+  setState(STATE.NODE_FOCUS);activeNodeIdx=idx;
+  const n=nodes[idx],nbc=adj[idx].length;
+  activeClusterIdx=n.cluster>=0?n.cluster:activeClusterIdx;
+  FOCUS_ORB.center.copy(n.pos);
+  const rel=new THREE.Vector3().subVectors(camera.position,n.pos);
+  const sp=new THREE.Spherical().setFromVector3(rel);
+  FOCUS_ORB.r=THREE.MathUtils.clamp(sp.radius,5.5,12);
+  FOCUS_ORB.phi=THREE.MathUtils.clamp(sp.phi,.3,Math.PI-.3);
+  FOCUS_ORB.theta=sp.theta;
+  elCtx.textContent=n.tier>=2?(n.label||getNodeName(n)):'Pattern';
+  elHint.style.opacity='0';elBack.style.opacity='1';
+  elPn.textContent=getPanelTitle(n);
+  elPm.textContent=nbc+' connection'+(nbc!==1?'s':'');
+  elPi.textContent=getNodeInsight(n);
+  setTimeout(()=>{elPanel.style.opacity='1';},260);
+  setDepth(1.0);glowSec.material.opacity=.10;
+  buildHlEdges(idx);dimEdges();highlightNeighborhood(idx);
+  renderer.domElement.classList.add('draggable');
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  SCROLL  — INVERTED: scroll UP = zoom in / go deeper
+//                       scroll DOWN = zoom out / go back
+// ══════════════════════════════════════════════════════════════════════════
+let scrollAccum=0;
+let wasDragging=false;
+
+window.addEventListener('wheel',e=>{
+  const d=e.deltaY;
+
+  if(state===STATE.OVERVIEW){
+    if(d<-80){ // requires more deliberate scroll
+      if(focusTargetIdx>=0&&nodes[focusTargetIdx].tier>=2){
+        const cid=nodes[focusTargetIdx].cluster;
+        goDiveToCluster(cid>=0?cid:0);
+      }else{
+        goDive();
+      }
+    }
+
+  }else if(state===STATE.CLUSTER){
+    if(d<0){
+      scrollAccum=0;
+      if(focusTargetIdx>=0&&nodes[focusTargetIdx].tier>=1){
+        scrollFocusAccum-=d;
+        if(scrollFocusAccum>300){
+          scrollFocusAccum=0;
+          const ft=nodes[focusTargetIdx];
+          // Foreign cluster hub → navigate to that cluster
+          if(ft.tier>=2&&ft.cluster>=0&&ft.cluster!==activeClusterIdx){
+            goDiveToCluster(ft.cluster);
+          }else{
+            goNodeFocus(focusTargetIdx);
+          }
+          return;
+        }
+      }else{
+        scrollFocusAccum=0;
+        CLUSTER_ORB.r=THREE.MathUtils.clamp(CLUSTER_ORB.r+d*.010,9.5,35);
+      }
+    }else{
+      scrollFocusAccum=0;
+      CLUSTER_ORB.r=THREE.MathUtils.clamp(CLUSTER_ORB.r+d*.010,9.5,35);
+      if(CLUSTER_ORB.r>=34){scrollAccum+=d;if(scrollAccum>600){scrollAccum=0;goOverview();}}
+      else scrollAccum=0;
+    }
+
+  }else if(state===STATE.NODE_FOCUS){
+    if(d<0){
+      scrollAccum=0;
+      FOCUS_ORB.r=THREE.MathUtils.clamp(FOCUS_ORB.r+d*.004,3.2,14);
+    }else{
+      FOCUS_ORB.r=THREE.MathUtils.clamp(FOCUS_ORB.r+d*.004,3.2,14);
+      if(FOCUS_ORB.r>=13){scrollAccum+=d;if(scrollAccum>700){scrollAccum=0;goCluster();}}
+      else scrollAccum=0;
+    }
+  }
+},{passive:true});
+
+// ── CLICK + KEYS ─────────────────────────────────────────────────────────
+// Visual hover: tight | Focus target: wide, tier-2+ priority
+const raycaster=new THREE.Raycaster();raycaster.params.Points.threshold=1.5;
+const focRay=new THREE.Raycaster();focRay.params.Points.threshold=9.0;
+const mouse2=new THREE.Vector2(),pxMouse=new THREE.Vector2(),pxSmooth=new THREE.Vector2();
+const rawMouse=new THREE.Vector2();
+
+renderer.domElement.addEventListener('mousedown',()=>{wasDragging=false;});
+window.addEventListener('mousemove',e=>{
+  pxMouse.set((e.clientX/W)*2-1,-(e.clientY/H)*2+1);
+  rawMouse.set((e.clientX/W)*2-1,-(e.clientY/H)*2+1);
+  if(isDragging)wasDragging=true;
+});
+window.addEventListener('click',e=>{
+  if(e.target===elBack||e.target===elLtog||elLtog.contains(e.target))return;
+  if(wasDragging){wasDragging=false;return;}
+  if(state===STATE.DIVING)return;
+
+  const cx=(e.clientX/W)*2-1, cy=-(e.clientY/H)*2+1;
+  mouse2.set(cx,cy);
+
+  // ── OVERVIEW: wide ray, any major hub → dive to its cluster ───────────
+  if(state===STATE.OVERVIEW){
+    focRay.setFromCamera(mouse2,camera);
+    const fh=focRay.intersectObject(pickPts);
+    let bestHub=-1;
+    for(const hit of fh){
+      if(nodes[hit.index].tier>=2)
+        if(bestHub<0||nodes[hit.index].tier>nodes[bestHub].tier)
+          bestHub=hit.index;
+    }
+    if(bestHub>=0&&nodes[bestHub].cluster>=0){
+      goDiveToCluster(nodes[bestHub].cluster);
+    }else{
+      goDive();
+    }
+    return;
+  }
+
+  // ── CLUSTER / NODE_FOCUS ───────────────────────────────────────────────
+  if(state===STATE.CLUSTER||state===STATE.NODE_FOCUS){
+
+    // Step 1: check focRay for a hub from a DIFFERENT cluster only
+    focRay.setFromCamera(mouse2,camera);
+    const fh=focRay.intersectObject(pickPts);
+    let foreignHub=-1;
+    for(const hit of fh){
+      const n=nodes[hit.index];
+      if(n.tier>=2&&n.cluster>=0&&n.cluster!==activeClusterIdx)
+        if(foreignHub<0||n.tier>nodes[foreignHub].tier)
+          foreignHub=hit.index;
+    }
+    if(foreignHub>=0){
+      goDiveToCluster(nodes[foreignHub].cluster);
+      return;
+    }
+
+    // Step 2: same-cluster click — find best node under cursor
+    // Use slightly wider threshold and prefer higher-tier among nearby hits
+    raycaster.params.Points.threshold=2.5;
+    raycaster.setFromCamera(mouse2,camera);
+    const hits=raycaster.intersectObject(pickPts);
+    raycaster.params.Points.threshold=1.5; // restore
+    let best=-1;
+    for(const hit of hits.slice(0,10)){
+      if(best<0||nodes[hit.index].tier>nodes[best].tier)
+        best=hit.index;
+    }
+    if(best>=0){
+      goNodeFocus(best);
+    }else if(state===STATE.NODE_FOCUS){
+      goCluster();
+    }
+  }
+});
+elBack.addEventListener('click',()=>{if(state===STATE.NODE_FOCUS)goCluster();else goOverview();});
+window.addEventListener('keydown',e=>{if(e.key==='Escape'){if(state===STATE.NODE_FOCUS)goCluster();else goOverview();}});
+
+// ══════════════════════════════════════════════════════════════════════════
+//  PILL LABEL PROJECTION
+// ══════════════════════════════════════════════════════════════════════════
+// Pill overlap guard
+function pxOccupied(x,y,list){
+  const MX=110,MY=30;
+  for(const o of list){if(Math.abs(x-o.x)<MX&&Math.abs(y-o.y)<MY)return true;}
+  return false;
+}
+
+const _vp=new THREE.Vector3();
+function updateLabels(){
+  const nbSet=activeNodeIdx>=0?new Set(adj[activeNodeIdx]):null;
+  // Ensure scene matrix is current so label positions account for scene rotation
+  scene.updateMatrixWorld(false);
+
+  const cands=[];
+  labelEls.forEach(({el,node:n})=>{
+    _vp.copy(n.pos);
+    scene.localToWorld(_vp); // apply scene rotation correctly
+    _vp.project(camera);
+    if(_vp.z>=1){el.style.opacity='0';el.classList.remove('lactive','lhover');return;}
+    const sx=(_vp.x*.5+.5)*W, sy=(-_vp.y*.5+.5)*H;
+    el.style.left=sx+'px'; el.style.top=(sy-22)+'px';
+    const cd=camera.position.distanceTo(n.pos);
+    const isActive=n.id===activeNodeIdx;
+    const isNb    =nbSet&&nbSet.has(n.id);
+    const isHov   =n.id===hoveredNodeIdx||n.id===focusTargetIdx;
+    const inAC    =n.cluster===activeClusterIdx&&activeClusterIdx>=0;
+    const explicit=n._hasExplicit; // was this explicitly named in content?
+    if(isActive) el.classList.add('lactive');    else el.classList.remove('lactive');
+    if(isHov&&!isActive) el.classList.add('lhover'); else el.classList.remove('lhover');
+    let pri=isActive?0:isHov?1:isNb?2:inAC&&n.tier>=2?3+cd*.005:inAC&&explicit?6+cd*.01:n.tier>=2?10+cd*.01:20;
+    cands.push({el,node:n,sx,sy,cd,isActive,isNb,isHov,inAC,explicit,pri});
+  });
+
+  cands.sort((a,b)=>a.pri-b.pri);
+  const occupied=[];
+  const shownNames=new Set(); // prevent duplicate vocab names
+
+  cands.forEach(c=>{
+    const{el,node:n,sx,sy,cd,isActive,isNb,isHov,inAC,explicit}=c;
+    let op=0;
+
+    if(showAllLabels){
+      // Full universe: show ALL tier-1+ semantic names
+      op=isActive?1:isHov?.95:n.tier>=2?.88:.62;
+
+    }else if(state===STATE.NODE_FOCUS){
+      if(isActive)              op=1;
+      else if(isHov)            op=.95;
+      else if(isNb&&explicit)   op=.82;
+      else if(isNb)             op=.65;
+      else if(inAC&&n.tier>=2)  op=pxOccupied(sx,sy,occupied)?0:.78;
+      else if(inAC&&explicit)   op=pxOccupied(sx,sy,occupied)?0:.52;
+      else if(n.tier>=2)        op=Math.max(.12,Math.min(.30,.40-cd*.006));
+      // vocab-only tier-1 not in active cluster: hover only
+      else if(isHov&&explicit)  op=.72;
+      else                      op=0;
+
+    }else if(state===STATE.OVERVIEW){
+      // Only explicit tier-2+ visible in overview
+      if(isHov&&(explicit||n.tier>=2)) op=.95;
+      else if(n.tier>=2&&explicit)     op=Math.max(.35,Math.min(.78,1.2-cd*.008));
+      else if(n.tier>=2)               op=Math.max(.22,Math.min(.55,.90-cd*.009));
+      else                             op=0;
+
+    }else{
+      // CLUSTER / DIVING
+      if(isHov)                              op=.95;
+      else if(inAC&&n.tier>=2){
+        // Active cluster tier-2: always show, overlap-managed, bright
+        op=pxOccupied(sx,sy,occupied)?0:.92;
+      }else if(inAC&&explicit){
+        // Active cluster explicit tier-1: show if room
+        op=pxOccupied(sx,sy,occupied)?0:.58;
+      }else if(n.tier>=2&&explicit){
+        // Other clusters' hubs: quieter
+        op=Math.max(.18,Math.min(.45,.58-cd*.009));
+      }else{
+        op=0; // tier-1 vocab-only: hover only
+      }
+    }
+
+    el.style.opacity=String(op);
+    // Prevent showing the same vocab name twice (explicit labels are always unique)
+    if(op>0.15){
+      const nm=el.textContent;
+      if(!c.explicit&&shownNames.has(nm)){el.style.opacity='0';}
+      else{occupied.push({x:sx,y:sy});if(!c.explicit)shownNames.add(nm);}
+    }
+    el.style.color=isActive
+      ?'rgba(48,208,198,1.0)'
+      :isHov?'rgba(185,232,244,1.0)'
+      :n.tier>=2?'rgba(200,226,242,0.98)'
+      :'rgba(165,200,222,0.82)';
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  RENDER LOOP
+// ══════════════════════════════════════════════════════════════════════════
+const clock=new THREE.Clock();let time=0;
+function animate(){
+  requestAnimationFrame(animate);
+  const dt=Math.min(clock.getDelta(),.05);time+=dt;
+  pxSmooth.lerp(pxMouse,.055);
+  springDrag(drag.theta);springDrag(drag.phi);
+
+  if(state===STATE.OVERVIEW){
+    tgtPos.set(pxSmooth.x*5.5,14+pxSmooth.y*2.8,96);tgtLook.set(0,0,0);
+    scene.rotation.y=Math.sin(time*.032)*.06+pxSmooth.x*.010+drag.theta.cur;
+    scene.rotation.x=Math.sin(time*.021)*.025+pxSmooth.y*.008-drag.phi.cur;
+
+  }else if(state===STATE.DIVING){
+    const br=Math.sin(time*.32)*.022;
+    applyOrbit(CLUSTER_ORB.center,CLUSTER_ORB.r,CLUSTER_ORB.phi+br,CLUSTER_ORB.theta);
+    // Look at the cluster we're flying toward, not always origin
+    tgtLook.copy(CLUSTER_ORB.center);
+    scene.rotation.y=THREE.MathUtils.lerp(scene.rotation.y,0,.04);
+    scene.rotation.x=THREE.MathUtils.lerp(scene.rotation.x,0,.04);
+    if(camera.position.distanceTo(tgtPos)<7.5&&time>1.0)goCluster();
+
+  }else if(state===STATE.CLUSTER){
+    const br=Math.sin(time*.32)*.022;
+    applyOrbit(CLUSTER_ORB.center,CLUSTER_ORB.r,CLUSTER_ORB.phi+br,CLUSTER_ORB.theta);
+    // Look at cluster center + mouse drift
+    tgtLook.set(
+      CLUSTER_ORB.center.x+pxSmooth.x*1.4,
+      CLUSTER_ORB.center.y+pxSmooth.y*.9,
+      CLUSTER_ORB.center.z
+    );
+    scene.rotation.y=THREE.MathUtils.lerp(scene.rotation.y,0,.04);
+    scene.rotation.x=THREE.MathUtils.lerp(scene.rotation.x,0,.04);
+
+  }else if(state===STATE.NODE_FOCUS&&activeNodeIdx>=0){
+    applyOrbit(FOCUS_ORB.center,FOCUS_ORB.r,FOCUS_ORB.phi,FOCUS_ORB.theta);
+    const n=nodes[activeNodeIdx];
+    tgtLook.set(n.pos.x+pxSmooth.x*.5,n.pos.y+pxSmooth.y*.35,n.pos.z);
+    scene.rotation.y=THREE.MathUtils.lerp(scene.rotation.y,0,.04);
+    scene.rotation.x=THREE.MathUtils.lerp(scene.rotation.x,0,.04);
+  }
+
+  springStep();
+  nodeMat.uniforms.uTime.value=time;
+  if(hlEdgeLines)hlEdgeLines.material.uniforms.uTime.value=time;
+
+  // ── Per-frame hover detection ──────────────────────────────────────────
+  if(!isDragging&&state!==STATE.DIVING){
+    // Visual hover: tight, any node
+    raycaster.setFromCamera(rawMouse,camera);
+    const hh=raycaster.intersectObject(pickPts);
+    hoveredNodeIdx=hh.length?hh[0].index:-1;
+
+    // Focus target: wide threshold, TIER-2+ ONLY — finds major hubs through crowds
+    focRay.setFromCamera(rawMouse,camera);
+    const fh=focRay.intersectObject(pickPts);
+    focusTargetIdx=-1;
+    for(const hit of fh){
+      if(nodes[hit.index].tier>=2){
+        if(focusTargetIdx<0||nodes[hit.index].tier>nodes[focusTargetIdx].tier){
+          focusTargetIdx=hit.index;
+        }
+      }
+    }
+    // If no tier-2 hub found, use any hovered node for in-cluster interaction
+    if(focusTargetIdx<0&&state===STATE.CLUSTER)focusTargetIdx=hoveredNodeIdx;
+    if(focusTargetIdx<0&&state===STATE.NODE_FOCUS)focusTargetIdx=hoveredNodeIdx;
+  }else{
+    hoveredNodeIdx=-1;focusTargetIdx=-1;
+  }
+
+  // ── Hover glow follows focus target (pre-click intent feedback) ────────
+  const glowTarget=focusTargetIdx>=0?focusTargetIdx:hoveredNodeIdx;
+  if(glowTarget>=0){
+    const hn=nodes[glowTarget];
+    hoverGlowPos[0]=hn.pos.x;hoverGlowPos[1]=hn.pos.y;hoverGlowPos[2]=hn.pos.z;
+    hoverGlowGeo.getAttribute('position').needsUpdate=true;
+    const isMajor=hn.tier>=2;
+    hoverGlowMat.size=isMajor?9.0:6.0;
+    hoverGlowMat.opacity=Math.min(isMajor?.65:.40,.30+.25*Math.sin(time*3.5));
+    renderer.domElement.style.cursor='pointer';
+  }else{
+    hoverGlowMat.opacity=Math.max(0,hoverGlowMat.opacity-.04);
+    renderer.domElement.style.cursor=isDragging?'grabbing':'grab';
+  }
+
+  // ── Hover tooltip — accounts for scene rotation ────────────────────────
+  const tipTarget=focusTargetIdx>=0?focusTargetIdx:hoveredNodeIdx;
+  if(tipTarget>=0&&!isDragging){
+    const hn=nodes[tipTarget];
+    _vp.copy(hn.pos);
+    scene.localToWorld(_vp);
+    _vp.project(camera);
+    const tx=(_vp.x*.5+.5)*W, ty=(-_vp.y*.5+.5)*H;
+    elHTip.textContent=getNodeName(hn);
+    elHTip.style.left=tx+'px';
+    elHTip.style.top=(ty-34)+'px';
+    elHTip.style.opacity='1';
+  }else{
+    elHTip.style.opacity='0';
+  }
+
+  const pulse=.60+.40*Math.sin(time*1.85);
+  glowHub.material.opacity=.80*pulse;
+  glowHalo.material.opacity=.07*(.5+.5*Math.sin(time*.86));
+  glowHub.material.size=5.8+Math.sin(time*1.85)*.8;
+
+  ripples.forEach(r=>{
+    r.phase=(r.phase+dt/3.8)%1.0;
+    r.mesh.scale.setScalar(.35+r.phase*4.0);
+    r.mesh.material.opacity=(1.0-r.phase)*.18;
+    r.mesh.quaternion.copy(camera.quaternion);
+  });
+
+  updateLabels();
+  renderer.render(scene,camera);
+}
+animate();
+
+window.addEventListener('resize',()=>{
+  const w=window.innerWidth,h=window.innerHeight;
+  camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);
+});
+</script>
+</body>
+</html>

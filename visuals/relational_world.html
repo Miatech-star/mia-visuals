@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Relational World</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{width:100%;height:100%;overflow:hidden;background:#060410;}
+#wrap{position:relative;width:100vw;height:100vh;}
+#labels{position:absolute;top:0;left:0;width:100%;height:100%;overflow:hidden;pointer-events:none;font-family:'Inter',sans-serif;}
+.rl{
+  position:absolute;transform:translate(-50%,-50%);
+  background:rgba(10,5,22,0.88);border:1px solid rgba(190,155,255,0.28);
+  border-radius:20px;padding:6px 15px;white-space:nowrap;
+  transition:border-color 0.3s,box-shadow 0.3s,opacity 0.40s ease;
+  pointer-events:auto;cursor:pointer;user-select:none;
+  box-shadow:0 0 14px rgba(120,70,220,0.10);
+}
+.rl:hover{border-color:rgba(210,175,255,0.48);box-shadow:0 0 20px rgba(160,110,255,0.18);}
+.rl.focused{border-color:rgba(220,185,255,0.62);box-shadow:0 0 30px rgba(190,140,255,0.28);}
+.rn{font-size:13.5px;font-weight:500;color:rgba(242,234,255,0.96);line-height:1.3;letter-spacing:-0.01em;}
+.rr{font-size:11px;font-weight:300;color:rgba(185,158,240,0.72);line-height:1.25;}
+.pl{
+  position:absolute;transform:translate(-50%,-50%);
+  background:rgba(10,5,22,0.72);border:1px solid rgba(160,125,245,0.18);
+  border-radius:9px;padding:3px 9px;
+  font-size:10px;font-weight:400;color:rgba(205,182,255,0.62);
+  white-space:nowrap;pointer-events:none;
+  transition:color 0.3s,background 0.3s,border-color 0.3s,box-shadow 0.3s,opacity 0.35s ease;
+}
+.pl.focused{
+  color:rgba(232,218,255,0.95)!important;background:rgba(12,6,28,0.95)!important;
+  border-color:rgba(185,150,255,0.40)!important;font-size:10.5px!important;
+  box-shadow:0 0 14px rgba(155,115,255,0.16);
+}
+.sp{
+  position:absolute;transform:translate(-50%,-50%);
+  background:rgba(10,5,22,0.58);border:1px solid rgba(140,100,210,0.14);
+  border-radius:8px;padding:3px 8px;
+  font-size:9.5px;font-weight:300;color:rgba(192,170,235,0.52);
+  white-space:nowrap;pointer-events:none;
+  transition:opacity 0.4s ease;
+}
+#badge{position:fixed;top:24px;left:26px;z-index:20;pointer-events:none;font-family:'Inter',sans-serif;}
+#badge h1{font-size:14px;font-weight:300;color:rgba(200,185,255,0.22);letter-spacing:0.05em;}
+#badge p{font-size:8.5px;font-weight:300;color:rgba(158,128,218,0.16);letter-spacing:0.15em;text-transform:uppercase;margin-top:3px;}
+#hint{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:20;
+  font-family:'Inter',sans-serif;font-size:9px;font-weight:300;
+  color:rgba(158,128,218,0.26);letter-spacing:0.18em;text-transform:uppercase;
+  pointer-events:none;transition:opacity 1.8s ease;}
+#hint.fade{opacity:0;}
+#focus-hint{position:fixed;bottom:44px;left:50%;transform:translateX(-50%);z-index:20;
+  font-family:'Inter',sans-serif;font-size:9px;font-weight:300;
+  color:rgba(200,165,255,0.40);letter-spacing:0.14em;text-transform:uppercase;
+  pointer-events:none;opacity:0;transition:opacity 0.7s ease;white-space:nowrap;}
+#focus-hint.show{opacity:1;}
+#gyro-btn,#recenter-btn{
+  display:none;position:fixed;z-index:30;
+  font-family:'Inter',sans-serif;font-size:10px;font-weight:400;
+  letter-spacing:0.16em;text-transform:uppercase;
+  border-radius:18px;padding:9px 18px;cursor:pointer;
+  -webkit-tap-highlight-color:transparent;user-select:none;
+  transition:background 0.25s,border-color 0.25s,color 0.25s,opacity 0.3s;
+}
+#gyro-btn{
+  bottom:22px;right:18px;
+  background:rgba(10,5,26,0.82);color:rgba(185,158,255,0.72);
+  border:1px solid rgba(160,125,255,0.24);
+}
+#gyro-btn.active{
+  background:rgba(75,40,165,0.32);color:rgba(220,205,255,0.96);
+  border-color:rgba(185,155,255,0.52);box-shadow:0 0 16px rgba(130,90,255,0.22);
+}
+#gyro-btn.error{color:rgba(255,140,140,0.80);border-color:rgba(255,100,100,0.28);}
+#recenter-btn{
+  bottom:64px;right:18px;
+  background:rgba(10,5,26,0.72);color:rgba(158,135,225,0.60);
+  border:1px solid rgba(140,105,215,0.18);
+}
+#recenter-btn:active{background:rgba(70,40,140,0.30);}
+</style>
+</head>
+<body>
+<div id="wrap"><div id="labels"></div></div>
+<div id="badge"><h1>Relational World</h1><p>psychological field map</p></div>
+<div id="hint">drag to look around &nbsp;&middot;&nbsp; click a node to focus</div>
+<div id="focus-hint">click node again or anywhere to exit</div>
+<button id="gyro-btn">&#10022; Gyro</button>
+<button id="recenter-btn">Recenter</button>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+'use strict';
+
+// ── Data ─────────────────────────────────────────────────────────────────────
+const NODES=[
+  {name:'Sarah',  role:'mother',             c:0xA855F7,nr:1.90,int:0.90,patterns:['fear of disappointing','caretaker reflex','approval seeking']},
+  {name:'Michael',role:'father',             c:0x7C3AED,nr:1.55,int:0.72,patterns:['performance mask','emotional distance','protective loyalty']},
+  {name:'Emily',  role:'older sister',       c:0x9333EA,nr:1.65,int:0.78,patterns:['comparison pressure','safe attachment','intermittent closeness']},
+  {name:'Ryan',   role:'younger brother',    c:0xC084FC,nr:1.30,int:0.60,patterns:['protective loyalty','caretaker reflex','guilt cycle']},
+  {name:'Jessica',role:'closest friend',     c:0xEC4899,nr:2.05,int:0.96,patterns:['emotional dependence','safe attachment','fear of loss','deep mirroring']},
+  {name:'Tyler',  role:'childhood friend',   c:0xF472B6,nr:1.25,int:0.55,patterns:['nostalgia loop','identity anchor','conflict avoidance']},
+  {name:'Brandon',role:'former partner',     c:0xF97316,nr:1.85,int:0.88,patterns:['unresolved resentment','emotional dependence','grief loop','intermittent closeness']},
+  {name:'Ashley', role:'recent relationship',c:0xFB923C,nr:1.50,int:0.68,patterns:['guarded openness','fear of repeating','performance mask']},
+  {name:'Megan',  role:'coworker',           c:0xFDA4AF,nr:1.15,int:0.46,patterns:['approval seeking','boundary blur','people pleasing']},
+  {name:'David',  role:'mentor',             c:0xD946EF,nr:1.58,int:0.76,patterns:['idealization','fear of inadequacy','safe challenge']},
+  {name:'Rachel', role:'therapist',          c:0xE879F9,nr:1.32,int:0.62,patterns:['structured trust','vulnerability practice','boundary learning']},
+  {name:'Chris',  role:'old flame',          c:0xFB7185,nr:1.25,int:0.54,patterns:['nostalgia loop','what-if thinking','unfinished chapter']},
+];
+const SELF_PATTERNS=['inner critic','people pleaser','avoidance loops','self-doubt','resilience','creative spark','fear of rejection'];
+
+// ── Renderer ──────────────────────────────────────────────────────────────────
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x060410);
+scene.add(new THREE.AmbientLight(0x0c071e,1));
+
+const W=window.innerWidth,H=window.innerHeight;
+const camera=new THREE.PerspectiveCamera(65,W/H,0.05,120);
+// Camera stays at origin — user IS the center
+
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(W,H);
+renderer.domElement.style.cssText='position:absolute;top:0;left:0;display:block;cursor:grab;';
+document.getElementById('wrap').insertBefore(renderer.domElement,document.getElementById('labels'));
+
+// ── First-person look-around controls ─────────────────────────────────────────
+let yaw=0.3,pitch=0.06,drag=false,didDrag=false,hintFaded=false,lx=0,ly=0;
+let gyroActive=false; // declared early — referenced by touch handlers below
+const SENS=0.0028;
+function applyCamera(){camera.rotation.order='YXZ';camera.rotation.y=yaw;camera.rotation.x=pitch;}
+applyCamera();
+function fadeHint(){if(!hintFaded){hintFaded=true;document.getElementById('hint').classList.add('fade');}}
+
+renderer.domElement.addEventListener('mousedown',e=>{drag=true;didDrag=false;fadeHint();lx=e.clientX;ly=e.clientY;renderer.domElement.style.cursor='grabbing';});
+window.addEventListener('mouseup',()=>{drag=false;renderer.domElement.style.cursor='grab';});
+window.addEventListener('mousemove',e=>{
+  if(!drag)return;didDrag=true;
+  yaw+=(e.clientX-lx)*SENS;
+  pitch=Math.max(-1.45,Math.min(1.45,pitch+(e.clientY-ly)*SENS));
+  lx=e.clientX;ly=e.clientY;applyCamera();
+});
+renderer.domElement.addEventListener('touchstart',e=>{
+  if(gyroActive)return; // gyro mode: touches only used for tap/focus
+  fadeHint();lx=e.touches[0].clientX;ly=e.touches[0].clientY;didDrag=false;e.preventDefault();
+},{passive:false});
+renderer.domElement.addEventListener('touchmove',e=>{
+  if(gyroActive)return;
+  didDrag=true;
+  yaw+=(e.touches[0].clientX-lx)*SENS;
+  pitch=Math.max(-1.45,Math.min(1.45,pitch+(e.touches[0].clientY-ly)*SENS));
+  lx=e.touches[0].clientX;ly=e.touches[0].clientY;applyCamera();e.preventDefault();
+},{passive:false});
+
+// ── Gyroscope / Device Orientation (mobile only) ──────────────────────────────
+const isMobile=('ontouchstart' in window)&&(navigator.maxTouchPoints>0);
+
+// Standard Three.js DeviceOrientationControls math helpers
+const _q0=new THREE.Quaternion(-Math.sqrt(.5),0,0,Math.sqrt(.5)); // -90° around X
+const _zee=new THREE.Vector3(0,0,1);
+const _devEuler=new THREE.Euler();
+const _devQ=new THREE.Quaternion();
+const _scrQ=new THREE.Quaternion();
+const _refQ=new THREE.Quaternion(); // reference for recentering
+const _targetQ=new THREE.Quaternion();
+const _smoothQ=new THREE.Quaternion();
+let _lastAlpha=null,_lastBeta=null,_lastGamma=null;
+
+function getScreenAngle(){
+  return THREE.MathUtils.degToRad(
+    (window.screen.orientation&&window.screen.orientation.angle!=null)
+      ?window.screen.orientation.angle
+      :(window.orientation||0)
+  );
+}
+
+function onDeviceOrientation(e){
+  if(!gyroActive||e.alpha==null)return;
+  // Low-pass filter each axis to reduce jitter
+  const a=_lastAlpha==null?e.alpha:_lastAlpha*0.85+e.alpha*0.15;
+  const b=_lastBeta ==null?e.beta :_lastBeta *0.85+e.beta *0.15;
+  const g=_lastGamma==null?e.gamma:_lastGamma*0.85+e.gamma*0.15;
+  _lastAlpha=a;_lastBeta=b;_lastGamma=g;
+
+  _devEuler.set(
+    THREE.MathUtils.degToRad(b),
+    THREE.MathUtils.degToRad(a),
+    THREE.MathUtils.degToRad(-g),
+    'YXZ'
+  );
+  _devQ.setFromEuler(_devEuler);
+  _devQ.multiply(_q0);
+  _scrQ.setFromAxisAngle(_zee,-getScreenAngle());
+  _devQ.multiply(_scrQ);
+  // Apply reference offset (set at calibration / recenter)
+  _targetQ.multiplyQuaternions(_refQ,_devQ);
+}
+
+function recenterGyro(){
+  // Capture inverse of current device quat → next frame will feel like "forward"
+  _refQ.copy(_devQ).invert();
+  _lastAlpha=null;_lastBeta=null;_lastGamma=null; // flush filter
+}
+
+function syncEulerFromCamera(){
+  // Keep yaw/pitch in sync so switching back to drag is seamless
+  const e=new THREE.Euler().setFromQuaternion(camera.quaternion,'YXZ');
+  yaw=e.y;pitch=Math.max(-1.45,Math.min(1.45,e.x));
+}
+
+async function toggleGyro(){
+  const btn=document.getElementById('gyro-btn');
+  if(gyroActive){
+    gyroActive=false;
+    syncEulerFromCamera();
+    btn.classList.remove('active');
+    document.getElementById('recenter-btn').style.display='none';
+    document.getElementById('hint').textContent='drag to look around · click a node to focus';
+    return;
+  }
+  // iOS 13+ requires explicit permission
+  if(typeof DeviceOrientationEvent!=='undefined'&&
+     typeof DeviceOrientationEvent.requestPermission==='function'){
+    let perm;
+    try{perm=await DeviceOrientationEvent.requestPermission();}
+    catch(err){perm='denied';}
+    if(perm!=='granted'){
+      btn.classList.add('error');
+      const orig=btn.innerHTML;
+      btn.textContent='Access denied';
+      setTimeout(()=>{btn.innerHTML=orig;btn.classList.remove('error');},2200);
+      return;
+    }
+  }
+  if(!window.DeviceOrientationEvent){
+    btn.textContent='Not available';setTimeout(()=>{btn.innerHTML='&#10022; Gyro';},2000);
+    return;
+  }
+  // Attach listener (idempotent — browser deduplicates same function ref)
+  window.addEventListener('deviceorientation',onDeviceOrientation,true);
+  gyroActive=true;
+  _refQ.identity(); // start with identity, recenter after first reading
+  setTimeout(recenterGyro,250); // short delay for first real reading
+  btn.classList.add('active');
+  document.getElementById('recenter-btn').style.display='block';
+  document.getElementById('hint').textContent='move phone to look around';
+}
+
+if(isMobile){
+  document.getElementById('gyro-btn').style.display='block';
+  document.getElementById('gyro-btn').addEventListener('click',toggleGyro);
+  document.getElementById('recenter-btn').addEventListener('click',()=>{
+    recenterGyro();
+    // brief visual flash
+    const b=document.getElementById('recenter-btn');
+    b.style.color='rgba(210,190,255,0.95)';
+    setTimeout(()=>b.style.color='',500);
+  });
+  window.addEventListener('orientationchange',()=>{if(gyroActive)setTimeout(recenterGyro,300);});
+}
+
+
+
+// ── Outer sphere of animated light points ─────────────────────────────────────
+const SR=14,SN=9200;
+const sPos=new Float32Array(SN*3),sRnd=new Float32Array(SN);
+const PHI_G=Math.PI*(3-Math.sqrt(5));
+for(let i=0;i<SN;i++){
+  const y=1-(i/(SN-1))*2,r=Math.sqrt(Math.max(0,1-y*y)),t=PHI_G*i;
+  sPos[i*3]=SR*r*Math.cos(t);sPos[i*3+1]=SR*y;sPos[i*3+2]=SR*r*Math.sin(t);
+  sRnd[i]=Math.random();
+}
+const sGeo=new THREE.BufferGeometry();
+sGeo.setAttribute('position',new THREE.BufferAttribute(sPos,3));
+sGeo.setAttribute('aR',new THREE.BufferAttribute(sRnd,1));
+const sMat=new THREE.ShaderMaterial({
+  uniforms:{uT:{value:0}},
+  vertexShader:`
+    uniform float uT;attribute float aR;varying float vB;
+    void main(){
+      vec3 n=normalize(position);float len=length(position);
+      /* three overlapping waves — always additive, never subtract below floor */
+      float w1=sin(n.y*2.4+uT*0.19)*0.28
+              +sin(n.x*1.8+uT*0.14+1.4)*0.20;
+      float w2=sin((n.x*0.9+n.z*1.2)*1.6+uT*0.10)*0.16
+              +sin(n.z*3.2+uT*0.38+aR*1.5)*cos(n.x*1.8+uT*0.22)*0.12;
+      float wave=w1+w2;
+      /* displacement — gentle undulation */
+      float d=wave*0.045;
+      /* brightness: solid floor 0.42, wave pushes up to ~0.95 */
+      vB=clamp(0.42+wave*0.38,0.28,0.95);
+      vec3 p=n*(len*(1.0+d));
+      vec4 mv=modelViewMatrix*vec4(p,1.0);
+      gl_Position=projectionMatrix*mv;
+      float dist=max(-mv.z,.5);
+      /* bigger points, perspective-correct, hard min 1.5px */
+      gl_PointSize=clamp((1.8+vB*2.0)*(22.0/dist),1.5,7.5);
+    }`,
+  fragmentShader:`
+    varying float vB;
+    void main(){
+      vec2 uv=gl_PointCoord-.5;float d=length(uv)*2.0;
+      if(d>1.0)discard;
+      gl_FragColor=vec4(1.,1.,1.,(1.0-d*d)*vB*.78);
+    }`,
+  transparent:true,depthWrite:false,blending:THREE.AdditiveBlending
+});
+scene.add(new THREE.Points(sGeo,sMat));
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function sph(th,ph,r){return new THREE.Vector3(r*Math.sin(ph)*Math.cos(th),r*Math.cos(ph),r*Math.sin(ph)*Math.sin(th));}
+function perpBasis(dir){
+  let u=new THREE.Vector3(0.2,1,0.1).normalize();
+  if(Math.abs(dir.dot(u))>0.92)u=new THREE.Vector3(1,0.2,0.1).normalize();
+  const b1=new THREE.Vector3().crossVectors(dir,u).normalize();
+  const b2=new THREE.Vector3().crossVectors(b1,dir).normalize();
+  return[b1,b2];
+}
+
+// ── Glow textures ─────────────────────────────────────────────────────────────
+const texCache={};
+function glowTex(hex){
+  if(texCache[hex])return texCache[hex];
+  const c=new THREE.Color(hex);
+  const R=Math.round(c.r*255),G=Math.round(c.g*255),B=Math.round(c.b*255);
+  const SZ=256,h=SZ/2,cv=document.createElement('canvas');
+  cv.width=cv.height=SZ;const ctx=cv.getContext('2d');
+  const gr=ctx.createRadialGradient(h,h,0,h,h,h);
+  gr.addColorStop(0,'rgba(255,255,255,1)');
+  gr.addColorStop(0.06,`rgba(${R},${G},${B},1)`);
+  gr.addColorStop(0.22,`rgba(${R},${G},${B},0.55)`);
+  gr.addColorStop(0.55,`rgba(${R},${G},${B},0.12)`);
+  gr.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=gr;ctx.beginPath();ctx.arc(h,h,h,0,Math.PI*2);ctx.fill();
+  texCache[hex]=new THREE.CanvasTexture(cv);return texCache[hex];
+}
+function mkSp(tex,scale,op){
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,opacity:op}));
+  sp.scale.setScalar(scale);return sp;
+}
+
+// ── HTML label system ─────────────────────────────────────────────────────────
+const labelLayer=document.getElementById('labels');
+const labelReg=[];
+function addLabel(el,pos){labelLayer.appendChild(el);labelReg.push({el,pos:pos.clone()});}
+
+// ── Self-patterns — close ring around camera (r=3.8) ─────────────────────────
+const selfPos=Array.from({length:SELF_PATTERNS.length},(_,i)=>{
+  const y=1-(i/(SELF_PATTERNS.length-1))*2,r=Math.sqrt(Math.max(0,1-y*y)),t=PHI_G*i*2.4;
+  return new THREE.Vector3(Math.cos(t)*r*3.8,y*3.8,Math.sin(t)*r*3.8);
+});
+const selfLabelEls=SELF_PATTERNS.map((pat,i)=>{
+  const el=document.createElement('div');el.className='sp';el.textContent=pat;
+  addLabel(el,selfPos[i]);return el;
+});
+
+// ── Node positions — intentional 360° spherical coverage at r=9 ──────────────
+// (theta=azimuth, phi=polar from top)
+const NODE_POS=[
+  sph(0.30,0.85,9),   // 0  Sarah    — front-left, upper
+  sph(2.90,0.90,9),   // 1  Michael  — back-left, upper
+  sph(1.20,1.28,9),   // 2  Emily    — right-front, mid
+  sph(4.52,1.62,9),   // 3  Ryan     — left-back, lower
+  sph(0.72,1.08,9),   // 4  Jessica  — front, mid (closest)
+  sph(3.52,1.40,9),   // 5  Tyler    — left, mid
+  sph(5.08,1.22,9),   // 6  Brandon  — right-back, mid
+  sph(1.80,0.50,9),   // 7  Ashley   — front-right, high
+  sph(4.06,0.46,9),   // 8  Megan    — back, high
+  sph(2.20,1.02,9),   // 9  David    — back-left, mid
+  sph(5.82,1.50,9),   // 10 Rachel   — right, mid-low
+  sph(3.06,1.80,9),   // 11 Chris    — behind, low
+];
+
+// ── Colored connection paths (dotted + pulse-animated) ────────────────────────
+const connShaderBase=new THREE.ShaderMaterial({
+  uniforms:{uT:{value:0},uPh:{value:0},uCol:{value:new THREE.Color(1,1,1)},uMult:{value:1.0}},
+  vertexShader:`
+    attribute float aBr;uniform float uT,uPh,uMult;varying float vBr;varying float vH;
+    void main(){
+      vBr=aBr*0.30*uMult; vH=0.0;
+      vec4 mv=modelViewMatrix*vec4(position,1.0);
+      gl_Position=projectionMatrix*mv;
+      float dist=max(-mv.z,.3);
+      gl_PointSize=clamp((0.8+aBr*1.0)*(10.0/dist),.5,4.0);
+    }`,
+  fragmentShader:`
+    uniform vec3 uCol;varying float vBr;varying float vH;
+    void main(){
+      vec2 uv=gl_PointCoord-.5;float d=length(uv)*2.0;
+      if(d>1.0)discard;
+      gl_FragColor=vec4(uCol,(1.0-d)*vBr*.85);
+    }`,
+  transparent:true,depthWrite:false,blending:THREE.AdditiveBlending
+});
+
+function makeConnGeo(nodePos){
+  const N=95,pos=new Float32Array(N*3),br=new Float32Array(N);
+  const start=nodePos.clone().normalize().multiplyScalar(1.5);
+  const cp=nodePos.clone().multiplyScalar(0.47);
+  const[b1]=perpBasis(nodePos.clone().normalize());
+  cp.addScaledVector(b1,(Math.random()-.5)*2.6);
+  for(let i=0;i<N;i++){
+    const t=i/(N-1),mt=1-t;
+    pos[i*3]  =mt*mt*start.x+2*mt*t*cp.x+t*t*nodePos.x;
+    pos[i*3+1]=mt*mt*start.y+2*mt*t*cp.y+t*t*nodePos.y;
+    pos[i*3+2]=mt*mt*start.z+2*mt*t*cp.z+t*t*nodePos.z;
+    br[i]=.05+Math.pow(t,1.0)*.86;
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  g.setAttribute('aBr',new THREE.BufferAttribute(br,1));
+  return g;
+}
+
+// ── Pattern connection: subtle traveling light (node → pattern) ───────────────
+const patConnShader=new THREE.ShaderMaterial({
+  uniforms:{uT:{value:0},uPh:{value:0},uCol:{value:new THREE.Color(1,1,1)},uMult:{value:1.0}},
+  vertexShader:`
+    attribute float aBr;uniform float uT,uPh,uMult;varying float vBr;varying float vH;
+    void main(){
+      /* two pulses running at different speeds for richer feel */
+      float tA=fract(uT*0.36+uPh);
+      float tB=fract(uT*0.22+uPh+0.5);
+      float hA=exp(-pow(aBr-tA,2.0)/0.016);
+      float hB=exp(-pow(aBr-tB,2.0)/0.024)*0.55;
+      float head=hA+hB;
+      /* always-on base: whole path glows faintly */
+      float base=0.18+aBr*0.12;
+      vBr=(base+head*0.70)*uMult;
+      vH=clamp(head,0.0,1.0);
+      vec4 mv=modelViewMatrix*vec4(position,1.0);
+      gl_Position=projectionMatrix*mv;
+      float dist=max(-mv.z,.3);
+      gl_PointSize=clamp((1.2+head*2.8)*(9.0/dist),1.0,6.0);
+    }`,
+  fragmentShader:`
+    uniform vec3 uCol;varying float vBr;varying float vH;
+    void main(){
+      vec2 uv=gl_PointCoord-.5;float d=length(uv)*2.0;
+      if(d>1.0)discard;
+      /* bloom white at pulse head */
+      vec3 col=mix(uCol,vec3(1.0),vH*0.55);
+      gl_FragColor=vec4(col,(1.0-d*0.6)*vBr*0.92);
+    }`,
+  transparent:true,depthWrite:false,blending:THREE.AdditiveBlending
+});
+function makePatConnGeo(fromPos,toPos){
+  /* more points = denser line */
+  const N=60,pos=new Float32Array(N*3),br=new Float32Array(N);
+  for(let i=0;i<N;i++){
+    const t=i/(N-1);
+    pos[i*3]  =fromPos.x+(toPos.x-fromPos.x)*t;
+    pos[i*3+1]=fromPos.y+(toPos.y-fromPos.y)*t;
+    pos[i*3+2]=fromPos.z+(toPos.z-fromPos.z)*t;
+    br[i]=t;
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  g.setAttribute('aBr',new THREE.BufferAttribute(br,1));
+  return g;
+}
+
+// ── Ambient inner particles ───────────────────────────────────────────────────
+const pBuf=new Float32Array(180*3);
+for(let i=0;i<180;i++){
+  const t2=Math.random()*Math.PI*2,p2=Math.acos(2*Math.random()-1),r2=1.5+Math.random()*10;
+  pBuf[i*3]=r2*Math.sin(p2)*Math.cos(t2);pBuf[i*3+1]=r2*Math.cos(p2);pBuf[i*3+2]=r2*Math.sin(p2)*Math.sin(t2);
+}
+const pGeo=new THREE.BufferGeometry();pGeo.setAttribute('position',new THREE.BufferAttribute(pBuf,3));
+scene.add(new THREE.Points(pGeo,new THREE.PointsMaterial({color:0x8866bb,size:0.14,transparent:true,opacity:0.30,blending:THREE.AdditiveBlending,depthWrite:false})));
+
+// ── Build all nodes ───────────────────────────────────────────────────────────
+const nodeObjs=[],clickMeshes=[],connMats=[];
+const _v=new THREE.Vector3();
+
+NODES.forEach((n,i)=>{
+  const pos=NODE_POS[i],tex=glowTex(n.c);
+
+  // Glow layers
+  const halo=mkSp(tex,n.nr*5.0,0.28),mid=mkSp(tex,n.nr*2.2,0.62),core=mkSp(tex,n.nr*0.85,0.90);
+  [halo,mid,core].forEach(s=>{s.position.copy(pos);scene.add(s);});
+
+  // Invisible click sphere
+  const cMesh=new THREE.Mesh(new THREE.SphereGeometry(0.85,8,8),new THREE.MeshBasicMaterial({visible:false}));
+  cMesh.position.copy(pos);scene.add(cMesh);
+  clickMeshes.push({mesh:cMesh,idx:i});
+
+  // Name + role label (offset slightly outward)
+  const lblPos=pos.clone().normalize().multiplyScalar(pos.length()+n.nr*2.0+0.6);
+  const rlEl=document.createElement('div');rlEl.className='rl';
+  rlEl.innerHTML=`<div class="rn">${n.name}</div><div class="rr">${n.role}</div>`;
+  rlEl.addEventListener('click',e=>{e.stopPropagation();handleNodeClick(i);});
+  addLabel(rlEl,lblPos);
+
+  // Pattern labels clustered around node
+  const[b1,b2]=perpBasis(pos.clone().normalize());
+  const spread=4.2+n.patterns.length*0.55;
+  const patEntries=n.patterns.map((pat,j)=>{
+    const a=(j/n.patterns.length)*Math.PI*2+Math.PI/n.patterns.length;
+    let pp=pos.clone()
+      .addScaledVector(pos.clone().normalize(),2.8)
+      .addScaledVector(b1,Math.cos(a)*spread)
+      .addScaledVector(b2,Math.sin(a)*spread*0.52);
+    if(pp.length()>11.5)pp.normalize().multiplyScalar(11.5);
+
+    // Tiny glow at pattern position
+    const pg=mkSp(tex,1.0,0.16);pg.position.copy(pp);scene.add(pg);
+    // Traveling-light dotted path node→pattern
+    const pcm=patConnShader.clone();
+    pcm.uniforms.uCol.value=new THREE.Color(n.c);
+    pcm.uniforms.uPh.value=Math.random()*Math.PI*2;
+    scene.add(new THREE.Points(makePatConnGeo(pos,pp),pcm));
+    const plEl=document.createElement('div');plEl.className='pl';plEl.textContent=pat;
+    addLabel(plEl,pp);
+    return{el:plEl,glow:pg,connMat:pcm};
+  });
+
+  // Connection dotted path
+  const cm=connShaderBase.clone();
+  cm.uniforms.uCol.value=new THREE.Color(n.c);
+  cm.uniforms.uPh.value=Math.random()*Math.PI*2;
+  connMats.push(cm);
+  scene.add(new THREE.Points(makeConnGeo(pos),cm));
+
+  nodeObjs.push({
+    i,pos,halo,mid,core,labelEl:rlEl,patEntries,
+    mult:1.0,multGoal:1.0,
+    bHalo:0.28,bMid:0.62,bCore:0.90,
+    pSp:0.26+Math.random()*0.32,pPh:Math.random()*Math.PI*2
+  });
+});
+
+// ── Focus system ──────────────────────────────────────────────────────────────
+let focusedIdx=-1;
+const raycaster=new THREE.Raycaster();
+
+function handleNodeClick(idx){
+  if(focusedIdx===idx){exitFocus();return;}
+  exitFocus();
+  focusedIdx=idx;
+  nodeObjs[idx].labelEl.classList.add('focused');
+  nodeObjs[idx].patEntries.forEach(p=>p.el.classList.add('focused'));
+  nodeObjs.forEach((o,i)=>{o.multGoal=(i===idx)?1.0:0.04;});
+  document.getElementById('focus-hint').classList.add('show');
+}
+function exitFocus(){
+  if(focusedIdx===-1)return;
+  nodeObjs[focusedIdx].labelEl.classList.remove('focused');
+  nodeObjs[focusedIdx].patEntries.forEach(p=>p.el.classList.remove('focused'));
+  focusedIdx=-1;
+  nodeObjs.forEach(o=>{o.multGoal=1.0;});
+  document.getElementById('focus-hint').classList.remove('show');
+}
+
+renderer.domElement.addEventListener('click',e=>{
+  if(didDrag)return;
+  const mouse=new THREE.Vector2((e.clientX/window.innerWidth)*2-1,-(e.clientY/window.innerHeight)*2+1);
+  raycaster.setFromCamera(mouse,camera);
+  const hits=raycaster.intersectObjects(clickMeshes.map(c=>c.mesh));
+  if(hits.length>0){
+    const f=clickMeshes.find(c=>c.mesh===hits[0].object);
+    if(f){handleNodeClick(f.idx);return;}
+  }
+  exitFocus();
+});
+
+// ── Animation loop ────────────────────────────────────────────────────────────
+const clock=new THREE.Clock();
+const LMULT=0.072;
+
+function updateLabels(){
+  const cw=window.innerWidth,ch=window.innerHeight;
+  labelReg.forEach(({el,pos})=>{
+    _v.copy(pos).project(camera);
+    if(_v.z>1){el.style.visibility='hidden';return;}
+    el.style.visibility='';
+    const x=(_v.x*0.5+0.5)*cw,y=(-_v.y*0.5+0.5)*ch;
+    el.style.transform=`translate(calc(-50% + ${x}px),calc(-50% + ${y}px))`;
+  });
+}
+
+(function loop(){
+  requestAnimationFrame(loop);
+  const t=clock.getElapsedTime();
+
+  // Camera: gyro mode uses quaternion slerp; touch/mouse uses euler
+  if(gyroActive){
+    // Smooth slerp toward target — damping kills jitter without adding lag
+    _smoothQ.slerp(_targetQ,0.12);
+    camera.quaternion.copy(_smoothQ);
+  }else{
+    if(!drag)yaw+=0.00009;
+    applyCamera();
+  }
+
+  sMat.uniforms.uT.value=t;
+
+  nodeObjs.forEach((obj,i)=>{
+    obj.mult=THREE.MathUtils.lerp(obj.mult,obj.multGoal,LMULT);
+    const m=obj.mult;
+    const breath=obj.bHalo+Math.sin(t*obj.pSp+obj.pPh)*0.09;
+    obj.halo.material.opacity=m*breath;
+    obj.mid.material.opacity=m*obj.bMid;
+    obj.core.material.opacity=m*obj.bCore;
+    obj.labelEl.style.opacity=String(Math.max(0,m));
+    obj.labelEl.style.pointerEvents=m<0.18?'none':'auto';
+    obj.patEntries.forEach(p=>{
+      p.glow.material.opacity=m*0.16;
+      p.connMat.uniforms.uT.value=t;
+      p.connMat.uniforms.uMult.value=m*1.0;
+      // Pattern text: full opacity for focused node, faint otherwise
+      p.el.style.opacity=(focusedIdx===i)?'':String(m*0.72);
+    });
+    connMats[i].uniforms.uT.value=t;
+    connMats[i].uniforms.uMult.value=m*0.7;
+  });
+
+  // Self-patterns dim when any node is focused
+  const sfOp=focusedIdx!==-1?'0.10':'';
+  selfLabelEls.forEach(el=>el.style.opacity=sfOp);
+
+  renderer.render(scene,camera);
+  updateLabels();
+})();
+
+// Tap to focus also works in gyro mode (no drag, just tap)
+renderer.domElement.addEventListener('touchend',e=>{
+  if(!gyroActive||e.changedTouches.length!==1)return;
+  const t=e.changedTouches[0];
+  if(Math.abs(t.clientX-lx)<8&&Math.abs(t.clientY-ly)<8){
+    // treat as tap — reuse click raycaster
+    const mouse=new THREE.Vector2((t.clientX/window.innerWidth)*2-1,-(t.clientY/window.innerHeight)*2+1);
+    raycaster.setFromCamera(mouse,camera);
+    const hits=raycaster.intersectObjects(clickMeshes.map(c=>c.mesh));
+    if(hits.length>0){const f=clickMeshes.find(c=>c.mesh===hits[0].object);if(f){handleNodeClick(f.idx);return;}}
+    exitFocus();
+  }
+},{passive:true});
+
+window.addEventListener('resize',()=>{
+  camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Relational World</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { width:100%; height:100%; overflow:hidden; background:#060410; touch-action:none; }
+#wrap { position:relative; width:100vw; height:100vh; }
+#labels {
+  position:absolute; top:0; left:0; width:100%; height:100%;
+  overflow:hidden; pointer-events:none; font-family:'Inter',sans-serif;
+}
+
+/* ── Shared label base: no text selection, touch-safe ── */
+.rl,.pl,.sp,.you-label {
+  user-select:none; -webkit-user-select:none; -webkit-touch-callout:none;
+}
+
+/* ── Relationship label ── */
+.rl {
+  position:absolute; transform:translate(-50%,-50%);
+  background:rgba(8,4,18,0.84); border:1px solid rgba(180,140,255,0.16);
+  border-radius:22px; padding:6px 15px; white-space:nowrap;
+  box-shadow:0 0 18px rgba(130,80,255,0.07);
+  transition:opacity 0.40s ease, border-color 0.3s, box-shadow 0.3s;
+  pointer-events:auto; cursor:pointer;
+}
+.rl:hover   { border-color:rgba(200,160,255,0.30); }
+.rl.focused { border-color:rgba(215,175,255,0.44); box-shadow:0 0 26px rgba(190,140,255,0.22); }
+.rn { font-size:13px; font-weight:500; color:rgba(235,225,255,0.92); line-height:1.35; letter-spacing:-0.01em; }
+.rr { font-size:11px; font-weight:300; color:rgba(162,132,222,0.65); line-height:1.3; }
+
+/* ── Pattern label ── */
+.pl {
+  position:absolute; transform:translate(-50%,-50%);
+  background:rgba(8,4,18,0.62); border:1px solid rgba(155,115,238,0.13);
+  border-radius:11px; padding:3px 9px;
+  font-size:9.5px; font-weight:400; color:rgba(190,166,255,0.42);
+  white-space:nowrap; pointer-events:auto; cursor:pointer;
+  transition:opacity 0.40s ease, color 0.25s, border-color 0.25s;
+}
+.pl:hover  { color:rgba(220,205,255,0.75); border-color:rgba(175,140,255,0.28); }
+.pl.focused { color:rgba(228,214,255,0.90); border-color:rgba(175,140,255,0.32); font-size:10.5px; }
+.pl.active  { color:rgba(240,228,255,0.96) !important; border-color:rgba(190,158,255,0.52) !important; box-shadow:0 0 12px rgba(160,120,255,0.20); }
+
+/* ── YOU label ── */
+.you-label {
+  position:absolute; transform:translate(-50%,-50%);
+  font-size:14px; font-weight:500; color:rgba(225,215,255,0.62);
+  letter-spacing:0.22em; text-transform:uppercase; white-space:nowrap;
+  text-shadow:0 0 14px rgba(180,140,255,0.38);
+  transition:opacity 0.45s ease, font-size 0.5s ease, color 0.5s ease,
+             letter-spacing 0.5s ease, text-shadow 0.5s ease;
+  pointer-events:auto; cursor:pointer;
+}
+.you-label:hover { color:rgba(238,230,255,0.82); text-shadow:0 0 22px rgba(185,150,255,0.55); }
+.you-label.self-focused {
+  font-size:17px !important; letter-spacing:0.30em !important;
+  color:rgba(242,236,255,0.96) !important;
+  text-shadow:0 0 28px rgba(188,152,255,0.70), 0 0 56px rgba(150,110,255,0.30) !important;
+}
+
+/* ── Self-pattern label ── */
+.sp {
+  position:absolute; transform:translate(-50%,-50%);
+  background:rgba(8,4,18,0.52); border:1px solid rgba(130,90,200,0.12);
+  border-radius:10px; padding:3px 8px;
+  font-size:9.5px; font-weight:300; color:rgba(178,158,225,0.44);
+  white-space:nowrap;
+  transition:opacity 0.45s ease, color 0.45s ease, background 0.45s ease,
+             border-color 0.45s ease, font-size 0.4s ease, box-shadow 0.4s ease;
+}
+.sp.self-focused {
+  color:rgba(232,220,255,0.94) !important; background:rgba(10,5,26,0.95) !important;
+  border-color:rgba(162,126,255,0.36) !important; font-size:11px !important;
+  font-weight:400 !important; box-shadow:0 0 16px rgba(145,106,255,0.18) !important;
+}
+
+/* ════════════════════════════════════════════════
+   CARD  — slides up from bottom
+════════════════════════════════════════════════ */
+#card-wrap {
+  position:fixed; bottom:0; left:0; right:0; z-index:30;
+  display:flex; justify-content:center; align-items:flex-end;
+  pointer-events:none;
+  transform:translateY(calc(100% + 6px));
+  transition:transform 0.44s cubic-bezier(0.32, 0.82, 0.50, 1);
+}
+#card-wrap.open { transform:translateY(0); pointer-events:auto; }
+#card {
+  width:100%; max-width:500px;
+  background:rgba(8,4,20,0.97);
+  backdrop-filter:blur(32px); -webkit-backdrop-filter:blur(32px);
+  border:1px solid rgba(162,125,255,0.18); border-bottom:none;
+  border-radius:18px 18px 0 0; overflow:hidden;
+  max-height:54vh; display:flex; flex-direction:column;
+}
+#card-notch { width:36px; height:4px; border-radius:2px; background:rgba(155,125,255,0.20); margin:12px auto 4px; flex-shrink:0; }
+#card-header { display:flex; justify-content:flex-end; padding:0 20px 2px; flex-shrink:0; }
+#card-close {
+  background:none; border:none; cursor:pointer; padding:4px 2px;
+  font-size:15px; color:rgba(165,138,255,0.42); font-family:'Inter',sans-serif;
+  transition:color 0.2s; line-height:1;
+}
+#card-close:hover { color:rgba(200,178,255,0.82); }
+#card-scroll { overflow-y:auto; padding:0 22px 32px; flex:1; overscroll-behavior:contain; }
+#card-scroll::-webkit-scrollbar { width:3px; }
+#card-scroll::-webkit-scrollbar-thumb { background:rgba(155,125,255,0.18); border-radius:2px; }
+
+/* Card typography */
+.c-tag  { font-size:9px; font-weight:300; color:rgba(155,125,220,0.50); letter-spacing:0.15em; text-transform:uppercase; margin-bottom:5px; }
+.c-name { font-size:21px; font-weight:500; color:rgba(238,230,255,0.93); line-height:1.2; letter-spacing:-0.01em; }
+.c-patname { font-size:19px; font-weight:500; color:rgba(238,230,255,0.93); line-height:1.25; }
+.c-summary { font-size:12px; font-weight:400; color:rgba(195,175,255,0.70); line-height:1.6; margin-top:5px; }
+.c-div  { height:1px; background:rgba(155,125,255,0.11); margin:14px 0; }
+.c-lbl  { font-size:8.5px; font-weight:300; color:rgba(148,120,212,0.38); letter-spacing:0.15em; text-transform:uppercase; margin-bottom:7px; }
+.c-body { font-size:12px; font-weight:300; color:rgba(205,188,255,0.78); line-height:1.72; margin-bottom:10px; }
+.c-root { font-size:11.5px; font-weight:300; color:rgba(172,150,228,0.50); line-height:1.68; font-style:italic; }
+.c-back {
+  font-size:10px; font-weight:400; color:rgba(165,138,255,0.52); cursor:pointer;
+  display:inline-block; margin-bottom:13px; letter-spacing:0.03em;
+  transition:color 0.2s; user-select:none; -webkit-user-select:none;
+}
+.c-back:hover { color:rgba(200,178,255,0.82); }
+.c-pats { display:flex; flex-wrap:wrap; gap:7px; margin-top:2px; }
+.c-pat  {
+  background:rgba(16,8,35,0.72); border:1px solid rgba(150,115,235,0.18);
+  border-radius:10px; padding:6px 12px;
+  font-size:10.5px; font-weight:400; color:rgba(196,174,255,0.72);
+  cursor:pointer; transition:background 0.2s, border-color 0.2s, color 0.2s;
+  user-select:none; -webkit-user-select:none; -webkit-touch-callout:none;
+}
+.c-pat:hover { background:rgba(24,12,52,0.88); border-color:rgba(175,142,255,0.34); color:rgba(222,210,255,0.92); }
+
+/* ── Chrome ── */
+#badge { position:fixed;top:26px;left:28px;z-index:20;pointer-events:none;font-family:'Inter',sans-serif; }
+#badge h1 { font-size:15px;font-weight:300;color:rgba(200,185,255,0.24);letter-spacing:0.05em; }
+#badge p  { font-size:9px;font-weight:300;color:rgba(158,128,218,0.18);letter-spacing:0.15em;text-transform:uppercase;margin-top:3px; }
+#hint { position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:20;
+  font-family:'Inter',sans-serif;font-size:9.5px;font-weight:300;
+  color:rgba(158,128,218,0.28);letter-spacing:0.18em;text-transform:uppercase;
+  pointer-events:none;transition:opacity 1.8s ease; }
+#hint.fade{opacity:0;}
+#focus-hint { position:fixed;bottom:50px;left:50%;transform:translateX(-50%);z-index:20;
+  font-family:'Inter',sans-serif;font-size:9.5px;font-weight:300;
+  color:rgba(200,165,255,0.40);letter-spacing:0.14em;text-transform:uppercase;
+  pointer-events:none;opacity:0;transition:opacity 0.7s ease;white-space:nowrap; }
+#focus-hint.show{opacity:1;}
+</style>
+</head>
+<body>
+
+<div id="wrap"><div id="labels"></div></div>
+
+<!-- Pattern / Person info card -->
+<div id="card-wrap">
+  <div id="card">
+    <div id="card-notch"></div>
+    <div id="card-header"><button id="card-close">✕</button></div>
+    <div id="card-scroll"></div>
+  </div>
+</div>
+
+<div id="badge"><h1>Relational World</h1><p>psychological field map</p></div>
+<div id="hint">tap a node or pattern &nbsp;&middot;&nbsp; drag to rotate</div>
+<div id="focus-hint">scroll out to return</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+'use strict';
+
+// ════════════════════════════════════════════════
+//  DATA
+// ════════════════════════════════════════════════
+const NODES = [
+  { name:'Sarah',   role:'mother',             c:0xA855F7, nr:1.90, int:0.90, patterns:['fear of disappointing','caretaker reflex','approval seeking'] },
+  { name:'Michael', role:'father',             c:0x7C3AED, nr:1.55, int:0.72, patterns:['performance mask','emotional distance','protective loyalty'] },
+  { name:'Emily',   role:'older sister',       c:0x9333EA, nr:1.65, int:0.78, patterns:['comparison pressure','safe attachment','intermittent closeness'] },
+  { name:'Ryan',    role:'younger brother',    c:0xC084FC, nr:1.30, int:0.60, patterns:['protective loyalty','caretaker reflex','guilt cycle'] },
+  { name:'Jessica', role:'closest friend',     c:0xEC4899, nr:2.05, int:0.96, patterns:['emotional dependence','safe attachment','fear of loss','deep mirroring'] },
+  { name:'Tyler',   role:'childhood friend',   c:0xF472B6, nr:1.25, int:0.55, patterns:['nostalgia loop','identity anchor','conflict avoidance'] },
+  { name:'Brandon', role:'former partner',     c:0xF97316, nr:1.85, int:0.88, patterns:['unresolved resentment','emotional dependence','grief loop','intermittent closeness'] },
+  { name:'Ashley',  role:'recent relationship',c:0xFB923C, nr:1.50, int:0.68, patterns:['guarded openness','fear of repeating','performance mask'] },
+  { name:'Megan',   role:'coworker',           c:0xFDA4AF, nr:1.15, int:0.46, patterns:['approval seeking','boundary blur','people pleasing'] },
+  { name:'David',   role:'mentor',             c:0xD946EF, nr:1.58, int:0.76, patterns:['idealization','fear of inadequacy','safe challenge'] },
+  { name:'Rachel',  role:'therapist',          c:0xE879F9, nr:1.32, int:0.62, patterns:['structured trust','vulnerability practice','boundary learning'] },
+  { name:'Chris',   role:'old flame',          c:0xFB7185, nr:1.25, int:0.54, patterns:['nostalgia loop','what-if thinking','unfinished chapter'] },
+];
+const SELF_PATTERNS = [
+  'inner critic','people pleaser','avoidance loops',
+  'self-doubt','resilience','creative spark','fear of rejection'
+];
+
+// Pattern detail text: [summary, body, beneath the surface]
+const PAT = {
+  'fear of disappointing':  ['Anxiety about falling short — even of expectations no one has stated.',             'You pre-apologize, over-explain, and shrink before feedback arrives. The fear runs ahead of the relationship, not inside it.',                           'Love may have once felt conditional on getting things right.'],
+  'caretaker reflex':        ['An automatic move to manage others\' feelings before your own.',                    'You become the room\'s emotional regulator without deciding to — fixing, soothing, absorbing what others can\'t hold.',                               'Environments where others\' stability once felt like your responsibility.'],
+  'approval seeking':        ['A baseline need to be seen positively, running beneath most interactions.',          'Agreements that aren\'t real. Opinions softened before they leave your mouth. Watching faces for signs of acceptance.',                               'Internalized doubt about whether who you are — without performance — is enough.'],
+  'performance mask':        ['Presenting a version of yourself calibrated to what the situation seems to need.', 'Warmth, competence, confidence — deployed strategically. The real self waits offstage, exhausted.',                                                   'A learned split between being and appearing, often developed early.'],
+  'emotional distance':      ['A maintained gap that keeps things manageable and safe.',                           'You engage, but from behind glass. Presence without full exposure. Closeness within limits you control.',                                              'Intimacy may have carried risk — being fully seen once meant being hurt.'],
+  'protective loyalty':      ['A fierce instinct to defend someone, even when it costs you.',                      'You hold their secrets, absorb their failures, excuse what would be unacceptable from others.',                                                       'Their wellbeing became intertwined with your own sense of safety or identity.'],
+  'comparison pressure':     ['A chronic measuring of yourself against someone else, often unfavorably.',          'Small wins feel less real. Milestones get filtered through: but what did they do? The bar keeps moving.',                                               'Worth may have been distributed unevenly in your early environment.'],
+  'safe attachment':         ['A relationship that feels genuinely secure — where you can be imperfect and stay.','You can show up unguarded here. Conflict doesn\'t feel like abandonment. You repair without catastrophizing.',                                       'This pattern is a resource. It\'s worth protecting.'],
+  'intermittent closeness':  ['Intimacy that arrives in waves — intense, then absent, then back.',                 'You calibrate to their rhythm, bracing for the gaps and flooding with relief at the returns.',                                                         'Unpredictable availability in formative relationships shapes this expectation.'],
+  'guilt cycle':             ['A loop where responsibility turns inward even when it doesn\'t belong there.',      'Something goes wrong. You scan for your role. You find it, or invent it. Guilt arrives before the analysis.',                                           'An early sense that being "the problem" gave you some form of control.'],
+  'emotional dependence':    ['Relying on someone else\'s state to regulate your own.',                            'When they\'re good, you can breathe. When they\'re off, so are you. Your baseline tracks theirs.',                                                     'Your own emotional regulation developed alongside theirs, not independently.'],
+  'fear of loss':            ['A low hum of anticipatory grief that runs through close relationships.',            'You hold on a little too tightly. You plan for the ending before it\'s anywhere near. Love and dread arrive together.',                                 'Loss, or its threat, arrived early enough to become a template.'],
+  'deep mirroring':          ['An exceptional attunement — you feel what they feel, almost before they name it.', 'This creates real closeness. It can also mean their emotions colonize your nervous system.',                                                         'A boundary between self and other that was never fully established.'],
+  'nostalgia loop':          ['Returning again and again to who you were with this person.',                       'The past version of this relationship carries something the present can\'t quite hold. You visit it often.',                                           'Continuity of self. A specific kind of being-known that hasn\'t been replicated.'],
+  'identity anchor':         ['This relationship helps you remember who you are.',                                 'Not dependency — more like orientation. They\'ve known you across versions of yourself.',                                                              'A self that needed witnessing to feel real.'],
+  'conflict avoidance':      ['A strong pull away from friction that might rupture the connection.',               'You soften, absorb, redirect. You bury things until they\'re unrecognizable. Peace is maintained at cost.',                                           'Conflict may have once felt catastrophic — to the relationship, or to you personally.'],
+  'unresolved resentment':   ['A residue of old hurt that never fully cleared.',                                   'It shows up sideways — in tone, in distance, in a reluctance to fully trust again.',                                                                  'An injury that never got named, heard, or genuinely repaired.'],
+  'grief loop':              ['Grief that returns on a cycle — not resolved, but revisited.',                      'You think you\'ve moved through it, then the feeling resurfaces at a smell, a phrase, a similar moment.',                                              'A loss that didn\'t have space to be fully processed.'],
+  'guarded openness':        ['Wanting to be known, but keeping the door cracked rather than open.',               'You share in measured amounts. You test. You watch what they do with the pieces before offering more.',                                                  'Vulnerability was once used against you, or simply wasn\'t safe.'],
+  'fear of repeating':       ['A hypervigilance against re-entering a dynamic you\'ve already escaped.',           'You track for signs. You compare. You\'re alert to echoes. The ghost of the old pattern shapes the new one.',                                          'Pain from a previous relationship whose lessons haven\'t fully metabolized.'],
+  'boundary blur':           ['Difficulty locating where you end and the other person begins.',                    'Their needs start to feel like yours. Their urgency becomes your urgency. The line dissolves without you noticing.',                                    'A self that was porous in formation — or needed to be, to survive.'],
+  'people pleasing':         ['Optimizing for others\' comfort, often at the expense of your own truth.',          'You read the room and give it what it wants. Disagreement feels risky. Your real preferences get filed away.',                                           'An early conclusion that your needs mattered less than the effect you had on others.'],
+  'idealization':            ['Projecting exceptional qualities onto this person, beyond what the evidence holds.','They become the answer to something. The gap between who they are and who you need them to be stays invisible — until it doesn\'t.',                  'An unfulfilled need that this person seems to promise to meet.'],
+  'fear of inadequacy':      ['A quiet ongoing sense that you\'re not quite enough for what\'s required.',         'You work harder, prepare more, hedge before being asked. The sense of falling short precedes any actual judgment.',                                      'Internalized standards you\'ve never quite reached.'],
+  'safe challenge':          ['This relationship pushes you — and the pushing feels trustworthy.',                 'You\'re stretched here, but not destabilized. Critique arrives in a context of genuine support.',                                                      'A rare combination: someone invested in your growth who you also believe.'],
+  'structured trust':        ['Trust that exists within defined parameters, intentionally maintained.',            'This is not blind trust. It\'s built on consistency, role, and repeated repair. It holds because it\'s tended.',                                       'A recognition that trust is a practice, not a state.'],
+  'vulnerability practice':  ['A relationship where you\'re learning to be seen more fully.',                      'Disclosure is a little harder here than it looks. You\'re practicing. You notice when you hold back.',                                                  'The ongoing work of learning that exposure doesn\'t always lead to rejection.'],
+  'boundary learning':       ['An ongoing process of discovering what this relationship can and can\'t hold.',     'Limits are still being named. Some have been set and tested. Others haven\'t been spoken yet.',                                                         'A self still learning where it ends.'],
+  'what-if thinking':        ['A habit of running alternate timelines about this relationship.',                   'What if you\'d chosen differently? What if you still could? The questions don\'t resolve — they orbit.',                                               'Ambivalence that never fully landed into acceptance.'],
+  'unfinished chapter':      ['The feeling that something between you never reached its conclusion.',              'Not necessarily regret — more like an open file. The story doesn\'t have an ending you can point to.',                                                 'An inability, or an unwillingness, to fully close.'],
+};
+
+// ════════════════════════════════════════════════
+//  SCENE + RENDERER
+// ════════════════════════════════════════════════
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x060410);
+scene.fog = new THREE.FogExp2(0x060410, 0.0034);
+scene.add(new THREE.AmbientLight(0x0c071e, 1));
+
+const W = window.innerWidth, H = window.innerHeight;
+const camera = new THREE.PerspectiveCamera(44, W/H, 0.1, 800);
+
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(W, H);
+renderer.domElement.style.cssText = 'position:absolute;top:0;left:0;display:block;';
+document.getElementById('wrap').insertBefore(renderer.domElement, document.getElementById('labels'));
+
+// ════════════════════════════════════════════════
+//  CAMERA — spherical, inertia, permanent slow rotation
+// ════════════════════════════════════════════════
+const CAM = {
+  theta:0.35, phi:1.15, r:105, rGoal:105,
+  velTheta:0, velPhi:0,
+  target:    new THREE.Vector3(),
+  targetGoal:new THREE.Vector3(),
+};
+const SLOW_ROT=0.00042, FOCUS_R=38, SELF_FOCUS_R=28, FULL_R=105, EXIT_R=68;
+const DRAG_THRESH = 6; // px — below this = click, above = drag/orbit
+
+function posCamera(){
+  const {r,theta,phi,target}=CAM;
+  camera.position.set(
+    target.x+r*Math.sin(phi)*Math.sin(theta),
+    target.y+r*Math.cos(phi),
+    target.z+r*Math.sin(phi)*Math.cos(theta)
+  );
+  camera.lookAt(target);
+}
+posCamera();
+
+// ── Unified input — global mousedown/touch so drags always orbit ──
+let drag=false, didDrag=false, hintFaded=false;
+let lx=0, ly=0, dragSX=0, dragSY=0;
+let lastDT=0, lastDP=0;
+let pinchD=0, touchMoved=false;
+
+function fadeHint(){ if(!hintFaded){ hintFaded=true; document.getElementById('hint').classList.add('fade'); } }
+function isCardTarget(el){ return el && el.closest('#card-wrap'); }
+
+// Mouse
+document.addEventListener('mousedown', e=>{
+  if(isCardTarget(e.target)) return;
+  drag=true; didDrag=false; fadeHint();
+  CAM.velTheta=0; CAM.velPhi=0;
+  lx=dragSX=e.clientX; ly=dragSY=e.clientY;
+});
+window.addEventListener('mouseup', ()=>{ if(drag){CAM.velTheta=lastDT;CAM.velPhi=lastDP;} drag=false; });
+window.addEventListener('mousemove', e=>{
+  if(!drag) return;
+  const dist=Math.hypot(e.clientX-dragSX,e.clientY-dragSY);
+  if(dist>DRAG_THRESH) didDrag=true;
+  const dx=e.clientX-lx, dy=e.clientY-ly;
+  lastDT=-dx*0.005; lastDP=-dy*0.005;
+  CAM.theta+=lastDT; CAM.phi=Math.max(0.12,Math.min(Math.PI-0.12,CAM.phi+lastDP));
+  lx=e.clientX; ly=e.clientY; posCamera();
+});
+renderer.domElement.addEventListener('wheel',e=>{
+  fadeHint(); CAM.rGoal=Math.max(22,Math.min(230,CAM.rGoal+e.deltaY*0.08));
+  if(focusedIdx!==-1&&CAM.rGoal>EXIT_R) exitFocus();
+  if(selfFocused&&CAM.rGoal>EXIT_R) exitSelfFocus();
+},{passive:true});
+renderer.domElement.addEventListener('click',e=>{ if(!didDrag) handleCanvasTap(e.clientX,e.clientY); });
+
+// Touch
+document.addEventListener('touchstart',e=>{
+  if(isCardTarget(e.target)) return;
+  touchMoved=false; CAM.velTheta=0; CAM.velPhi=0; fadeHint();
+  if(e.touches.length===1){
+    drag=true; lx=dragSX=e.touches[0].clientX; ly=dragSY=e.touches[0].clientY;
+  }
+  if(e.touches.length===2){
+    drag=false;
+    pinchD=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+  }
+},{passive:true});
+document.addEventListener('touchmove',e=>{
+  if(isCardTarget(e.target)) return;
+  if(e.touches.length===1&&drag){
+    const dist=Math.hypot(e.touches[0].clientX-dragSX,e.touches[0].clientY-dragSY);
+    if(dist>DRAG_THRESH) touchMoved=true;
+    const dx=e.touches[0].clientX-lx,dy=e.touches[0].clientY-ly;
+    lastDT=-dx*0.005; lastDP=-dy*0.005;
+    CAM.theta+=lastDT; CAM.phi=Math.max(0.12,Math.min(Math.PI-0.12,CAM.phi+lastDP));
+    lx=e.touches[0].clientX; ly=e.touches[0].clientY; posCamera();
+  }
+  if(e.touches.length===2){
+    const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+    CAM.rGoal=Math.max(22,Math.min(230,CAM.rGoal-(d-pinchD)*0.18)); pinchD=d;
+    if(focusedIdx!==-1&&CAM.rGoal>EXIT_R) exitFocus();
+    if(selfFocused&&CAM.rGoal>EXIT_R) exitSelfFocus();
+  }
+},{passive:true});
+document.addEventListener('touchend',e=>{
+  if(isCardTarget(e.target)) return;
+  drag=false;
+  if(!touchMoved&&e.changedTouches.length===1)
+    handleCanvasTap(e.changedTouches[0].clientX,e.changedTouches[0].clientY);
+},{passive:true});
+
+// ════════════════════════════════════════════════
+//  HELPERS
+// ════════════════════════════════════════════════
+function fibSphere(n,r){
+  const phi=Math.PI*(3-Math.sqrt(5));
+  return Array.from({length:n},(_,i)=>{
+    const y=1-(i/(n-1))*2,rad=Math.sqrt(Math.max(0,1-y*y)),t=phi*i;
+    return new THREE.Vector3(Math.cos(t)*rad*r,y*r,Math.sin(t)*rad*r);
+  });
+}
+function perpBasis(dir){
+  let u=new THREE.Vector3(0.2,1,0.1).normalize();
+  if(Math.abs(dir.dot(u))>0.92) u=new THREE.Vector3(1,0.2,0.1).normalize();
+  const b1=new THREE.Vector3().crossVectors(dir,u).normalize();
+  const b2=new THREE.Vector3().crossVectors(b1,dir).normalize();
+  return [b1,b2];
+}
+function organicCurve(from,to){
+  const dir=to.clone().sub(from).normalize();
+  const [b1,b2]=perpBasis(dir);
+  const len=from.distanceTo(to);
+  const pts=[from.clone()];
+  for(let i=1;i<=5;i++){
+    const t=i/6,p=new THREE.Vector3().lerpVectors(from,to,t);
+    const d=Math.sin(t*Math.PI)*len*0.09;
+    p.addScaledVector(b1,(Math.random()-0.5)*2*d).addScaledVector(b2,(Math.random()-0.5)*2*d);
+    pts.push(p);
+  }
+  pts.push(to.clone());
+  return new THREE.CatmullRomCurve3(pts);
+}
+function patternPositions(nodePos,count){
+  const [b1,b2]=perpBasis(nodePos.clone().normalize());
+  const spread=8.5+count*0.85;
+  return Array.from({length:count},(_,i)=>{
+    const a=(i/count)*Math.PI*2+Math.PI/count;
+    return nodePos.clone()
+      .addScaledVector(nodePos.clone().normalize(),5)
+      .addScaledVector(b1,Math.cos(a)*spread)
+      .addScaledVector(b2,Math.sin(a)*spread*0.58);
+  });
+}
+const texCache={};
+function glowTex(hex){
+  if(texCache[hex]) return texCache[hex];
+  const c=new THREE.Color(hex);
+  const R=Math.round(c.r*255),G=Math.round(c.g*255),B=Math.round(c.b*255);
+  const SZ=256,h=SZ/2; const cv=document.createElement('canvas');
+  cv.width=cv.height=SZ; const ctx=cv.getContext('2d');
+  const gr=ctx.createRadialGradient(h,h,0,h,h,h);
+  gr.addColorStop(0,`rgba(255,255,255,1)`);
+  gr.addColorStop(0.06,`rgba(${R},${G},${B},1)`);
+  gr.addColorStop(0.22,`rgba(${R},${G},${B},0.55)`);
+  gr.addColorStop(0.55,`rgba(${R},${G},${B},0.12)`);
+  gr.addColorStop(1,`rgba(0,0,0,0)`);
+  ctx.fillStyle=gr; ctx.beginPath(); ctx.arc(h,h,h,0,Math.PI*2); ctx.fill();
+  texCache[hex]=new THREE.CanvasTexture(cv); return texCache[hex];
+}
+function mkSp(tex,scale,op){
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,opacity:op}));
+  sp.scale.setScalar(scale); return sp;
+}
+
+// ════════════════════════════════════════════════
+//  CORE — hard void + soft halo
+// ════════════════════════════════════════════════
+const coreGrp=new THREE.Group();
+coreGrp.add(new THREE.Mesh(new THREE.SphereGeometry(3.20,36,36),new THREE.MeshBasicMaterial({color:0x010108})));
+coreGrp.add(new THREE.Mesh(new THREE.SphereGeometry(3.65,32,32),new THREE.MeshBasicMaterial({color:0x050218,transparent:true,opacity:0.52,depthWrite:false})));
+coreGrp.add(new THREE.Mesh(new THREE.SphereGeometry(4.60,28,28),new THREE.MeshBasicMaterial({color:0x110840,transparent:true,opacity:0.16,depthWrite:false})));
+[[3.35,0.052,0xffffff,0.96],[3.52,0.040,0xd8f0ff,0.82],[3.78,0.028,0x88ddff,0.60],
+ [4.14,0.018,0x6699ff,0.40],[4.72,0.013,0x9966ff,0.26],[5.50,0.008,0x6633bb,0.14]]
+.forEach(([r,t,c,o])=>{
+  const m=new THREE.Mesh(new THREE.TorusGeometry(r,t,8,120),
+    new THREE.MeshBasicMaterial({color:c,transparent:true,opacity:o,depthWrite:false,blending:THREE.AdditiveBlending}));
+  m.rotation.x=Math.PI/2; coreGrp.add(m);
+});
+const wispGrp=new THREE.Group();
+for(let i=0;i<60;i++){
+  const a=(i/60)*Math.PI*2+(Math.random()-0.5)*0.12,yv=(Math.random()-0.5)*1.1;
+  const rS=3.4,rE=5.5+Math.random()*3.0;
+  const from=new THREE.Vector3(Math.cos(a)*rS,yv*0.22,Math.sin(a)*rS);
+  const to=new THREE.Vector3(Math.cos(a)*rE,yv,Math.sin(a)*rE);
+  const ca=a+(Math.random()-0.5)*0.4;
+  const ctrl=new THREE.Vector3(Math.cos(ca)*(rS+rE)*0.52,yv*0.55,Math.sin(ca)*(rS+rE)*0.52);
+  const pts=new THREE.QuadraticBezierCurve3(from,ctrl,to).getPoints(24);
+  const cols=new Float32Array(pts.length*3);
+  pts.forEach((_,k)=>{const t=k/(pts.length-1),w=1-t*0.86;cols[k*3]=w*0.80+0.20;cols[k*3+1]=w*0.90+0.10;cols[k*3+2]=1.0;});
+  const geo=new THREE.BufferGeometry().setFromPoints(pts);
+  geo.setAttribute('color',new THREE.BufferAttribute(cols,3));
+  wispGrp.add(new THREE.Line(geo,new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:0.25+Math.random()*0.50,depthWrite:false,blending:THREE.AdditiveBlending})));
+}
+coreGrp.add(wispGrp);
+coreGrp.add(mkSp(glowTex(0x88ccff),30,0.16));
+coreGrp.add(mkSp(glowTex(0x88ccff),12,0.32));
+coreGrp.add(mkSp(glowTex(0xffffff), 4,0.72));
+scene.add(coreGrp);
+
+// Invisible tap sphere for core click detection
+const coreTap=new THREE.Mesh(new THREE.SphereGeometry(7,12,12),new THREE.MeshBasicMaterial({visible:false}));
+scene.add(coreTap);
+
+// ════════════════════════════════════════════════
+//  LABELS
+// ════════════════════════════════════════════════
+const labelLayer=document.getElementById('labels');
+const labelReg=[];
+function addLabel(el,pos){ labelLayer.appendChild(el); labelReg.push({el,pos:pos.clone()}); }
+
+// YOU label — clickable
+const youEl=document.createElement('div'); youEl.className='you-label'; youEl.textContent='YOU';
+addLabel(youEl,new THREE.Vector3(0,0,0));
+youEl.addEventListener('click',e=>{ if(didDrag)return; e.stopPropagation(); selfFocused?exitSelfFocus():focusSelf(); });
+
+// Self-pattern labels at r=13
+const selfPos13=fibSphere(SELF_PATTERNS.length,13);
+const selfLabelEls=SELF_PATTERNS.map((pat,i)=>{
+  const el=document.createElement('div'); el.className='sp'; el.textContent=pat;
+  addLabel(el,selfPos13[i]); return el;
+});
+
+// ════════════════════════════════════════════════
+//  FILAMENT BUNDLE BUILDER
+// ════════════════════════════════════════════════
+const N_P=48;
+function buildBundle(fromPos,toPos,nc,nodeInt,nFil){
+  const dir=toPos.clone().sub(fromPos).normalize();
+  const [b1,b2]=perpBasis(dir);
+  const mainCurve=organicCurve(fromPos.clone(),toPos.clone());
+  const mainPts=mainCurve.getPoints(N_P-1);
+  const filaments=[];
+  for(let f=0;f<nFil;f++){
+    const isMain=f===0,bAngle=(f/nFil)*Math.PI*2,maxOffset=isMain?0:0.42+Math.random()*0.60;
+    const basePos=new Float32Array(N_P*3),livePos=new Float32Array(N_P*3);
+    const baseCols=new Float32Array(N_P*3),liveCols=new Float32Array(N_P*3);
+    mainPts.forEach((mp,k)=>{
+      const s=k/(N_P-1),env=Math.sin(s*Math.PI),off=maxOffset*env;
+      const ox=Math.cos(bAngle)*off*b1.x+Math.sin(bAngle)*off*b2.x;
+      const oy=Math.cos(bAngle)*off*b1.y+Math.sin(bAngle)*off*b2.y;
+      const oz=Math.cos(bAngle)*off*b1.z+Math.sin(bAngle)*off*b2.z;
+      basePos[k*3]=livePos[k*3]=mp.x+ox;
+      basePos[k*3+1]=livePos[k*3+1]=mp.y+oy;
+      basePos[k*3+2]=livePos[k*3+2]=mp.z+oz;
+      const w=Math.max(0,1-s*2.8);
+      const col=new THREE.Color().lerpColors(new THREE.Color(0xffffff),nc,Math.min(1,s*1.5));
+      const dim=isMain?0.28:0.18;
+      baseCols[k*3]=(col.r+w*0.35)*dim; baseCols[k*3+1]=(col.g+w*0.28)*dim; baseCols[k*3+2]=(col.b+w*0.45)*dim;
+    });
+    const geo=new THREE.BufferGeometry();
+    const pA=new THREE.BufferAttribute(livePos,3); pA.usage=THREE.DynamicDrawUsage;
+    const cA=new THREE.BufferAttribute(liveCols,3); cA.usage=THREE.DynamicDrawUsage;
+    geo.setAttribute('position',pA); geo.setAttribute('color',cA);
+    const baseOp=isMain?0.68+nodeInt*0.16:0.28+Math.random()*0.16;
+    const ln=new THREE.Line(geo,new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:baseOp,depthWrite:false,blending:THREE.AdditiveBlending}));
+    scene.add(ln);
+    const sAng=bAngle+0.85+Math.random()*0.6;
+    const sAxis=new THREE.Vector3().addScaledVector(b1,Math.cos(sAng)).addScaledVector(b2,Math.sin(sAng)).normalize();
+    filaments.push({geo,ln,basePos,livePos,baseCols,liveCols,baseOp,phase:Math.random(),speed:0.20+Math.random()*0.12,swaySpeed:0.16+Math.random()*0.26,swayPhase:Math.random()*Math.PI*2,swayAmp:isMain?0.10:0.22+Math.random()*0.28,sAxis,nc});
+  }
+  return {filaments,mainLine:filaments[0].ln};
+}
+
+// Self-pattern filaments
+const selfFils=[];
+let selfMult=1.0,selfMultGoal=1.0;
+selfPos13.forEach(sp=>{
+  const fromPos=sp.clone().normalize().multiplyScalar(3.9);
+  const {filaments}=buildBundle(fromPos,sp,new THREE.Color(0xaa77ff),0.48,2);
+  filaments.forEach(f=>selfFils.push(f));
+});
+
+// ════════════════════════════════════════════════
+//  NODES + CONNECTIONS + PATTERNS
+// ════════════════════════════════════════════════
+const R=36, nodePositions=fibSphere(NODES.length,R);
+const nodeObjs=[], clickSp=[], clickLn=[], pulsables=[];
+
+NODES.forEach((n,i)=>{
+  const pos=nodePositions[i], tex=glowTex(n.c);
+  const halo=mkSp(tex,n.nr*8.0,0.28), mid=mkSp(tex,n.nr*3.5,0.62), core=mkSp(tex,n.nr*1.3,0.90);
+  [halo,mid,core].forEach(s=>{s.position.copy(pos);scene.add(s);});
+  clickSp.push({sp:core,idx:i});
+
+  // Relationship label
+  const rlEl=document.createElement('div'); rlEl.className='rl';
+  rlEl.innerHTML=`<div class="rn">${n.name}</div><div class="rr">${n.role}</div>`;
+  rlEl.addEventListener('click',e=>{ if(didDrag)return; e.stopPropagation(); focusOn(i); });
+  addLabel(rlEl,pos.clone().normalize().multiplyScalar(pos.length()+n.nr*4+1.5));
+
+  const obj={i,pos,halo,mid,core,labelEl:rlEl,bHalo:0.28,bMid:0.62,bCore:0.90,filaments:[],patterns:[],mult:1.0,multGoal:1.0};
+  nodeObjs.push(obj);
+  pulsables.push({obj,speed:0.28+Math.random()*0.34,phase:Math.random()*Math.PI*2});
+
+  // Connection filaments
+  const {filaments,mainLine}=buildBundle(new THREE.Vector3(0,0,0),pos,new THREE.Color(n.c),n.int,5);
+  obj.filaments=filaments; clickLn.push({ln:mainLine,idx:i});
+
+  // Pattern cluster
+  const pPos=patternPositions(pos,n.patterns.length);
+  n.patterns.forEach((pat,j)=>{
+    const pp=pPos[j];
+    const pH=mkSp(tex,3.5,0.22); pH.position.copy(pp); scene.add(pH);
+    const pC=mkSp(tex,1.2,0.58); pC.position.copy(pp); scene.add(pC);
+    const pLn=new THREE.Line(new THREE.BufferGeometry().setFromPoints([pos.clone(),pp.clone()]),
+      new THREE.LineBasicMaterial({color:n.c,transparent:true,opacity:0.15,depthWrite:false,blending:THREE.AdditiveBlending}));
+    scene.add(pLn);
+
+    // Pattern label — clickable, drag-threshold guarded
+    const plEl=document.createElement('div'); plEl.className='pl'; plEl.textContent=pat;
+    plEl.addEventListener('click',e=>{
+      if(didDrag){e.stopPropagation();return;}
+      e.stopPropagation();
+      handlePatternTap(i,j);
+    });
+    addLabel(plEl,pp);
+    obj.patterns.push({halo:pH,core:pC,line:pLn,labelEl:plEl,bH:0.22,bC:0.58,bL:0.15});
+  });
+});
+
+// Ambient particles
+const pBuf=new Float32Array(220*3);
+for(let i=0;i<220;i++){
+  const t2=Math.random()*Math.PI*2,p2=Math.acos(2*Math.random()-1),r2=R*(0.18+Math.random()*1.05);
+  pBuf[i*3]=r2*Math.sin(p2)*Math.cos(t2); pBuf[i*3+1]=r2*Math.sin(p2)*Math.sin(t2); pBuf[i*3+2]=r2*Math.cos(p2);
+}
+const pGeo=new THREE.BufferGeometry(); pGeo.setAttribute('position',new THREE.BufferAttribute(pBuf,3));
+scene.add(new THREE.Points(pGeo,new THREE.PointsMaterial({color:0x8866bb,size:0.20,transparent:true,opacity:0.36,blending:THREE.AdditiveBlending})));
+
+// ════════════════════════════════════════════════
+//  CARD SYSTEM
+// ════════════════════════════════════════════════
+const cardWrap   = document.getElementById('card-wrap');
+const cardScroll = document.getElementById('card-scroll');
+let cardMode=null, cardPersonIdx=-1, cardPatternIdx=-1;
+
+document.getElementById('card-close').addEventListener('click',()=>closeCard());
+
+function buildPatternHTML(personIdx,patternIdx){
+  const n=NODES[personIdx], patName=n.patterns[patternIdx];
+  const info=PAT[patName]||[patName,'',''];
+  const rootSection=info[2]?`<div class="c-div"></div><div class="c-lbl">beneath the surface</div><div class="c-root">${info[2]}</div>`:'';
+  return `<div class="c-patname">${patName}</div><div class="c-summary">${info[0]}</div>
+<div class="c-div"></div><div class="c-body">${info[1]}</div>${rootSection}`;
+}
+
+function showPatternCard(personIdx,patternIdx){
+  cardPersonIdx=personIdx; cardPatternIdx=patternIdx; cardMode='pattern';
+  // Highlight active pattern label
+  nodeObjs[personIdx].patterns.forEach((p,j)=>{
+    p.labelEl.classList.toggle('active',j===patternIdx);
+  });
+  cardScroll.innerHTML=buildPatternHTML(personIdx,patternIdx);
+  cardWrap.classList.add('open');
+}
+
+function closeCard(){
+  cardMode=null; cardPersonIdx=-1; cardPatternIdx=-1;
+  cardWrap.classList.remove('open');
+  nodeObjs.forEach(o=>o.patterns.forEach(p=>p.labelEl.classList.remove('active')));
+}
+
+// ════════════════════════════════════════════════
+//  FOCUS SYSTEM
+// ════════════════════════════════════════════════
+let focusedIdx=-1, selfFocused=false;
+const raycaster=new THREE.Raycaster(); raycaster.params.Line={threshold:2.0};
+
+function _doExitFocus(){
+  // Internal exit — no recursion, directly clears state
+  if(focusedIdx===-1) return;
+  nodeObjs[focusedIdx].labelEl.classList.remove('focused');
+  nodeObjs[focusedIdx].patterns.forEach(p=>{p.labelEl.classList.remove('focused','active');});
+  focusedIdx=-1; CAM.rGoal=FULL_R; CAM.targetGoal.set(0,0,0);
+  document.getElementById('focus-hint').classList.remove('show');
+  nodeObjs.forEach(o=>{o.multGoal=1.0;}); selfMultGoal=1.0;
+  cardMode=null; cardWrap.classList.remove('open');
+}
+
+function focusOn(idx){
+  if(selfFocused) exitSelfFocus();
+  if(focusedIdx===idx){ _doExitFocus(); return; }
+  if(focusedIdx!==-1){
+    nodeObjs[focusedIdx].labelEl.classList.remove('focused');
+    nodeObjs[focusedIdx].patterns.forEach(p=>{p.labelEl.classList.remove('focused','active');});
+  }
+  focusedIdx=idx; CAM.rGoal=FOCUS_R; CAM.targetGoal.copy(nodePositions[idx]);
+  document.getElementById('focus-hint').classList.add('show');
+  nodeObjs[idx].labelEl.classList.add('focused');
+  nodeObjs[idx].patterns.forEach(p=>p.labelEl.classList.add('focused'));
+  nodeObjs.forEach((o,i)=>{o.multGoal=(i===idx)?1.0:0.0;});
+  selfMultGoal=0.18;
+}
+
+function exitFocus(){
+  _doExitFocus();
+}
+
+function focusSelf(){
+  if(focusedIdx!==-1) _doExitFocus();
+  selfFocused=true; CAM.rGoal=SELF_FOCUS_R; CAM.targetGoal.set(0,0,0);
+  nodeObjs.forEach(o=>{o.multGoal=0.0;}); selfMultGoal=1.0;
+  youEl.classList.add('self-focused');
+  selfLabelEls.forEach(el=>el.classList.add('self-focused'));
+  document.getElementById('focus-hint').classList.add('show');
+}
+function exitSelfFocus(){
+  if(!selfFocused) return;
+  selfFocused=false; CAM.rGoal=FULL_R;
+  nodeObjs.forEach(o=>{o.multGoal=1.0;}); selfMultGoal=1.0;
+  youEl.classList.remove('self-focused');
+  selfLabelEls.forEach(el=>el.classList.remove('self-focused'));
+  document.getElementById('focus-hint').classList.remove('show');
+}
+
+// Pattern tap — focus person first if needed, then open pattern card
+function handlePatternTap(personIdx,patternIdx){
+  if(selfFocused) exitSelfFocus();
+  if(focusedIdx!==personIdx){
+    if(focusedIdx!==-1){
+      nodeObjs[focusedIdx].labelEl.classList.remove('focused');
+      nodeObjs[focusedIdx].patterns.forEach(p=>{p.labelEl.classList.remove('focused','active');});
+    }
+    focusedIdx=personIdx; CAM.rGoal=FOCUS_R; CAM.targetGoal.copy(nodePositions[personIdx]);
+    document.getElementById('focus-hint').classList.add('show');
+    nodeObjs[personIdx].labelEl.classList.add('focused');
+    nodeObjs[personIdx].patterns.forEach(p=>p.labelEl.classList.add('focused'));
+    nodeObjs.forEach((o,i)=>{o.multGoal=(i===personIdx)?1.0:0.0;});
+    selfMultGoal=0.18;
+  }
+  showPatternCard(personIdx,patternIdx);
+}
+
+// Canvas-only tap (node sprite / connection line / empty)
+function handleCanvasTap(cx,cy){
+  const mouse=new THREE.Vector2((cx/window.innerWidth)*2-1,-(cy/window.innerHeight)*2+1);
+  raycaster.setFromCamera(mouse,camera);
+  const sh=raycaster.intersectObjects(clickSp.map(c=>c.sp));
+  if(sh.length>0){const f=clickSp.find(c=>c.sp===sh[0].object);if(f){focusOn(f.idx);return;}}
+  if(raycaster.intersectObject(coreTap).length>0){selfFocused?exitSelfFocus():focusSelf();return;}
+  const lh=raycaster.intersectObjects(clickLn.map(c=>c.ln));
+  if(lh.length>0){const f=clickLn.find(c=>c.ln===lh[0].object);if(f){focusOn(f.idx);return;}}
+  if(focusedIdx!==-1) exitFocus();
+  else if(selfFocused) exitSelfFocus();
+}
+
+// ════════════════════════════════════════════════
+//  ANIMATION LOOP
+// ════════════════════════════════════════════════
+const clock=new THREE.Clock(), _v=new THREE.Vector3();
+const LCAM=0.068, LMULT=0.072;
+
+function tickFilament(fil,t){
+  const tH=(t*fil.speed+fil.phase)%1;
+  const pR=Math.min(1,fil.nc.r*0.50+0.52),pG=Math.min(1,fil.nc.g*0.50+0.52),pB=Math.min(1,fil.nc.b*0.50+0.55);
+  for(let k=0;k<N_P;k++){
+    const s=k/(N_P-1),env=Math.sin(s*Math.PI);
+    const sw=Math.sin(t*fil.swaySpeed+s*3.0+fil.swayPhase)*fil.swayAmp*env;
+    fil.livePos[k*3]=fil.basePos[k*3]+sw*fil.sAxis.x;
+    fil.livePos[k*3+1]=fil.basePos[k*3+1]+sw*fil.sAxis.y;
+    fil.livePos[k*3+2]=fil.basePos[k*3+2]+sw*fil.sAxis.z;
+    let d=Math.abs(s-tH); if(d>0.5) d=1-d;
+    const g=Math.exp(-d*d/0.0032);
+    fil.liveCols[k*3]=Math.min(1,fil.baseCols[k*3]+g*pR);
+    fil.liveCols[k*3+1]=Math.min(1,fil.baseCols[k*3+1]+g*pG);
+    fil.liveCols[k*3+2]=Math.min(1,fil.baseCols[k*3+2]+g*pB);
+  }
+  fil.geo.attributes.position.needsUpdate=true;
+  fil.geo.attributes.color.needsUpdate=true;
+}
+
+function updateLabels(){
+  const cw=window.innerWidth,ch=window.innerHeight;
+  labelReg.forEach(({el,pos})=>{
+    _v.copy(pos).project(camera);
+    if(_v.z>1){el.style.opacity='0';return;}
+    el.style.opacity='1';
+    const x=(_v.x*0.5+0.5)*cw,y=(-_v.y*0.5+0.5)*ch;
+    el.style.transform=`translate(calc(-50% + ${x}px),calc(-50% + ${y}px))`;
+  });
+}
+
+(function loop(){
+  requestAnimationFrame(loop);
+  const t=clock.getElapsedTime();
+  if(!drag){
+    CAM.theta+=SLOW_ROT;
+    CAM.velTheta*=0.89; CAM.velPhi*=0.89;
+    CAM.theta+=CAM.velTheta; CAM.phi=Math.max(0.12,Math.min(Math.PI-0.12,CAM.phi+CAM.velPhi));
+  }
+  CAM.r=THREE.MathUtils.lerp(CAM.r,CAM.rGoal,LCAM);
+  CAM.target.lerp(CAM.targetGoal,LCAM);
+  posCamera();
+  coreGrp.rotation.y=t*0.07; wispGrp.rotation.y=-t*0.11;
+  nodeObjs.forEach((obj,i)=>{
+    obj.mult=THREE.MathUtils.lerp(obj.mult,obj.multGoal,LMULT);
+    const m=obj.mult;
+    const breath=obj.bHalo+Math.sin(t*pulsables[i].speed+pulsables[i].phase)*0.09;
+    obj.halo.material.opacity=m*breath; obj.mid.material.opacity=m*obj.bMid; obj.core.material.opacity=m*obj.bCore;
+    obj.labelEl.style.opacity=m<0.18?'0':String(Math.min(1,m*1.2));
+    obj.labelEl.style.pointerEvents=m<0.18?'none':'auto';
+    obj.patterns.forEach(p=>{
+      p.halo.material.opacity=m*p.bH; p.core.material.opacity=m*p.bC; p.line.material.opacity=m*p.bL;
+      p.labelEl.style.opacity=m<0.12?'0':'';
+      p.labelEl.style.pointerEvents=m<0.12?'none':'auto';
+    });
+    obj.filaments.forEach(fil=>{ fil.ln.material.opacity=m*fil.baseOp; tickFilament(fil,t); });
+  });
+  selfMult=THREE.MathUtils.lerp(selfMult,selfMultGoal,LMULT);
+  selfFils.forEach(fil=>{ fil.ln.material.opacity=selfMult*fil.baseOp; tickFilament(fil,t); });
+  const inNodeFocus=(focusedIdx!==-1);
+  selfLabelEls.forEach(el=>{ el.style.opacity=inNodeFocus?'0.18':''; });
+  youEl.style.opacity=inNodeFocus?'0.24':'';
+  renderer.render(scene,camera);
+  updateLabels();
+})();
+
+window.addEventListener('resize',()=>{
+  const w=window.innerWidth,h=window.innerHeight;
+  camera.aspect=w/h; camera.updateProjectionMatrix(); renderer.setSize(w,h);
+});
+</script>
+</body>
+</html>

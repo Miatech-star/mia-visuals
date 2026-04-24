@@ -1,0 +1,1463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Neural Predictive Clone — Light</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 100%; height: 100%;
+  background: #f9f7f4;
+  overflow: hidden;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+/* ─── Layer stack (bottom → top) ─────────────────────
+   z 1  #webcam-bg      full-screen webcam, grayscale
+   z 2  #webcam-dim     dark semi-transparent scrim
+   z 3  #c              Three.js canvas (transparent in hand mode)
+   z 8  #labels-root    HTML label pills
+   z 9  #hand-canvas    hand-skeleton 2D overlay
+   z 15 #nav #hint      navigation chrome
+   z 20 #hand-btn       entry pill
+   z 21 #hand-ui        active-mode status + exit
+──────────────────────────────────────────────────── */
+
+/* ── Full-screen webcam background ── */
+#webcam-bg {
+  position: fixed; inset: 0;
+  z-index: 1;
+  width: 100%; height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+  filter: grayscale(1) brightness(0.48) contrast(1.05);
+  display: none;
+  pointer-events: none;
+}
+
+/* ── Dark scrim ── */
+#webcam-dim {
+  position: fixed; inset: 0;
+  z-index: 2;
+  background: rgba(9, 4, 22, 0.56);
+  display: none;
+  pointer-events: none;
+}
+
+/* ── Three.js canvas ── */
+#c {
+  position: fixed; inset: 0;
+  display: block;
+  z-index: 3;
+  cursor: grab;
+  touch-action: none;
+}
+#c:active { cursor: grabbing; }
+
+/* ── Label overlay ── */
+#labels-root {
+  position: fixed; inset: 0;
+  pointer-events: none;
+  z-index: 8;
+  overflow: hidden;
+}
+
+.lbl {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px 5px 8px;
+  background: rgba(252, 250, 247, 0.78);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 0.75px solid rgba(160, 100, 200, 0.18);
+  border-radius: 100px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.028em;
+  color: #2a1048;
+  white-space: nowrap;
+  transform: translate(-50%, -50%);
+  box-shadow:
+    0 2px 18px rgba(120, 40, 180, 0.07),
+    0 0 0 0.5px rgba(255,255,255,0.92) inset;
+  will-change: left, top, opacity;
+  transition: opacity 0.45s ease;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.lbl-pip {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, #E07010, #CC1060, #8800CC, #E07010);
+  box-shadow: 0 0 6px rgba(200, 80, 20, 0.55);
+  flex-shrink: 0;
+}
+
+/* ── Hand skeleton canvas ── */
+#hand-canvas {
+  position: fixed; inset: 0;
+  z-index: 9;
+  pointer-events: none;
+  display: none;
+}
+
+/* ── Nav ── */
+#nav {
+  position: fixed; top: 0; left: 0; right: 0;
+  z-index: 15;
+  padding: 22px 30px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  pointer-events: none;
+}
+
+.nav-brand { display: flex; align-items: center; gap: 9px; }
+
+.nav-orb {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: conic-gradient(#E07010, #CC1060, #8800CC, #E07010);
+  box-shadow: 0 0 9px rgba(180, 60, 20, 0.45);
+  animation: orb-pulse 3.2s ease-in-out infinite;
+}
+@keyframes orb-pulse {
+  0%,100% { box-shadow: 0 0 7px rgba(180,60,20,0.35); }
+  50%      { box-shadow: 0 0 14px rgba(130,0,180,0.45); }
+}
+
+.nav-name {
+  font-size: 10px; font-weight: 600;
+  letter-spacing: 0.22em; text-transform: uppercase;
+  color: rgba(100, 40, 160, 0.55);
+  transition: color 0.5s ease;
+}
+body.hand-mode .nav-name { color: rgba(200, 170, 240, 0.72); }
+
+.nav-sub {
+  font-size: 9.5px; font-weight: 400;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: rgba(140, 110, 160, 0.45);
+  transition: color 0.5s ease;
+}
+body.hand-mode .nav-sub { color: rgba(180, 150, 215, 0.45); }
+
+/* ── Hint ── */
+#hint {
+  position: fixed; bottom: 26px; left: 50%;
+  transform: translateX(-50%);
+  font-size: 9.5px; font-weight: 400;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: rgba(140, 110, 160, 0.40);
+  pointer-events: none; z-index: 15;
+  transition: opacity 2s ease;
+}
+#hint.gone { opacity: 0; }
+
+/* ── Loading ── */
+#loading {
+  position: fixed; inset: 0;
+  background: #f9f7f4;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 16px;
+  z-index: 100; transition: opacity 0.9s ease;
+}
+#loading.done { opacity: 0; pointer-events: none; }
+
+.ld-ring {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 1.5px solid rgba(160, 80, 200, 0.12);
+  border-top-color: #CC6010;
+  border-right-color: #8800CC;
+  animation: spin 1.1s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.ld-txt {
+  font-size: 9.5px; font-weight: 500;
+  letter-spacing: 0.20em; text-transform: uppercase;
+  color: rgba(140, 100, 180, 0.45);
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   HAND MODE UI
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+/* Entry pill */
+#hand-btn {
+  position: fixed;
+  bottom: 26px; right: 28px;
+  z-index: 20;
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px 6px 10px;
+  background: rgba(252, 250, 247, 0.66);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  border: 0.75px solid rgba(160, 100, 200, 0.20);
+  border-radius: 100px;
+  font-size: 9.5px; font-weight: 500;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: rgba(100, 40, 160, 0.52);
+  cursor: pointer; pointer-events: all;
+  box-shadow: 0 2px 14px rgba(120, 40, 180, 0.06);
+  opacity: 0;
+  animation: btn-fadein 2.2s ease 1.4s forwards;
+  transition: color 0.2s, border-color 0.2s;
+}
+@keyframes btn-fadein { to { opacity: 1; } }
+#hand-btn:hover {
+  color: rgba(100, 40, 160, 0.80);
+  border-color: rgba(160, 100, 200, 0.38);
+}
+#hand-btn.loading {
+  opacity: 0.38 !important;
+  pointer-events: none;
+}
+.hb-icon { font-size: 11px; opacity: 0.65; }
+
+/* Active-mode status bar */
+#hand-ui {
+  position: fixed;
+  bottom: 26px; right: 28px;
+  z-index: 21;
+  display: none;
+  align-items: center;
+  gap: 9px;
+  pointer-events: none;
+}
+
+#hand-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: rgba(200, 160, 255, 0.25);
+  flex-shrink: 0;
+  transition: background 0.3s ease, box-shadow 0.3s ease;
+}
+#hand-dot.on {
+  background: conic-gradient(from 0deg, #E07010, #CC1060, #8800CC, #E07010);
+  box-shadow: 0 0 7px rgba(200, 80, 20, 0.45);
+}
+#hand-dot.pinch {
+  background: #E07010;
+  box-shadow: 0 0 10px rgba(224, 112, 16, 0.70);
+  animation: dot-pulse 0.45s ease-in-out infinite alternate;
+}
+@keyframes dot-pulse {
+  from { transform: scale(1); }
+  to   { transform: scale(1.6); }
+}
+
+#hand-hint {
+  font-size: 9px; font-weight: 500;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: rgba(200, 170, 240, 0.50);
+  white-space: nowrap;
+}
+
+#hand-sep { color: rgba(200, 160, 255, 0.18); font-size: 9px; }
+
+#hand-exit {
+  font-size: 9px; font-weight: 500;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: rgba(200, 170, 240, 0.48);
+  cursor: pointer;
+  padding: 5px 12px;
+  background: rgba(20, 10, 40, 0.42);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 0.75px solid rgba(200, 160, 255, 0.18);
+  border-radius: 100px;
+  pointer-events: all;
+  transition: opacity 0.2s;
+}
+#hand-exit:hover { opacity: 0.65; }
+
+/* ── Label info overlay panel ── */
+#label-panel {
+  position: fixed;
+  z-index: 30;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%) scale(0.94);
+  width: min(340px, 88vw);
+  background: rgba(252, 250, 247, 0.82);
+  backdrop-filter: blur(28px) saturate(200%);
+  -webkit-backdrop-filter: blur(28px) saturate(200%);
+  border: 0.75px solid rgba(160, 100, 200, 0.22);
+  border-radius: 18px;
+  padding: 26px 28px 24px;
+  box-shadow:
+    0 8px 48px rgba(120, 40, 180, 0.13),
+    0 0 0 0.5px rgba(255,255,255,0.90) inset;
+  pointer-events: all;
+  opacity: 0;
+  transition: opacity 0.28s ease, transform 0.28s cubic-bezier(0.22,1,0.36,1);
+  display: none;
+}
+#label-panel.visible {
+  display: block;
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+#label-panel-close {
+  position: absolute;
+  top: 14px; right: 16px;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: rgba(160, 100, 200, 0.10);
+  border: none;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; color: rgba(100, 40, 160, 0.45);
+  transition: background 0.15s, color 0.15s;
+}
+#label-panel-close:hover {
+  background: rgba(160, 100, 200, 0.20);
+  color: rgba(100, 40, 160, 0.75);
+}
+#label-panel-title {
+  font-size: 13px; font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #2a1048;
+  margin-bottom: 12px;
+  padding-right: 24px;
+}
+#label-panel-pip {
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, #E07010, #CC1060, #8800CC, #E07010);
+  box-shadow: 0 0 6px rgba(200, 80, 20, 0.45);
+  vertical-align: middle;
+  margin-right: 8px;
+  margin-bottom: 1px;
+}
+#label-panel-insight {
+  font-size: 12px; font-weight: 400;
+  line-height: 1.72;
+  letter-spacing: 0.01em;
+  color: rgba(60, 30, 90, 0.72);
+}
+#label-panel-origin-wrap { display: none; } /* removed */
+#label-panel-connections-wrap {
+  margin-top: 18px;
+}
+#label-panel-connections-line {
+  height: 0.75px;
+  background: linear-gradient(90deg,
+    rgba(160,100,200,0.18) 0%,
+    rgba(160,100,200,0.06) 100%);
+  margin-bottom: 12px;
+}
+#label-panel-connections {
+  font-size: 9.5px; font-weight: 400;
+  letter-spacing: 0.10em;
+  color: rgba(100, 60, 150, 0.52);
+  line-height: 1.6;
+}
+#label-panel-connections .conn-label {
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: 8.5px;
+  color: rgba(120, 70, 180, 0.38);
+  display: block;
+  margin-bottom: 5px;
+}
+#label-panel-connections .conn-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 0;
+}
+#label-panel-connections .conn-item {
+  color: rgba(80, 40, 130, 0.60);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+}
+#label-panel-connections .conn-dot {
+  color: rgba(160, 100, 200, 0.30);
+  margin: 0 7px;
+  font-size: 9px;
+}
+</style>
+</head>
+<body>
+
+<!-- z:1 — webcam background (hand mode only) -->
+<video id="webcam-bg" playsinline muted></video>
+
+<!-- z:2 — dark scrim (hand mode only) -->
+<div id="webcam-dim"></div>
+
+<!-- z:3 — Three.js scene -->
+<canvas id="c"></canvas>
+
+<!-- z:8 — HTML label pills -->
+<div id="labels-root"></div>
+
+<!-- z:9 — hand skeleton overlay (hand mode only) -->
+<canvas id="hand-canvas"></canvas>
+
+<!-- z:15 — nav chrome -->
+<div id="nav">
+  <div class="nav-brand">
+    <div class="nav-orb"></div>
+    <span class="nav-name">Neural Clone</span>
+  </div>
+  <span class="nav-sub">Predictive Life Mapping</span>
+</div>
+
+<div id="hint">Drag to rotate &nbsp;·&nbsp; Scroll or pinch to enter</div>
+
+<!-- z:100 — loading screen -->
+<div id="loading">
+  <div class="ld-ring"></div>
+  <span class="ld-txt">Weaving neural threads</span>
+</div>
+
+<!-- z:20 — hand mode entry pill (desktop only) -->
+<div id="hand-btn">
+  <span class="hb-icon">✦</span>
+  <span>Use your hands</span>
+</div>
+
+<!-- z:21 — hand mode active status bar -->
+<div id="hand-ui">
+  <div id="hand-dot"></div>
+  <span id="hand-hint">Show your hand</span>
+  <span id="hand-sep">·</span>
+  <span id="hand-exit">Exit</span>
+</div>
+
+<!-- z:30 — label info overlay panel -->
+<div id="label-panel">
+  <button id="label-panel-close">✕</button>
+  <div id="label-panel-title">
+    <span id="label-panel-pip"></span>
+    <span id="label-panel-title-text"></span>
+  </div>
+  <div id="label-panel-insight"></div>
+  <div id="label-panel-connections-wrap">
+    <div id="label-panel-connections-line"></div>
+    <div id="label-panel-connections"></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+<script>
+'use strict';
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   CONFIG
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+const CFG = {
+  B:       0.19,
+  DT:      0.035,
+  WARMUP:  900,
+  STEPS:   720,
+  SKIP:    2,
+  N:       580,
+  SCALE:   2.1,
+  CMAX:    9.2,
+  OPACITY: 0.13,
+};
+
+// zone: 'core' | 'outB' (negative pole) | 'outA' (positive pole) | 'mid' (bridge)
+const LABEL_DATA = [
+  // ── Core cluster ──────────────────────────────────────
+  {
+    text: 'Self Protection', zone: 'core',
+    insight: 'You learned early that being vulnerable got you hurt, so you built something solid around the soft parts. The protection worked — until it started keeping out the people who actually wanted to stay. The armour has no way of knowing the difference between danger and love.',
+    connections: 'Connected to: Mum · Conflict Avoidance · Learning to let people in'
+  },
+  {
+    text: 'Self Trust', zone: 'core',
+    insight: "You've overridden your own instincts so many times that the signal got noisy. You knew something was wrong before anyone else did, and you talked yourself out of it. Learning to trust yourself again isn't dramatic — it's just starting to honour the first feeling, before the explaining away begins.",
+    connections: 'Connected to: Past relationship · Approval Seeking · Trusting the first feeling'
+  },
+  {
+    text: 'Attachment Anxiety', zone: 'core',
+    insight: "The anxiety isn't irrational — it makes complete sense given what you've been through. When someone goes quiet, your nervous system doesn't register a busy afternoon. It registers what silence has always meant before. The work isn't to stop feeling it. It's to learn that this silence is different.",
+    connections: "Connected to: Dad's absence · Abandonment Fear · Secure Bond"
+  },
+  {
+    text: 'Calm Presence', zone: 'core',
+    insight: "You've spent years being the one who holds the room together — reading moods, adjusting yourself, absorbing tension that wasn't yours to carry. Calm presence doesn't mean you stop feeling everything. It means you stop performing okayness, and start actually inhabiting it.",
+    connections: 'Connected to: The family role · People Pleasing · Rest'
+  },
+  // ── Negative pole ─────────────────────────────────────
+  {
+    text: 'Fear of Rejection', zone: 'outB',
+    insight: "The rejection you're most afraid of isn't the one from other people — it's the one that would confirm the story you already carry about yourself. That you're too much, or not enough, or fundamentally hard to love. Every time you brace for it, you're protecting that story more than yourself. The fear isn't really about them.",
+    connections: 'Connected to: Daniel · Approval Seeking · Self Trust'
+  },
+  {
+    text: 'Emotional Withdrawal', zone: 'outB',
+    insight: "When things get hard, you go somewhere inside yourself where no one can reach you. It started as a way to survive rooms that weren't safe. Now it happens even with people who would stay if you let them. The withdrawal protects you from pain, but it also protects you from being known.",
+    connections: 'Connected to: Home growing up · Conflict Avoidance · Being found'
+  },
+  {
+    text: 'Conflict Avoidance', zone: 'outB',
+    insight: "You're not afraid of conflict because you're weak. You're afraid because somewhere along the way you learned that disagreement meant rupture — that raising your voice meant the whole thing would fall apart. So you smooth it over, agree when you don't, and carry the weight of all the things you never said.",
+    connections: 'Connected to: Family dynamics · People Pleasing · Open Communication'
+  },
+  {
+    text: 'People Pleasing', zone: 'outB',
+    insight: "You're so good at knowing what people need that you've made yourself disappear into it. The helpfulness, the constant reading of the room — it started as a way to stay safe, to earn your place. At some point the performance became the only version of yourself you let people see.",
+    connections: 'Connected to: Mum · Approval Seeking · Healthy Boundaries'
+  },
+  {
+    text: 'Trust Issues', zone: 'outB',
+    insight: "Trust broke in a specific moment — maybe more than one — where someone who was supposed to be safe wasn't. You rebuilt carefully, and it broke again. Now you scan everyone for the signs you missed before, building the case for why they'll eventually disappoint you too. The evidence always arrives, because you're looking for it.",
+    connections: 'Connected to: Past betrayal · Fear of Closeness · Mutual Trust'
+  },
+  {
+    text: 'Abandonment Fear', zone: 'outB',
+    insight: "You feel the leaving before it happens. A cancelled plan, a shorter text, a shift in tone — and something in you already starts grieving. You either hold on so tight you push people away, or you leave first so you never have to feel them go. Both strategies have the same root: you were left before, and it changed something fundamental.",
+    connections: 'Connected to: Early loss · Attachment Anxiety · Secure Bond'
+  },
+  // ── Positive pole ─────────────────────────────────────
+  {
+    text: 'Secure Bond', zone: 'outA',
+    insight: "You know what it feels like now to be with someone and not calculate. Not manage, not perform, not brace. The security isn't because they're perfect — it's because the repair is reliable. You've both proven you can come back from hard moments. That's the whole thing. That's all security ever is.",
+    connections: 'Connected to: Present partner · Abandonment Fear healing · Emotional Safety'
+  },
+  {
+    text: 'Emotional Safety', zone: 'outA',
+    insight: "There are maybe two or three people in your life with whom you don't have to edit yourself before you speak. Where you can say the unglamorous thing, the scared thing, the petty thing — and still feel held. Some people never find even one. You're learning to recognise how rare that is.",
+    connections: 'Connected to: Close friendship · Trust Issues · Playfulness'
+  },
+  {
+    text: 'Mutual Trust', zone: 'outA',
+    insight: "You've started to notice that real trust is quiet. It doesn't announce itself. It just means you stop preparing your defence, stop anticipating the version of events where you end up alone. The trust you're building now wasn't handed to you — it was earned slowly, by showing up in both directions.",
+    connections: 'Connected to: Rebuilt connection · Trust Issues · Open Communication'
+  },
+  {
+    text: 'Open Communication', zone: 'outA',
+    insight: "There was a time when saying the true thing felt like handing someone a reason to leave. You've learned — slowly, painfully — that hiding it is the thing that actually drives people away. The conversations you've been most afraid to have have mostly made things more solid, not less. The fear lied to you.",
+    connections: 'Connected to: Conflict Avoidance · Fear of Rejection · Repair Instinct'
+  },
+  {
+    text: 'Healthy Boundaries', zone: 'outA',
+    insight: "Your first boundaries felt like walls — hard, defensive, maybe even unkind. But you've learned the difference between armour and a limit. A limit says: here's what I can hold, and here's what I can't. It doesn't explain itself or apologise. You're still practising. But you're finally saying no to the things that were costing you the most.",
+    connections: 'Connected to: People Pleasing · Self Protection · Reclaimed energy'
+  },
+  {
+    text: 'Supportive Love', zone: 'outA',
+    insight: "The love you've been receiving — the kind that doesn't need you to be fixed, performing, or useful — is probably unfamiliar enough to feel suspicious sometimes. You're learning to let it be simple. That you're allowed to be held without immediately holding back just as hard. That being loved steadily is not a trap.",
+    connections: 'Connected to: Present partner · Emotional Withdrawal · Being held without a cost'
+  },
+  // ── Bridge labels ─────────────────────────────────────
+  {
+    text: 'Fear of Closeness', zone: 'mid',
+    insight: "You want to be known, and that wanting terrifies you. Because being known means they see the parts you don't like about yourself — and then they decide. The fear isn't really about other people. It's about the verdict. You've been building the case against yourself for years. Real intimacy asks you to stop being the prosecutor.",
+    connections: 'Connected to: Shame carried early · Trust Issues · Emotional Safety'
+  },
+  {
+    text: 'Approval Seeking', zone: 'mid',
+    insight: "You're so attuned to what other people think that you sometimes don't know what you think until you've checked their faces first. The approval you're looking for isn't vanity — it's safety. The day you stopped needing it from one specific person was the day something cracked open.",
+    connections: 'Connected to: Primary caregiver · People Pleasing · Self Trust'
+  },
+  {
+    text: 'Playfulness', zone: 'mid',
+    insight: "Somewhere in all the years of managing, surviving, and being responsible for everyone's feelings, you forgot that you're actually funny. That you used to make people laugh easily, without effort, without monitoring the room first. The playfulness is still there — it comes out when you finally feel safe enough. That's the test: not who makes you serious, but who makes you light.",
+    connections: 'Connected to: The caretaking years · Calm Presence · Being light again'
+  },
+  {
+    text: 'Repair Instinct', zone: 'mid',
+    insight: "You hate when things are broken between you and someone you love. Not because it's uncomfortable — because you genuinely believe it can be better. That belief, the one that makes you reach back even when it's hard, is one of the finest things about you. The challenge is learning which relationships are worth the repair, and which ones you've been maintaining alone.",
+    connections: 'Connected to: Past rupture · Open Communication · Secure Bond'
+  },
+];
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   COLOUR GRADIENT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+const GRAD = [
+  { t: 0.00, c: new THREE.Color(0.96, 0.82, 0.05) },
+  { t: 0.10, c: new THREE.Color(0.92, 0.58, 0.04) },
+  { t: 0.22, c: new THREE.Color(0.90, 0.30, 0.07) },
+  { t: 0.34, c: new THREE.Color(0.85, 0.07, 0.38) },
+  { t: 0.48, c: new THREE.Color(0.70, 0.03, 0.72) },
+  { t: 0.62, c: new THREE.Color(0.54, 0.22, 0.88) },
+  { t: 0.76, c: new THREE.Color(0.62, 0.40, 0.90) },
+  { t: 0.88, c: new THREE.Color(0.70, 0.55, 0.92) },
+  { t: 1.00, c: new THREE.Color(0.76, 0.65, 0.94) },
+];
+
+function threadColor(dist) {
+  const t = Math.min(1, dist / CFG.CMAX);
+  for (let i = 0; i < GRAD.length - 1; i++) {
+    if (t <= GRAD[i + 1].t) {
+      const f = (t - GRAD[i].t) / (GRAD[i + 1].t - GRAD[i].t);
+      return GRAD[i].c.clone().lerp(GRAD[i + 1].c, f);
+    }
+  }
+  return GRAD[GRAD.length - 1].c.clone();
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   RENDERER / SCENE / CAMERA
+   alpha:true → can go transparent in hand mode
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+const canvas   = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({
+  canvas,
+  antialias: true,
+  alpha:     true,
+  powerPreference: 'high-performance',
+});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0xf9f7f4, 1);
+
+const scene  = new THREE.Scene();
+scene.background = new THREE.Color(0xf9f7f4);
+
+const camera = new THREE.PerspectiveCamera(
+  58, window.innerWidth / window.innerHeight, 0.05, 300
+);
+camera.position.set(2, 3, 22);
+camera.lookAt(0, 0, 0);
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping    = true;
+controls.dampingFactor    = 0.055;
+controls.autoRotate       = true;
+controls.autoRotateSpeed  = 0.30;
+controls.minDistance      = 0.2;
+controls.maxDistance      = 80;
+controls.rotateSpeed      = 0.70;
+controls.zoomSpeed        = 0.80;
+controls.target.set(0, 0, 0);
+
+let interacted = false;
+renderer.domElement.addEventListener('pointerdown', () => {
+  if (!interacted) {
+    interacted = true;
+    controls.autoRotate = false;
+    setTimeout(() => document.getElementById('hint').classList.add('gone'), 200);
+  }
+}, { once: true });
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   THOMAS ATTRACTOR — RK4
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+function thomasF(x, y, z) {
+  const b = CFG.B;
+  return [Math.sin(y)-b*x, Math.sin(z)-b*y, Math.sin(x)-b*z];
+}
+function rk4(x, y, z) {
+  const h = CFG.DT;
+  const [a1,b1,c1] = thomasF(x,y,z);
+  const [a2,b2,c2] = thomasF(x+h*.5*a1, y+h*.5*b1, z+h*.5*c1);
+  const [a3,b3,c3] = thomasF(x+h*.5*a2, y+h*.5*b2, z+h*.5*c2);
+  const [a4,b4,c4] = thomasF(x+h*a3,    y+h*b3,    z+h*c3);
+  return [
+    x + h/6*(a1+2*a2+2*a3+a4),
+    y + h/6*(b1+2*b2+2*b3+b4),
+    z + h/6*(c1+2*c2+2*c3+c4),
+  ];
+}
+function trajectory(x0, y0, z0) {
+  let [x,y,z] = [x0,y0,z0];
+  for (let i = 0; i < CFG.WARMUP; i++) [x,y,z] = rk4(x,y,z);
+  const pts = [];
+  for (let i = 0; i < CFG.STEPS; i++) {
+    [x,y,z] = rk4(x,y,z);
+    if (i % CFG.SKIP === 0)
+      pts.push([x*CFG.SCALE, y*CFG.SCALE, z*CFG.SCALE]);
+  }
+  return pts;
+}
+function makeSeed(i) {
+  const theta = (i / CFG.N) * Math.PI * 2;
+  const phi   = ((i * 7) % CFG.N) / CFG.N * Math.PI;
+  const r     = 0.03 + (i % 8) * 0.055;
+  const j     = 0.008;
+  return [
+    r * Math.sin(phi) * Math.cos(theta) + (Math.random()-.5)*j,
+    r * Math.sin(phi) * Math.sin(theta) + (Math.random()-.5)*j,
+    r * Math.cos(phi)                   + (Math.random()-.5)*j,
+  ];
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   SHARED LINE MATERIAL — pulse shader
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+const lineMat = new THREE.ShaderMaterial({
+  transparent: true,
+  depthWrite:  false,
+  blending:    THREE.NormalBlending,
+  uniforms: { uTime: { value: 0 } },
+  vertexShader: `
+    attribute vec3  color;
+    attribute float lineT;
+    attribute float threadPhase;
+    varying vec3  vColor;
+    varying float vLineT;
+    varying float vPhase;
+    uniform float uTime;
+    void main() {
+      vColor = color; vLineT = lineT; vPhase = threadPhase;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform float uTime;
+    varying vec3  vColor;
+    varying float vLineT;
+    varying float vPhase;
+    vec3 gradColor(float t) {
+      t = clamp(t, 0.0, 1.0);
+      if (t < 0.10) return mix(vec3(0.96,0.82,0.05), vec3(0.92,0.58,0.04), t/0.10);
+      if (t < 0.22) return mix(vec3(0.92,0.58,0.04), vec3(0.90,0.30,0.07), (t-0.10)/0.12);
+      if (t < 0.34) return mix(vec3(0.90,0.30,0.07), vec3(0.85,0.07,0.38), (t-0.22)/0.12);
+      if (t < 0.48) return mix(vec3(0.85,0.07,0.38), vec3(0.70,0.03,0.72), (t-0.34)/0.14);
+      if (t < 0.62) return mix(vec3(0.70,0.03,0.72), vec3(0.54,0.22,0.88), (t-0.48)/0.14);
+      if (t < 0.76) return mix(vec3(0.54,0.22,0.88), vec3(0.62,0.40,0.90), (t-0.62)/0.14);
+      if (t < 0.88) return mix(vec3(0.62,0.40,0.90), vec3(0.70,0.55,0.92), (t-0.76)/0.12);
+                    return mix(vec3(0.70,0.55,0.92), vec3(0.76,0.65,0.94), (t-0.88)/0.12);
+    }
+    void main() {
+      float speed  = 0.168 + vPhase * 0.196;
+      float offset = vPhase * 6.28318;
+      float t1 = fract(vLineT * 1.6 - uTime * speed + offset);
+      float p1 = smoothstep(0.0, 0.06, t1) * smoothstep(0.18, 0.06, t1);
+      float t2 = fract(vLineT * 1.6 - uTime * speed + offset + 0.22);
+      float p2 = smoothstep(0.0, 0.05, t2) * smoothstep(0.13, 0.05, t2) * 0.50;
+      float t3 = fract(vLineT * 1.2 + uTime * speed * 0.42 + offset * 1.73);
+      float p3 = smoothstep(0.0, 0.04, t3) * smoothstep(0.10, 0.04, t3) * 0.22;
+      float pulse   = clamp(p1 + p2 + p3, 0.0, 1.0);
+      float shiftedT = clamp(vLineT - pulse * 0.30, 0.0, 1.0);
+      vec3  pulsCol  = gradColor(shiftedT);
+      vec3  col   = mix(vColor, pulsCol, pulse * 0.80);
+      float alpha = 0.13 + pulse * 0.38;
+      gl_FragColor = vec4(col, alpha);
+    }
+  `,
+});
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   GROUPS & LABEL STATE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+const group     = new THREE.Group();
+scene.add(group);
+const SPIN_AXIS = new THREE.Vector3(1, 1, 1).normalize();
+const anchors   = [];
+const labelEls  = [];
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   BUILD SCENE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+function buildScene() {
+  const labRoot = document.getElementById('labels-root');
+  const zCore = [], zMid = [], zOutA = [], zOutB = [];
+
+  for (let ti = 0; ti < CFG.N; ti++) {
+    const pts = trajectory(...makeSeed(ti));
+    if (pts.length < 4) continue;
+
+    [0.20, 0.50, 0.80].forEach(frac => {
+      const [vx, vy, vz] = pts[Math.floor(pts.length * frac)];
+      const r    = Math.sqrt(vx*vx + vy*vy + vz*vz);
+      const pole = vx + vy + vz;
+      const p    = [vx, vy, vz, r];
+      if      (r < 2.8)   zCore.push(p);
+      else if (r < 5.2)   zMid.push(p);
+      else if (pole >= 0) zOutA.push(p);
+      else                zOutB.push(p);
+    });
+
+    const n      = pts.length;
+    const posArr = new Float32Array(n * 3);
+    const colArr = new Float32Array(n * 3);
+    const linT   = new Float32Array(n);
+    const phs    = new Float32Array(n);
+    const phase  = Math.random();
+
+    for (let vi = 0; vi < n; vi++) {
+      const [vx, vy, vz] = pts[vi];
+      posArr[vi*3] = vx; posArr[vi*3+1] = vy; posArr[vi*3+2] = vz;
+      const c = threadColor(Math.sqrt(vx*vx + vy*vy + vz*vz));
+      colArr[vi*3] = c.r; colArr[vi*3+1] = c.g; colArr[vi*3+2] = c.b;
+      linT[vi] = vi / (n - 1);
+      phs[vi]  = phase;
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position',    new THREE.BufferAttribute(posArr, 3));
+    geo.setAttribute('color',       new THREE.BufferAttribute(colArr, 3));
+    geo.setAttribute('lineT',       new THREE.BufferAttribute(linT,   1));
+    geo.setAttribute('threadPhase', new THREE.BufferAttribute(phs,    1));
+    group.add(new THREE.Line(geo, lineMat));
+  }
+
+  function pickSpread(pool, count) {
+    if (!pool.length) return [];
+    pool.sort((a, b) => Math.atan2(a[2], a[0]) - Math.atan2(b[2], b[0]));
+    const step = Math.max(1, Math.floor(pool.length / count));
+    const res  = [];
+    for (let i = 0; i < count; i++) res.push(pool[(i * step) % pool.length]);
+    return res;
+  }
+
+  // Zone-ordered anchors: core(4) → negPole(6) → posPole(6) → bridge(4)
+  [
+    ...pickSpread(zCore, 4),
+    ...pickSpread(zOutB, 6),
+    ...pickSpread(zOutA, 6),
+    ...pickSpread(zMid,  4),
+  ].forEach(p => anchors.push(new THREE.Vector3(p[0], p[1], p[2])));
+
+  LABEL_DATA.forEach((data, i) => {
+    if (i >= anchors.length) return;
+    const el  = document.createElement('div');
+    el.className = 'lbl';
+
+    // Zone-tinted pip colour
+    const isPos = data.zone === 'outA';
+    const isNeg = data.zone === 'outB';
+    const pip = document.createElement('div');
+    pip.className = 'lbl-pip';
+    if (isPos) pip.style.background = 'conic-gradient(from 0deg,#10C090,#00AACC,#10C090)';
+    if (isNeg) pip.style.background = 'conic-gradient(from 0deg,#E07010,#CC1060,#E07010)';
+
+    const sp  = document.createElement('span');
+    sp.textContent = data.text;
+    el.appendChild(pip); el.appendChild(sp);
+
+    // Tap-only: track pointer start position; only open if pointer didn't drag
+    let _pdX = 0, _pdY = 0;
+    el.style.pointerEvents = 'all';
+    el.style.cursor = 'pointer';
+
+    el.addEventListener('pointerdown', (e) => {
+      _pdX = e.clientX; _pdY = e.clientY;
+      // Do NOT stopPropagation — drag must pass through to OrbitControls
+    }, { passive: true });
+
+    el.addEventListener('pointerup', (e) => {
+      const moved = Math.hypot(e.clientX - _pdX, e.clientY - _pdY);
+      if (moved < 6) {
+        openLabelPanel(data.text, data.insight, data.connections);
+      }
+    });
+
+    // Block the synthetic click so the document close-handler doesn't immediately shut the panel
+    el.addEventListener('click', (e) => e.stopPropagation());
+
+    labRoot.appendChild(el);
+    labelEls.push({ el, pos: anchors[i], phase: i * 0.44 });
+  });
+
+  document.getElementById('loading').classList.add('done');
+  setTimeout(() => {
+    const ld = document.getElementById('loading');
+    if (ld) ld.remove();
+  }, 1100);
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   LABEL PROJECTION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+const _v = new THREE.Vector3();
+function updateLabels(t) {
+  const W = window.innerWidth, H = window.innerHeight;
+  labelEls.forEach(({ el, pos, phase }) => {
+    _v.copy(pos).applyMatrix4(group.matrixWorld);
+    _v.y += Math.sin(t * 0.37 + phase) * 0.06;
+    _v.project(camera);
+    if (_v.z >= 1) { el.style.opacity = '0'; return; }
+    const sx = (_v.x * 0.5 + 0.5) * W;
+    const sy = (-_v.y * 0.5 + 0.5) * H;
+    const dist = camera.position.distanceTo(pos);
+    let op = 1;
+    if (dist > 22) op *= Math.max(0, 1 - (dist-22)/14);
+    if (dist < 2.2) op *= Math.max(0, (dist-0.7)/1.5);
+    op *= Math.max(0, Math.min(1,
+      Math.min(sx/(W*.11), (W-sx)/(W*.11)),
+      Math.min(sy/(H*.09), (H-sy)/(H*.09))
+    ));
+    el.style.opacity = op.toFixed(3);
+    el.style.left    = sx.toFixed(1) + 'px';
+    el.style.top     = sy.toFixed(1) + 'px';
+  });
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   RESIZE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  const hc = document.getElementById('hand-canvas');
+  hc.width  = window.innerWidth;
+  hc.height = window.innerHeight;
+});
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   HAND MODE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+const isTouchPrimary = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+
+let handModeActive  = false;
+let webcamStream    = null;
+
+// Spherical camera state
+const camSphere = { theta: 0, phi: Math.PI / 3, r: 22 };
+const camTarget = { theta: 0, phi: Math.PI / 3, r: 22 };
+
+// Per-frame tracking state
+let prevWristX        = null;
+let prevWristY        = null;
+let prevTwoHandDist   = null;
+let isPinching        = false;
+let prevIsPinching    = false;
+let pinchUsedForLabel = false;
+let handRafId         = null;
+let lastVideoTime     = -1;
+
+// DOM refs
+const handBtn    = document.getElementById('hand-btn');
+const handUI     = document.getElementById('hand-ui');
+const handHint   = document.getElementById('hand-hint');
+const handDot    = document.getElementById('hand-dot');
+const handExit   = document.getElementById('hand-exit');
+const webcamBg   = document.getElementById('webcam-bg');
+const webcamDim  = document.getElementById('webcam-dim');
+const handCanvas = document.getElementById('hand-canvas');
+const skCtx      = handCanvas.getContext('2d');
+
+if (!isTouchPrimary) handBtn.style.display = 'flex';
+
+/* ── Load @mediapipe/hands (proven, callback-based API) ── */
+let mpHands      = null;  // Hands instance
+let mpSending    = false; // throttle: only one send() in flight at a time
+
+function loadAndInitHands() {
+  return new Promise((resolve, reject) => {
+    if (mpHands) { resolve(); return; }
+
+    // Load the @mediapipe/hands script from jsDelivr
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js';
+    s.crossOrigin = 'anonymous';
+    s.onerror = () => reject(new Error('@mediapipe/hands failed to load'));
+    s.onload  = () => {
+      try {
+        mpHands = new Hands({
+          locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`
+        });
+        mpHands.setOptions({
+          maxNumHands:            2,
+          modelComplexity:        1,
+          minDetectionConfidence: 0.7,
+          minTrackingConfidence:  0.5,
+        });
+        mpHands.onResults(onHandResults);
+        // initialize() pre-loads WASM + model so first frame isn't slow
+        mpHands.initialize()
+          .then(resolve)
+          .catch(reject);
+      } catch (e) { reject(e); }
+    };
+    document.head.appendChild(s);
+  });
+}
+
+/* ── Activate ── */
+handBtn.addEventListener('click', async () => {
+  handBtn.classList.add('loading');
+
+  // 1. Camera permission
+  try {
+    webcamStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }
+    });
+  } catch (err) {
+    console.error('[Hand Mode] Camera denied:', err);
+    handBtn.classList.remove('loading');
+    return;
+  }
+
+  // 2. Show webcam background IMMEDIATELY — user sees themselves before MP loads
+  webcamBg.srcObject = webcamStream;
+  webcamBg.play().catch(e => console.warn('[Hand] play():', e));
+
+  webcamBg.style.display   = 'block';
+  webcamDim.style.display  = 'block';
+  handCanvas.style.display = 'block';
+  handCanvas.width  = window.innerWidth;
+  handCanvas.height = window.innerHeight;
+
+  scene.background = null;
+  renderer.setClearColor(0x000000, 0);
+
+  document.body.classList.add('hand-mode');
+  handBtn.style.display = 'none';
+  handUI.style.display  = 'flex';
+  handHint.textContent  = 'Loading hand tracking…';
+
+  // 3. Sync spherical camera state (no jump)
+  const cp = camera.position;
+  const r  = Math.max(cp.length(), 0.1);
+  camSphere.r     = r;
+  camSphere.theta = Math.atan2(cp.x, cp.z);
+  camSphere.phi   = Math.acos(Math.max(-1, Math.min(1, cp.y / r)));
+  Object.assign(camTarget, camSphere);
+
+  controls.enabled    = false;
+  controls.autoRotate = false;
+  handModeActive      = true;
+  lastVideoTime       = -1;
+  prevWristX = prevWristY = prevTwoHandDist = null;
+  isPinching = false;
+  mpSending  = false;
+
+  // 4. Load MediaPipe while webcam is already live
+  try {
+    await loadAndInitHands();
+  } catch (err) {
+    console.error('[Hand Mode] MediaPipe init failed:', err);
+    handHint.textContent = 'Hand tracking unavailable · use mouse/scroll';
+    return; // webcam bg stays visible; user can Exit cleanly
+  }
+
+  handHint.textContent = 'Show your hand';
+
+  // 5. Start tracking loop
+  handRafId = requestAnimationFrame(trackHands);
+});
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   HAND SKELETON RENDERER
+   MediaPipe hand landmark indices:
+    0  = wrist
+    4  = thumb tip
+    8  = index tip
+    12 = middle tip
+    16 = ring tip
+    20 = pinky tip
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+const CONNECTIONS = [
+  [0,1],[1,2],[2,3],[3,4],         // thumb
+  [5,6],[6,7],[7,8],               // index
+  [9,10],[10,11],[11,12],          // middle
+  [13,14],[14,15],[15,16],         // ring
+  [17,18],[18,19],[19,20],         // pinky
+  [0,5],[0,17],[5,9],[9,13],[13,17], // palm
+];
+const TIPS = new Set([4, 8, 12, 16, 20]);
+
+// Map normalized landmark to screen coords accounting for
+// object-fit:cover scaling and the CSS scaleX(-1) mirror
+function lmToScreen(lm) {
+  const W = window.innerWidth, H = window.innerHeight;
+  const vw = webcamBg.videoWidth  || 640;
+  const vh = webcamBg.videoHeight || 480;
+  let px, py;
+  if (vw / vh > W / H) {
+    // video wider → full height, horizontal crop
+    const scale = H / vh;
+    const rw    = vw * scale;
+    px = lm.x * rw - (rw - W) / 2;
+    py = lm.y * H;
+  } else {
+    // video taller → full width, vertical crop
+    const scale = W / vw;
+    const rh    = vh * scale;
+    px = lm.x * W;
+    py = lm.y * rh - (rh - H) / 2;
+  }
+  return { x: W - px, y: py }; // flip x to match scaleX(-1)
+}
+
+function drawSkeleton(hands, pinching) {
+  const W = window.innerWidth, H = window.innerHeight;
+  skCtx.clearRect(0, 0, W, H);
+
+  hands.forEach((hand, hi) => {
+    const pts = hand.map(lm => lmToScreen(lm));
+    const activePinch = (hi === 0) && pinching;
+
+    // Connection lines
+    skCtx.save();
+    skCtx.strokeStyle = activePinch
+      ? 'rgba(230, 150, 80,  0.42)'
+      : 'rgba(175, 120, 255, 0.30)';
+    skCtx.lineWidth = 0.85;
+    skCtx.lineCap   = 'round';
+    CONNECTIONS.forEach(([a, b]) => {
+      skCtx.beginPath();
+      skCtx.moveTo(pts[a].x, pts[a].y);
+      skCtx.lineTo(pts[b].x, pts[b].y);
+      skCtx.stroke();
+    });
+    skCtx.restore();
+
+    // Pinch bridge (dashed line thumb → index)
+    if (activePinch) {
+      skCtx.save();
+      skCtx.strokeStyle = 'rgba(255, 175, 80, 0.60)';
+      skCtx.lineWidth   = 1.1;
+      skCtx.setLineDash([3, 5]);
+      skCtx.beginPath();
+      skCtx.moveTo(pts[4].x, pts[4].y);
+      skCtx.lineTo(pts[8].x, pts[8].y);
+      skCtx.stroke();
+      skCtx.restore();
+    }
+
+    // Landmark dots
+    hand.forEach((_, i) => {
+      const { x, y } = pts[i];
+      const isTip = TIPS.has(i);
+
+      if (isTip) {
+        // Radial glow halo
+        const r  = activePinch ? 11 : 8;
+        const gc = activePinch ? [220, 130, 55] : [170, 110, 255];
+        const g  = skCtx.createRadialGradient(x, y, 0, x, y, r);
+        g.addColorStop(0,   `rgba(${gc[0]},${gc[1]},${gc[2]},0.52)`);
+        g.addColorStop(1,   `rgba(${gc[0]},${gc[1]},${gc[2]},0)`);
+        skCtx.fillStyle = g;
+        skCtx.beginPath();
+        skCtx.arc(x, y, r, 0, Math.PI * 2);
+        skCtx.fill();
+
+        // Hard dot centre
+        skCtx.fillStyle = activePinch
+          ? 'rgba(255, 215, 155, 0.92)'
+          : 'rgba(225, 205, 255, 0.88)';
+        skCtx.beginPath();
+        skCtx.arc(x, y, 2.0, 0, Math.PI * 2);
+        skCtx.fill();
+
+      } else if (i === 0) {
+        skCtx.fillStyle = 'rgba(155, 105, 215, 0.38)';
+        skCtx.beginPath();
+        skCtx.arc(x, y, 2.5, 0, Math.PI * 2);
+        skCtx.fill();
+      } else {
+        skCtx.fillStyle = 'rgba(175, 135, 240, 0.20)';
+        skCtx.beginPath();
+        skCtx.arc(x, y, 1.4, 0, Math.PI * 2);
+        skCtx.fill();
+      }
+    });
+  });
+}
+
+/* ── Per-frame tracking loop ── */
+// Sends each new video frame to MediaPipe; results come back via onHandResults()
+function trackHands() {
+  if (!handModeActive) return;
+  handRafId = requestAnimationFrame(trackHands);
+
+  if (!mpHands || mpSending) return;
+  if (webcamBg.readyState < 2) return;
+  if (webcamBg.currentTime === lastVideoTime) return;
+  lastVideoTime = webcamBg.currentTime;
+
+  mpSending = true;
+  mpHands.send({ image: webcamBg })
+    .catch(e => console.warn('[Hand] send():', e))
+    .finally(() => { mpSending = false; });
+}
+
+/* ── True two-finger pinch detector ──
+   Thumb tip (4) + index tip (8) must be close AND middle/ring/pinky
+   fingers must be extended — distinguishes pinch from a closed fist,
+   where all fingers curl and thumb+index also get close together.
+── */
+function isTwoFingerPinch(hand) {
+  const thumb = hand[4], index = hand[8];
+  // 1. Thumb and index tips must be close
+  if (Math.hypot(thumb.x - index.x, thumb.y - index.y) >= 0.072) return false;
+  // 2. Middle (12), ring (16), pinky (20) tips vs their MCP bases (9, 13, 17)
+  //    Extended finger = tip far from its MCP. Curled = tip close to MCP.
+  const outerPairs = [[12, 9], [16, 13], [20, 17]];
+  let extendedCount = 0;
+  for (const [tip, mcp] of outerPairs) {
+    const d = Math.hypot(hand[tip].x - hand[mcp].x, hand[tip].y - hand[mcp].y);
+    if (d > 0.115) extendedCount++;
+  }
+  // Require at least 2 of 3 outer fingers to be extended (open hand, not fist)
+  return extendedCount >= 2;
+}
+
+/* ── Closed-fist detector ──
+   All four fingers (index/middle/ring/pinky) curled toward palm.
+   Used exclusively for the two-hand zoom gesture.
+── */
+function isFist(hand) {
+  const pairs = [[8,5],[12,9],[16,13],[20,17]];
+  let total = 0;
+  for (const [tip, mcp] of pairs) {
+    total += Math.hypot(hand[tip].x - hand[mcp].x, hand[tip].y - hand[mcp].y);
+  }
+  return (total / 4) < 0.115;
+}
+
+/* ── Results callback from @mediapipe/hands ── */
+function onHandResults(results) {
+  if (!handModeActive) return;
+
+  const hands = results.multiHandLandmarks || [];
+
+  if (hands.length === 0) {
+    skCtx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+    prevWristX = prevWristY = prevTwoHandDist = null;
+    isPinching = false; prevIsPinching = false; pinchUsedForLabel = false;
+    handDot.className    = '';
+    handHint.textContent = 'Show your hand';
+    return;
+  }
+
+  const h0    = hands[0];
+  const wrist = h0[0];
+  const thumb = h0[4];
+  const index = h0[8];
+
+  const h0Fist     = isFist(h0);
+  isPinching       = isTwoFingerPinch(h0);
+  const bothFisted = hands.length >= 2 && h0Fist && isFist(hands[1]);
+
+  /* ── GESTURE 2 · Two-finger pinch over label → open / close panel ──────
+     Fires only on the frame the pinch gesture starts (edge-detect).
+     No velocity gate needed — pinch and fist are now mutually exclusive.  */
+  const pinchJustStarted = isPinching && !prevIsPinching;
+  if (pinchJustStarted) {
+    const thumbScr = lmToScreen(thumb);
+    const indexScr = lmToScreen(index);
+    const pinchX   = (thumbScr.x + indexScr.x) / 2;
+    const pinchY   = (thumbScr.y + indexScr.y) / 2;
+
+    let hitIdx = -1, minDist = 72; // px hit radius
+    labelEls.forEach(({ el }, i) => {
+      if (parseFloat(el.style.opacity || '0') < 0.12) return;
+      const lx = parseFloat(el.style.left || '-9999');
+      const ly = parseFloat(el.style.top  || '-9999');
+      const d  = Math.hypot(pinchX - lx, pinchY - ly);
+      if (d < minDist) { minDist = d; hitIdx = i; }
+    });
+
+    if (hitIdx >= 0) {
+      const d = LABEL_DATA[hitIdx];
+      openLabelPanel(d.text, d.insight, d.connections);
+      pinchUsedForLabel = true;
+    } else if (panelOpen) {
+      closeLabelPanel();
+    } else {
+      pinchUsedForLabel = false;
+    }
+  }
+  if (!isPinching) pinchUsedForLabel = false;
+
+  /* ── GESTURE 3 · Two fists → zoom (wins over orbit) ─────────────────── */
+  if (bothFisted) {
+    const w1   = hands[1][0];
+    const dist = Math.hypot(wrist.x - w1.x, wrist.y - w1.y);
+    if (prevTwoHandDist !== null) {
+      camTarget.r = Math.max(controls.minDistance, Math.min(controls.maxDistance,
+        camTarget.r - (dist - prevTwoHandDist) * 50
+      ));
+    }
+    prevTwoHandDist = dist;
+  } else {
+    prevTwoHandDist = null;
+
+    /* ── GESTURE 1 · Single fist + move → orbit ────────────────────────── */
+    if (h0Fist && prevWristX !== null) {
+      camTarget.theta += -(wrist.x - prevWristX) * 5.2;
+      camTarget.phi    = Math.max(0.05, Math.min(Math.PI - 0.05,
+        camTarget.phi + (wrist.y - prevWristY) * 4.0
+      ));
+    }
+  }
+
+  prevWristX     = wrist.x;
+  prevWristY     = wrist.y;
+  prevIsPinching = isPinching;
+
+  drawSkeleton(hands, isPinching || h0Fist);
+
+  /* ── Status hints ── */
+  if (bothFisted) {
+    handDot.className    = 'pinch';
+    handHint.textContent = 'Zooming';
+  } else if (isPinching) {
+    handDot.className    = 'pinch';
+    handHint.textContent = 'Pinching label';
+  } else if (h0Fist) {
+    handDot.className    = 'on';
+    handHint.textContent = 'Rotating';
+  } else {
+    handDot.className    = 'on';
+    handHint.textContent = 'Fist · rotate  ·  Pinch · open label  ·  Two fists · zoom';
+  }
+}
+
+/* ── Deactivate ── */
+function deactivateHandMode() {
+  handModeActive = false;
+  if (handRafId !== null) { cancelAnimationFrame(handRafId); handRafId = null; }
+
+  if (webcamStream) { webcamStream.getTracks().forEach(t => t.stop()); webcamStream = null; }
+  webcamBg.srcObject = null;
+  lastVideoTime = -1;
+
+  skCtx.clearRect(0, 0, handCanvas.width, handCanvas.height);
+
+  scene.background = new THREE.Color(0xf9f7f4);
+  renderer.setClearColor(0xf9f7f4, 1);
+
+  webcamBg.style.display   = 'none';
+  webcamDim.style.display  = 'none';
+  handCanvas.style.display = 'none';
+  document.body.classList.remove('hand-mode');
+
+  controls.enabled     = true;
+  handUI.style.display = 'none';
+  handDot.className    = '';
+
+  if (!isTouchPrimary) {
+    handBtn.style.display = 'flex';
+    handBtn.classList.remove('loading');
+  }
+}
+
+handExit.addEventListener('click', deactivateHandMode);
+window.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && handModeActive) deactivateHandMode();
+});
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ANIMATION LOOP
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+const clock = new THREE.Clock();
+let elapsed = 0;
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = clock.getDelta();
+  elapsed += dt;
+  lineMat.uniforms.uTime.value = elapsed;
+
+  controls.update();
+
+  if (handModeActive) {
+    const lf = 0.11;
+    camSphere.theta += (camTarget.theta - camSphere.theta) * lf;
+    camSphere.phi   += (camTarget.phi   - camSphere.phi)   * lf;
+    camSphere.r     += (camTarget.r     - camSphere.r)     * lf;
+    const s = camSphere;
+    camera.position.set(
+      s.r * Math.sin(s.phi) * Math.sin(s.theta),
+      s.r * Math.cos(s.phi),
+      s.r * Math.sin(s.phi) * Math.cos(s.theta)
+    );
+    camera.lookAt(controls.target);
+  }
+
+  group.rotateOnWorldAxis(SPIN_AXIS, 0.00108);
+  group.updateMatrixWorld();
+  updateLabels(elapsed);
+  renderer.render(scene, camera);
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   LABEL INFO OVERLAY PANEL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+const labelPanel         = document.getElementById('label-panel');
+const panelTitleText     = document.getElementById('label-panel-title-text');
+const panelInsight       = document.getElementById('label-panel-insight');
+const panelConnections   = document.getElementById('label-panel-connections');
+const panelPip           = document.getElementById('label-panel-pip');
+const panelClose         = document.getElementById('label-panel-close');
+
+let panelOpen = false;
+
+function openLabelPanel(title, insight, connections) {
+  panelTitleText.textContent = title;
+
+  // Render insight as separate sentences with gentle spacing
+  const sentences = insight.split(/(?<=[.!?])\s+/);
+  panelInsight.innerHTML = sentences
+    .map((s, i) => `<span style="display:block;${i > 0 ? 'margin-top:7px' : ''}">${s}</span>`)
+    .join('');
+
+  // Render connections as: "Connected to:" label + dot-separated items
+  if (connections) {
+    // Strip the "Connected to: " prefix to get just the items
+    const raw   = connections.replace(/^Connected to:\s*/i, '');
+    const items = raw.split(/\s*·\s*/);
+    const dots  = items.map((item, i) =>
+      `<span class="conn-item">${item}</span>` +
+      (i < items.length - 1 ? '<span class="conn-dot">·</span>' : '')
+    ).join('');
+    panelConnections.innerHTML =
+      `<span class="conn-label">Connected to</span>` +
+      `<span class="conn-items">${dots}</span>`;
+  } else {
+    panelConnections.innerHTML = '';
+  }
+
+  // Tint pip by zone
+  const data = LABEL_DATA.find(d => d.text === title);
+  if (data) {
+    if (data.zone === 'outA') {
+      panelPip.style.background = 'conic-gradient(from 0deg,#10C090,#00AACC,#10C090)';
+      panelPip.style.boxShadow  = '0 0 6px rgba(16,192,144,0.5)';
+    } else if (data.zone === 'outB') {
+      panelPip.style.background = 'conic-gradient(from 0deg,#E07010,#CC1060,#E07010)';
+      panelPip.style.boxShadow  = '0 0 6px rgba(200,80,20,0.5)';
+    } else {
+      panelPip.style.background = 'conic-gradient(from 0deg,#E07010,#CC1060,#8800CC,#E07010)';
+      panelPip.style.boxShadow  = '0 0 6px rgba(140,0,200,0.4)';
+    }
+  }
+
+  labelPanel.style.display = 'block';
+  labelPanel.offsetHeight; // force reflow for transition
+  labelPanel.classList.add('visible');
+  panelOpen = true;
+}
+
+function closeLabelPanel() {
+  labelPanel.classList.remove('visible');
+  panelOpen = false;
+  setTimeout(() => {
+    if (!panelOpen) labelPanel.style.display = 'none';
+  }, 300);
+}
+
+panelClose.addEventListener('click', closeLabelPanel);
+
+// Close when clicking outside the panel (on canvas or body)
+document.addEventListener('click', (e) => {
+  if (panelOpen && !labelPanel.contains(e.target)) {
+    closeLabelPanel();
+  }
+});
+
+animate();
+requestAnimationFrame(() => requestAnimationFrame(() => buildScene()));
+setTimeout(() => { if (!interacted) document.getElementById('hint').classList.add('gone'); }, 5000);
+</script>
+</body>
+</html>

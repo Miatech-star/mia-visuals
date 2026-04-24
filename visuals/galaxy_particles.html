@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Relational Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; overflow: hidden; font-family: 'Inter', -apple-system, sans-serif; }
+canvas { display: block; position: fixed; inset: 0; z-index: 0; touch-action: none; }
+
+#label-layer {
+  position: fixed; inset: 0; z-index: 10;
+  pointer-events: none; user-select: none; -webkit-user-select: none;
+}
+
+/* ── Person name pill ─────────────────────────────────────────────
+   Sits on the galaxy's Y-rotation axis so it never spins.
+   Stronger container so it reads over bright particle cores.      */
+.person-pill {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: auto; cursor: pointer;
+  user-select: none; -webkit-user-select: none; touch-action: manipulation;
+  z-index: 2;
+
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 5px 14px 5px 10px; border-radius: 100px;
+
+  font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 600;
+  letter-spacing: 0.01em; white-space: nowrap;
+
+  background: rgba(5, 5, 14, 0.86);
+  border: 1px solid rgba(255,255,255,0.28);
+  color: rgba(255,255,255,0.92);
+  box-shadow: 0 2px 16px rgba(0,0,0,0.55);
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+
+  transition: opacity 0.45s ease, background 0.2s, border-color 0.2s, color 0.2s;
+}
+.person-pill:hover {
+  background: rgba(12,12,28,0.92);
+  border-color: rgba(255,255,255,0.42);
+  color: #fff;
+}
+.person-pill.focused {
+  background: rgba(10,10,24,0.9);
+  border-color: rgba(255,255,255,0.38);
+  color: #fff;
+}
+.pill-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+
+/* ── Pattern pill ─────────────────────────────────────────────────
+   Tracks the spinning arm. Strong enough to read over particles.  */
+.pattern-pill {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: auto; cursor: pointer;
+  user-select: none; -webkit-user-select: none; touch-action: manipulation;
+  z-index: 1;
+
+  padding: 3px 10px; border-radius: 100px;
+
+  font-family: 'Inter', sans-serif; font-size: 10.5px; font-weight: 400;
+  letter-spacing: 0.01em; white-space: nowrap;
+
+  background: rgba(5, 5, 14, 0.78);
+  border: 1px solid rgba(255,255,255,0.18);
+  color: rgba(255,255,255,0.72);
+  box-shadow: 0 1px 10px rgba(0,0,0,0.45);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+
+  transition: opacity 0.45s ease, background 0.2s, color 0.2s, border-color 0.2s;
+}
+.pattern-pill:hover {
+  background: rgba(14,14,32,0.9);
+  border-color: rgba(255,255,255,0.3);
+  color: rgba(255,255,255,0.95);
+}
+.pattern-pill.highlighted {
+  background: rgba(14,14,32,0.88);
+  border-color: rgba(255,255,255,0.32);
+  color: #fff;
+}
+
+/* ── Info card ───────────────────────────────────────────────────── */
+#info-card {
+  position: fixed; bottom: 32px; left: 32px;
+  width: min(288px, calc(100vw - 48px));
+  background: rgba(6, 7, 18, 0.94);
+  backdrop-filter: blur(32px) saturate(200%);
+  -webkit-backdrop-filter: blur(32px) saturate(200%);
+  border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; padding: 22px;
+  font-family: 'Inter', sans-serif; color: #fff; z-index: 20;
+  opacity: 0; transform: translateY(10px); pointer-events: none;
+  transition: opacity 0.32s cubic-bezier(0.4,0,0.2,1), transform 0.32s cubic-bezier(0.4,0,0.2,1);
+}
+#info-card.visible { opacity: 1; transform: translateY(0); pointer-events: auto; }
+
+.card-close {
+  position: absolute; top: 15px; right: 15px; width: 24px; height: 24px; border-radius: 50%;
+  background: rgba(255,255,255,0.07); border: none; color: rgba(255,255,255,0.38); cursor: pointer;
+  font-size: 14px; line-height: 24px; text-align: center; padding: 0;
+  font-family: 'Inter', sans-serif; transition: background 0.15s, color 0.15s;
+}
+.card-close:hover { background: rgba(255,255,255,0.13); color: rgba(255,255,255,0.75); }
+
+.card-header { display: flex; align-items: flex-start; gap: 11px; margin-bottom: 13px; padding-right: 28px; }
+.card-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
+.card-name { font-size: 16px; font-weight: 600; letter-spacing: -0.02em; color: #fff; line-height: 1.2; }
+.card-subtitle { font-size: 11px; font-weight: 400; color: rgba(255,255,255,0.3); margin-top: 3px; letter-spacing: 0.01em; }
+.card-body { font-size: 13px; font-weight: 400; line-height: 1.72; color: rgba(255,255,255,0.52); margin-bottom: 13px; }
+.card-hint { font-size: 11px; color: rgba(255,255,255,0.2); letter-spacing: 0.01em; }
+
+.card-back {
+  display: inline-flex; align-items: center; gap: 5px; color: rgba(255,255,255,0.3);
+  font-size: 11px; font-weight: 500; cursor: pointer; margin-bottom: 18px;
+  letter-spacing: 0.01em; user-select: none; -webkit-user-select: none;
+  transition: color 0.15s; border: none; background: none; padding: 0;
+  font-family: 'Inter', sans-serif;
+}
+.card-back:hover { color: rgba(255,255,255,0.65); }
+
+.card-pattern-tag {
+  display: inline-block; padding: 4px 12px; border-radius: 100px;
+  background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.14);
+  font-size: 13px; font-weight: 500; color: rgba(255,255,255,0.88);
+  margin-bottom: 13px; letter-spacing: 0.005em;
+}
+.card-connected {
+  font-size: 11px; color: rgba(255,255,255,0.26); padding-top: 13px;
+  border-top: 1px solid rgba(255,255,255,0.07); letter-spacing: 0.01em;
+}
+.card-connected span { font-weight: 500; }
+
+/* ── Hint ────────────────────────────────────────────────────────── */
+#hint {
+  position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%);
+  font-family: 'Inter', sans-serif; font-size: 11px; letter-spacing: 0.06em;
+  color: rgba(255,255,255,0.18); pointer-events: none; white-space: nowrap; z-index: 30;
+  animation: hintFade 5s 1.8s ease forwards;
+}
+@keyframes hintFade { 0%{opacity:1} 65%{opacity:1} 100%{opacity:0} }
+</style>
+</head>
+<body>
+<div id="label-layer"></div>
+<div id="info-card"></div>
+<div id="hint">tap a galaxy to explore · drag to orbit · scroll to zoom</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+'use strict';
+
+/* ═══════════════════════════════════════════════════════════
+   SCENE LAYOUT  (baked from export JSON)
+═══════════════════════════════════════════════════════════ */
+const LAYOUT = [
+  { params:{ count:99000, radius:22,   branches:7, randomness:1.26, power:4.8, colorIn:'#ff6030', colorOut:'#1b3984', scale:5    }, position:{ x:0,      y:0, z:0      } },
+  { params:{ count:11000, radius:8.1,  branches:4, randomness:0.22, power:2.2, colorIn:'#ff6030', colorOut:'#1b3984', scale:1.1  }, position:{ x:-0.353, y:0, z:20.535 } },
+  { params:{ count:18000, radius:11.6, branches:4, randomness:0.62, power:3.5, colorIn:'#ff2e2e', colorOut:'#83751b', scale:0.7  }, position:{ x:19.5,   y:0, z:-1.1   } },
+  { params:{ count:11000, radius:8,    branches:4, randomness:0.22, power:2.2, colorIn:'#f34835', colorOut:'#181698', scale:1.15 }, position:{ x:-22.4,  y:0, z:-1.1   } },
+  { params:{ count:11000, radius:8,    branches:4, randomness:0.22, power:2.2, colorIn:'#63134d', colorOut:'#832b1b', scale:1.1  }, position:{ x:-0.6,   y:0, z:-21.8  } },
+];
+
+/* ═══════════════════════════════════════════════════════════
+   LABEL HEIGHT CONSTANTS  (world-space units above the disc)
+
+   NAME_Y   — person name pill   — sits above the bright core
+   PAT_Y    — pattern pills      — closer to the disc, in the arm
+
+   Both are divided by scale when stored as local coords so that
+   after matrixWorld multiplication they land at these world heights
+   regardless of which galaxy they belong to.
+═══════════════════════════════════════════════════════════ */
+const NAME_Y = 3.0;   // world units above galaxy disc
+const PAT_Y  = 2.0;   // world units above galaxy disc
+
+/* ═══════════════════════════════════════════════════════════
+   RELATIONAL DATA
+
+   labelDefs: arm = branch index (same indexing as particle builder)
+              r   = local radius along that arm spine (pre-scale)
+   Y offset is computed automatically from PAT_Y / scale.
+═══════════════════════════════════════════════════════════ */
+const PERSONS = [
+  {
+    id:'you', name:'You', subtitle:'Your relational core',
+    galaxyIndex:0, color:'#ff7040',
+    focusAz:null, focusTR:22, focusTEl:0.30,
+    summary:'Your relational map. These are the patterns that shape how you connect, protect, and struggle—across every bond you carry.',
+    patterns:[
+      { id:'self-doubt',         label:'self-doubt',         desc:'A persistent undercurrent that questions your competence even when evidence says otherwise. It speaks loudest just after a success.' },
+      { id:'overthinking',       label:'overthinking',       desc:'Your mind rehearses scenarios before they exist—running outcomes, pre-mourning losses, managing futures that may never arrive.' },
+      { id:'people-pleasing',    label:'people pleasing',    desc:'A learned strategy for staying safe in relationships. Saying yes when you mean no, then quietly resenting the cost.' },
+      { id:'fear-inadequacy',    label:'fear of inadequacy', desc:'A deep belief that you are not quite enough—professionally, emotionally, relationally. It shapes both ambition and self-sabotage.' },
+      { id:'identity-anchor',    label:'identity anchor',    desc:'The stable thread beneath the roles you play. You know who you are at your core, even when circumstances make you forget.' },
+      { id:'emotional-guarding', label:'emotional guarding', desc:'A careful rationing of vulnerability. You connect deeply, but on your own timeline and terms.' },
+    ],
+    // 6 patterns across 6 of YOU's 7 arms.
+    // local r 1.3–2.0  →  world r 6.5–10  (scale 5) — tight around the nucleus
+    labelDefs:[ {arm:0,r:1.8}, {arm:1,r:1.4}, {arm:2,r:2.0}, {arm:3,r:1.6}, {arm:4,r:1.9}, {arm:5,r:1.3} ],
+  },
+  {
+    id:'emily', name:'Emily', subtitle:'Closest friend',
+    galaxyIndex:1, color:'#ff9060',
+    focusAz:Math.PI, focusTR:20, focusTEl:0.25,
+    summary:'Your safest mirror. Emily holds space for who you actually are, which is why the fear of losing her always feels larger than logic.',
+    patterns:[
+      { id:'safe-attachment',      label:'safe attachment',      desc:'Emily creates the conditions where you don\'t have to perform. Around her, the constant vigilance turns down.' },
+      { id:'deep-mirroring',       label:'deep mirroring',       desc:'She reflects your interior world back to you with unusual accuracy—which is both a gift and an exposure.' },
+      { id:'fear-of-loss',         label:'fear of loss',         desc:'Because the safety she provides feels rare, the thought of losing her carries a disproportionate weight.' },
+      { id:'emotional-dependence', label:'emotional dependence', desc:'Her attunement has become the benchmark for all other intimacy—a subtle reliance you rarely name out loud.' },
+    ],
+    // local r 3.5–5.0  →  world r ~3.9–5.5  (scale 1.1)
+    labelDefs:[ {arm:0,r:4.5}, {arm:1,r:3.8}, {arm:2,r:5.0}, {arm:3,r:4.2} ],
+  },
+  {
+    id:'ryan', name:'Ryan', subtitle:'Younger brother',
+    galaxyIndex:2, color:'#ff4848',
+    focusAz:-Math.PI/2, focusTR:20, focusTEl:0.25,
+    summary:'The original bond. With Ryan, love and friction share the same root. You protect him, but the weight of it sometimes quietly turns into guilt.',
+    patterns:[
+      { id:'protective-loyalty', label:'protective loyalty', desc:'A reflex to shield him, even when he doesn\'t ask. It comes from love, but it can tip into control.' },
+      { id:'rivalry-echo',       label:'rivalry echo',       desc:'The original sibling friction still leaves a trace—a low-frequency competition that neither of you quite chooses.' },
+      { id:'caretaker-reflex',   label:'caretaker reflex',   desc:'You carry more emotional labor in this relationship than is strictly yours to hold.' },
+      { id:'guilt-cycle',        label:'guilt cycle',        desc:'When you don\'t show up as the sibling you imagine you should be, guilt fills the gap—before you\'ve even made a mistake.' },
+    ],
+    // scale 0.7: larger local r needed. local r 5–7  →  world r ~3.5–4.9
+    labelDefs:[ {arm:0,r:5.5}, {arm:1,r:7.0}, {arm:2,r:6.0}, {arm:3,r:5.2} ],
+  },
+  {
+    id:'jake', name:'Jake', subtitle:'Childhood friend',
+    galaxyIndex:3, color:'#f36045',
+    focusAz:Math.PI/2, focusTR:20, focusTEl:0.25,
+    summary:'The archive. Jake carries the version of you that existed before performance became a habit. Easy, low-maintenance, deeply loyal.',
+    patterns:[
+      { id:'nostalgia-loop',     label:'nostalgia loop',     desc:'Your friendship partly lives in the past—a shared history that acts as shorthand for belonging.' },
+      { id:'easy-trust',         label:'easy trust',         desc:'You extend trust to Jake faster than almost anyone. The childhood record means he starts every interaction ahead.' },
+      { id:'conflict-avoidance', label:'conflict avoidance', desc:'Neither of you tends to name tensions directly. Things resolve through time and humor rather than conversation.' },
+      { id:'unspoken-loyalty',   label:'unspoken loyalty',   desc:'A quiet commitment that runs under every interaction—neither of you would need to say it out loud to know it\'s there.' },
+    ],
+    // local r 3.8–5.2  →  world r ~4.4–6.0  (scale 1.15)
+    labelDefs:[ {arm:0,r:4.5}, {arm:1,r:3.8}, {arm:2,r:5.2}, {arm:3,r:4.0} ],
+  },
+  {
+    id:'sarah', name:'Sarah', subtitle:'Coworker',
+    galaxyIndex:4, color:'#9b4cba',
+    focusAz:0, focusTR:20, focusTEl:0.25,
+    summary:'The proving ground. Your interactions with Sarah activate a quiet inner scorecard—always measuring, rarely at rest.',
+    patterns:[
+      { id:'comparison-pressure', label:'comparison pressure', desc:'Being around Sarah activates an internal gauge—measuring output, recognition, and worth against an unspoken standard.' },
+      { id:'approval-seeking',    label:'approval seeking',    desc:'You\'re more tuned to signals of her validation than you\'d like to admit. Her opinion carries unusual weight.' },
+      { id:'boundary-blur',       label:'boundary blur',       desc:'The professional context makes personal limits harder to maintain. Work and worth become difficult to separate.' },
+      { id:'performance-mask',    label:'performance mask',    desc:'Around Sarah, you are your most managed self—competent, composed, and carefully edited.' },
+    ],
+    labelDefs:[ {arm:0,r:4.5}, {arm:1,r:3.8}, {arm:2,r:5.0}, {arm:3,r:4.2} ],
+  },
+];
+
+/* ═══════════════════════════════════════════════════════════
+   ARM POSITION HELPER
+
+   Returns a THREE.Vector3 in LOCAL galaxy space positioned
+   at the mathematical spine of branch `armIndex` at radius `r`.
+
+   Uses the exact same formula as the particle builder:
+     branchAngle = (armIndex / branches) * 2π
+     spinAngle   = r * 1.2
+     x = cos(branchAngle + spinAngle) * r
+     z = sin(branchAngle + spinAngle) * r
+
+   Since the galaxy Points object has rotation.y applied each frame,
+   multiplying this local position through matrixWorld transforms it
+   to live world coordinates that track the spinning arm.
+═══════════════════════════════════════════════════════════ */
+function armPos(branches, armIndex, r, yLocal) {
+  const angle = (armIndex / branches) * Math.PI * 2 + r * 1.2;
+  return new THREE.Vector3(Math.cos(angle) * r, yLocal, Math.sin(angle) * r);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   THREE.JS SCENE
+═══════════════════════════════════════════════════════════ */
+const scene    = new THREE.Scene();
+const camera   = new THREE.PerspectiveCamera(58, innerWidth/innerHeight, 0.01, 600);
+camera.position.set(0, 11, 25);
+
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+document.body.prepend(renderer.domElement);
+
+// Stars
+(function(){
+  const N=5000, pos=new Float32Array(N*3);
+  for(let i=0;i<N;i++){
+    const θ=Math.random()*Math.PI*2, φ=Math.acos(2*Math.random()-1), r=100+Math.random()*200;
+    pos[i*3]=r*Math.sin(φ)*Math.cos(θ); pos[i*3+1]=r*Math.sin(φ)*Math.sin(θ); pos[i*3+2]=r*Math.cos(φ);
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  scene.add(new THREE.Points(g,new THREE.PointsMaterial({size:0.25,color:0xffffff,transparent:true,opacity:0.45,sizeAttenuation:true})));
+})();
+
+// Galaxy builder — exact particle math preserved from original composer
+const galaxyPoints=[];
+LAYOUT.forEach(entry=>{
+  const p=entry.params;
+  const geo=new THREE.BufferGeometry();
+  const arr=new Float32Array(p.count*3), col=new Float32Array(p.count*3);
+  const cIn=new THREE.Color(p.colorIn), cOut=new THREE.Color(p.colorOut);
+  for(let i=0;i<p.count;i++){
+    const i3=i*3, r=Math.random()*p.radius;
+    const spin=r*1.2, branch=(i%p.branches)/p.branches*Math.PI*2;
+    const sc=p.randomness*r, pw=p.power;
+    const rx=Math.pow(Math.random(),pw)*(Math.random()<.5?1:-1)*sc;
+    const ry=Math.pow(Math.random(),pw)*(Math.random()<.5?1:-1)*sc;
+    const rz=Math.pow(Math.random(),pw)*(Math.random()<.5?1:-1)*sc;
+    arr[i3]=Math.cos(branch+spin)*r+rx; arr[i3+1]=ry; arr[i3+2]=Math.sin(branch+spin)*r+rz;
+    const c=cIn.clone().lerp(cOut,r/p.radius);
+    col[i3]=c.r; col[i3+1]=c.g; col[i3+2]=c.b;
+  }
+  geo.setAttribute('position',new THREE.BufferAttribute(arr,3));
+  geo.setAttribute('color',   new THREE.BufferAttribute(col,3));
+  const mat=new THREE.PointsMaterial({size:0.013,sizeAttenuation:true,depthWrite:false,blending:THREE.AdditiveBlending,vertexColors:true});
+  const pts=new THREE.Points(geo,mat);
+  pts.position.set(entry.position.x,entry.position.y,entry.position.z);
+  pts.scale.setScalar(p.scale);
+  scene.add(pts);
+  galaxyPoints.push(pts);
+});
+
+// Invisible hit spheres (transparent, visible=true so raycaster sees them)
+const raycaster=new THREE.Raycaster(), hitSpheres=[];
+PERSONS.forEach(person=>{
+  const gpos=LAYOUT[person.galaxyIndex].position;
+  const mesh=new THREE.Mesh(
+    new THREE.SphereGeometry(person.id==='you'?8:7,8,6),
+    new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false})
+  );
+  mesh.position.set(gpos.x,gpos.y,gpos.z);
+  mesh.userData.personId=person.id;
+  scene.add(mesh); hitSpheres.push(mesh);
+});
+
+/* ═══════════════════════════════════════════════════════════
+   CAMERA ORBIT STATE
+═══════════════════════════════════════════════════════════ */
+let azimuth=0, elevation=0.41, orbitR=27;
+let tAz=0, tEl=0.41, tR=27;
+
+const orbitTarget  = new THREE.Vector3();
+const tOrbitTarget = new THREE.Vector3();
+
+function shortAzPath(from,to){
+  let d=to-from;
+  while(d>Math.PI)d-=2*Math.PI;
+  while(d<-Math.PI)d+=2*Math.PI;
+  return from+d;
+}
+
+function updateCamera(){
+  // Lerp orbit target at same rate as other damping for consistency
+  orbitTarget.lerp(tOrbitTarget, 0.075);
+  const ce=Math.cos(elevation);
+  camera.position.set(
+    orbitTarget.x + orbitR*ce*Math.sin(azimuth),
+    orbitTarget.y + orbitR*Math.sin(elevation),
+    orbitTarget.z + orbitR*ce*Math.cos(azimuth)
+  );
+  camera.lookAt(orbitTarget);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   FOCUS STATE
+═══════════════════════════════════════════════════════════ */
+const state = { focusedPersonId:null, selectedPatternId:null };
+let selectTimeout = null;
+
+function focusPerson(personId){
+  if(selectTimeout){clearTimeout(selectTimeout);selectTimeout=null;}
+  const person=PERSONS.find(p=>p.id===personId); if(!person)return;
+  state.focusedPersonId=personId; state.selectedPatternId=null;
+  const gpos=LAYOUT[person.galaxyIndex].position;
+  tOrbitTarget.set(gpos.x,gpos.y,gpos.z);
+  tR=person.focusTR; tEl=person.focusTEl;
+  // Rotate camera to face this galaxy from a good angle
+  if(person.focusAz!==null) tAz=shortAzPath(azimuth,person.focusAz);
+  updateLabelVisibility();
+  showPersonCard(person);
+}
+
+function selectPattern(personId,patternId){
+  if(selectTimeout){clearTimeout(selectTimeout);selectTimeout=null;}
+  const person=PERSONS.find(p=>p.id===personId);
+  const pattern=person?.patterns.find(p=>p.id===patternId);
+  if(!person||!pattern)return;
+  if(state.focusedPersonId!==personId){
+    focusPerson(personId);
+    selectTimeout=setTimeout(()=>{
+      state.selectedPatternId=patternId; updateLabelVisibility(); showPatternCard(person,pattern);
+    },380);
+  }else{
+    state.selectedPatternId=patternId; updateLabelVisibility(); showPatternCard(person,pattern);
+  }
+}
+
+function clearFocus(){
+  if(selectTimeout){clearTimeout(selectTimeout);selectTimeout=null;}
+  state.focusedPersonId=null; state.selectedPatternId=null;
+  // Pull back to overview distance and re-centre — but keep the current
+  // camera angle (tAz/tEl unchanged) so there is no jarring rotation.
+  // The camera simply zooms out and the origin drifts back to centre.
+  tOrbitTarget.set(0,0,0);
+  tR=27;
+  updateLabelVisibility(); hideCard();
+}
+
+function backToPersonCard(){
+  if(selectTimeout){clearTimeout(selectTimeout);selectTimeout=null;}
+  state.selectedPatternId=null; updateLabelVisibility();
+  const person=PERSONS.find(p=>p.id===state.focusedPersonId);
+  if(person)showPersonCard(person);
+}
+
+window.clearFocus=clearFocus; window.backToPersonCard=backToPersonCard;
+
+/* ═══════════════════════════════════════════════════════════
+   LABEL SYSTEM
+
+   Labels are stored with a localPos (THREE.Vector3 in the
+   galaxy's local coordinate space).  Each frame, after
+   renderer.render() has triggered matrixWorld updates, we do:
+
+     worldPos = localPos × galaxyPoints[i].matrixWorld
+
+   — which captures the live Y-rotation, scale, and world
+     translation in one step.  Pattern labels therefore
+     physically track their arm as the galaxy spins.
+
+   Name labels: localPos = (0, NAME_Y/scale, 0)
+   They sit on the Y rotation axis, so Y-rotation leaves them
+   fixed above the core regardless of how the galaxy spins.
+
+   Pattern labels: localPos = armPos(branches, arm, r, PAT_Y/scale)
+   The arm formula is identical to the particle builder, so
+   labels land exactly on the arm spine at radius r.
+═══════════════════════════════════════════════════════════ */
+const labelData=[];
+
+function createLabels(){
+  const layer=document.getElementById('label-layer');
+  PERSONS.forEach(person=>{
+    const entry   = LAYOUT[person.galaxyIndex];
+    const branches= entry.params.branches;
+    const scale   = entry.params.scale;
+
+    // ── Pattern pills first (lower z-index, behind name) ──
+    person.patterns.forEach((pat,i)=>{
+      const def=person.labelDefs[i]||{arm:i%branches,r:4};
+      const patEl=document.createElement('div');
+      patEl.className='pattern-pill';
+      patEl.dataset.personId=person.id; patEl.dataset.patternId=pat.id;
+      patEl.textContent=pat.label;
+      layer.appendChild(patEl);
+      labelData.push({
+        el:patEl,
+        localPos: armPos(branches, def.arm, def.r, PAT_Y/scale),
+        galaxyIndex:person.galaxyIndex,
+        wp:new THREE.Vector3(),
+        type:'pattern', personId:person.id, patternId:pat.id,
+      });
+    });
+
+    // ── Person name pill last (higher z-index, rendered on top) ──
+    const nameEl=document.createElement('div');
+    nameEl.className='person-pill'; nameEl.dataset.personId=person.id;
+    const dot=document.createElement('span');
+    dot.className='pill-dot'; dot.style.background=person.color;
+    dot.style.boxShadow=`0 0 6px ${person.color}aa`;
+    nameEl.appendChild(dot); nameEl.appendChild(document.createTextNode(person.name));
+    layer.appendChild(nameEl);
+    labelData.push({
+      el:nameEl,
+      localPos: new THREE.Vector3(0, NAME_Y/scale, 0),  // on Y-axis: never rotates
+      galaxyIndex:person.galaxyIndex,
+      wp:new THREE.Vector3(),
+      type:'person', personId:person.id,
+    });
+  });
+}
+
+const _v3=new THREE.Vector3();
+
+function updateLabelPositions(){
+  // matrixWorld is current because renderer.render() ran just before this call.
+  const w=innerWidth, h=innerHeight;
+  for(const item of labelData){
+    // Transform local → world through the live galaxy matrix
+    item.wp.copy(item.localPos).applyMatrix4(galaxyPoints[item.galaxyIndex].matrixWorld);
+    // Project world → clip → pixels
+    _v3.copy(item.wp).project(camera);
+    if(_v3.z>1){item.el.style.display='none';continue;}
+    const sx=(_v3.x*.5+.5)*w, sy=(-_v3.y*.5+.5)*h;
+    if(sx<-120||sx>w+120||sy<-80||sy>h+80){item.el.style.display='none';continue;}
+    item.el.style.display='';
+    item.el.style.left=sx+'px';
+    item.el.style.top =sy+'px';
+  }
+}
+
+function updateLabelVisibility(){
+  const fid=state.focusedPersonId, pid=state.selectedPatternId;
+  for(const item of labelData){
+    if(item.type==='person'){
+      if(!fid)               {item.el.style.opacity='1';   item.el.classList.remove('focused');}
+      else if(item.personId===fid){item.el.style.opacity='1';item.el.classList.add('focused');}
+      else                   {item.el.style.opacity='0.08';item.el.classList.remove('focused');}
+    }else{
+      if(!fid)               {item.el.style.opacity='0.58';item.el.classList.remove('highlighted');}
+      else if(item.personId===fid){
+        if(pid&&item.patternId===pid){item.el.style.opacity='1';item.el.classList.add('highlighted');}
+        else                        {item.el.style.opacity=pid?'0.52':'0.82';item.el.classList.remove('highlighted');}
+      }else                  {item.el.style.opacity='0.04';item.el.classList.remove('highlighted');}
+    }
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   INFO CARD
+═══════════════════════════════════════════════════════════ */
+const card=document.getElementById('info-card');
+
+function showPersonCard(person){
+  card.innerHTML=`<button class="card-close" onclick="clearFocus()">✕</button>
+    <div class="card-header">
+      <div class="card-dot" style="background:${person.color};box-shadow:0 0 8px ${person.color}88"></div>
+      <div><div class="card-name">${person.name}</div><div class="card-subtitle">${person.subtitle}</div></div>
+    </div>
+    <div class="card-body">${person.summary}</div>
+    <div class="card-hint">${person.patterns.length} patterns &nbsp;·&nbsp; tap to explore</div>`;
+  card.classList.add('visible');
+}
+
+function showPatternCard(person,pattern){
+  card.innerHTML=`<button class="card-close" onclick="clearFocus()">✕</button>
+    <button class="card-back" onclick="backToPersonCard()">← ${person.name}</button>
+    <div class="card-pattern-tag">${pattern.label}</div>
+    <div class="card-body">${pattern.desc}</div>
+    <div class="card-connected">In connection with <span style="color:${person.color}">${person.name}</span></div>`;
+  card.classList.add('visible');
+}
+
+function hideCard(){ card.classList.remove('visible'); }
+
+/* ═══════════════════════════════════════════════════════════
+   POINTER / TOUCH HANDLING
+═══════════════════════════════════════════════════════════ */
+const DRAG_THRESH=6;
+let pointerDown=false, pointerMoved=false, pointerStart={x:0,y:0}, prevX=0,prevY=0, orbitActive=false;
+
+window.addEventListener('mousedown',e=>{
+  pointerDown=true; pointerMoved=false;
+  pointerStart={x:e.clientX,y:e.clientY}; prevX=e.clientX; prevY=e.clientY;
+  if(!e.target.closest('#info-card'))orbitActive=true;
+});
+window.addEventListener('mousemove',e=>{
+  if(!pointerDown)return;
+  if(!pointerMoved&&(Math.abs(e.clientX-pointerStart.x)>DRAG_THRESH||Math.abs(e.clientY-pointerStart.y)>DRAG_THRESH))pointerMoved=true;
+  if(orbitActive){
+    tAz-=(e.clientX-prevX)*0.005;
+    tEl=Math.max(-Math.PI/2+0.05,Math.min(Math.PI/2-0.05,tEl+(e.clientY-prevY)*0.005));
+  }
+  prevX=e.clientX; prevY=e.clientY;
+});
+window.addEventListener('mouseup',e=>{
+  if(!pointerMoved)handleClick(e.target,e.clientX,e.clientY);
+  pointerDown=orbitActive=false;
+});
+window.addEventListener('wheel',e=>{tR=Math.max(5,Math.min(100,tR+e.deltaY*0.028));},{passive:true});
+
+// Touch — orbit + pinch on canvas
+let tMode='',ltx=0,lty=0,lpd=0,touchStart={x:0,y:0},touchMoved=false;
+renderer.domElement.addEventListener('touchstart',e=>{
+  if(e.touches.length===1){
+    const t=e.touches[0]; ltx=prevX=t.clientX; lty=prevY=t.clientY;
+    touchStart={x:ltx,y:lty}; touchMoved=false; tMode='orbit';
+  }else if(e.touches.length===2){
+    tMode='pinch';
+    lpd=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+  }
+},{passive:true});
+renderer.domElement.addEventListener('touchmove',e=>{
+  e.preventDefault();
+  if(e.touches.length===1&&tMode==='orbit'){
+    const tx=e.touches[0].clientX,ty=e.touches[0].clientY;
+    if(!touchMoved&&(Math.abs(tx-touchStart.x)>DRAG_THRESH||Math.abs(ty-touchStart.y)>DRAG_THRESH))touchMoved=true;
+    tAz-=(tx-prevX)*0.005; tEl=Math.max(-Math.PI/2+0.05,Math.min(Math.PI/2-0.05,tEl+(ty-prevY)*0.005));
+    prevX=tx; prevY=ty;
+  }else if(e.touches.length===2&&tMode==='pinch'){
+    const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+    tR=Math.max(5,Math.min(100,tR-(d-lpd)*0.05)); lpd=d;
+  }
+},{passive:false});
+renderer.domElement.addEventListener('touchend',e=>{
+  if(tMode==='orbit'&&!touchMoved&&e.changedTouches.length===1){
+    const t=e.changedTouches[0];
+    handleClick(document.elementFromPoint(t.clientX,t.clientY),t.clientX,t.clientY);
+  }
+  tMode='';
+},{passive:true});
+
+// Touch taps on pills (pills absorb touchstart, don't reach canvas)
+const labelLayer=document.getElementById('label-layer');
+labelLayer.addEventListener('touchstart',e=>{
+  const p=e.target.closest('.person-pill,.pattern-pill');
+  if(p)p._ts={x:e.touches[0].clientX,y:e.touches[0].clientY};
+},{passive:true});
+labelLayer.addEventListener('touchend',e=>{
+  const p=e.target.closest('.person-pill,.pattern-pill');
+  if(p&&p._ts){
+    const t=e.changedTouches[0];
+    if(Math.abs(t.clientX-p._ts.x)<10&&Math.abs(t.clientY-p._ts.y)<10){e.preventDefault();handlePillClick(p);}
+    p._ts=null;
+  }
+},{passive:false});
+
+function handleClick(target,cx,cy){
+  const pill=target?.closest?.('.person-pill,.pattern-pill');
+  if(pill){handlePillClick(pill);return;}
+  if(target?.closest?.('#info-card'))return;
+  raycaster.setFromCamera(new THREE.Vector2((cx/innerWidth)*2-1,-(cy/innerHeight)*2+1),camera);
+  const hits=raycaster.intersectObjects(hitSpheres);
+  if(hits.length){
+    const pid=hits[0].object.userData.personId;
+    if(state.focusedPersonId===pid){if(!state.selectedPatternId)showPersonCard(PERSONS.find(p=>p.id===pid));}
+    else focusPerson(pid);
+    return;
+  }
+  if(state.focusedPersonId)clearFocus();
+}
+function handlePillClick(pill){
+  const personId=pill.dataset.personId,patternId=pill.dataset.patternId;
+  if(patternId)selectPattern(personId,patternId);
+  else focusPerson(personId);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   RESIZE + INIT + ANIMATION LOOP
+═══════════════════════════════════════════════════════════ */
+window.addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight); renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+});
+
+createLabels();
+updateLabelVisibility();
+
+const clock=new THREE.Clock();
+(function animate(){
+  requestAnimationFrame(animate);
+  const t=clock.getElapsedTime();
+
+  galaxyPoints.forEach(pts=>{ pts.rotation.y=t*0.05; });
+
+  // Smooth zoom-out restores overview with no angular snapping —
+  // camera just eases back to origin with tAz/tEl unchanged.
+  if(state.focusedPersonId&&tR>42)clearFocus();
+
+  // All damping at the same rate for consistent feel
+  const D=0.075;
+  azimuth  +=(tAz-azimuth)  *D;
+  elevation+=(tEl-elevation)*D;
+  orbitR   +=(tR-orbitR)    *D;
+
+  updateCamera();
+
+  // Render first so Three.js updates all matrixWorld values,
+  // then project labels using those fresh matrices.
+  renderer.render(scene,camera);
+  updateLabelPositions();
+})();
+</script>
+</body>
+</html>

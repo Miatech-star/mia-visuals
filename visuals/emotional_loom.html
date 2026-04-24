@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Emotional Loom — heymia</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100vw;height:100vh;overflow:hidden;background:#05050e;font-family:'Inter',sans-serif}
+
+/* ── INTRO ── */
+#intro{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;background:#05050e;transition:opacity 1.4s ease;}
+#intro.out{opacity:0;pointer-events:none}
+#ac{position:absolute;inset:0;width:100%;height:100%}
+.ii{position:relative;z-index:1;text-align:center;display:flex;flex-direction:column;align-items:center;animation:up .95s cubic-bezier(.22,1,.36,1) both;}
+@keyframes up{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+.brand{font-size:9px;font-weight:300;letter-spacing:.32em;text-transform:uppercase;color:rgba(255,255,255,.14);margin-bottom:50px;}
+.hed{font-size:25px;font-weight:300;font-style:italic;line-height:1.55;color:rgba(255,255,255,.68);letter-spacing:-.01em;margin-bottom:18px;}
+.sub{font-size:11px;font-weight:300;letter-spacing:.05em;color:rgba(255,255,255,.24);line-height:1.9;margin-bottom:60px;}
+.cta{font-family:'Inter',sans-serif;font-size:10px;font-weight:300;letter-spacing:.18em;text-transform:uppercase;color:rgba(255,255,255,.4);background:transparent;cursor:pointer;border:1px solid rgba(255,255,255,.13);border-radius:100px;padding:13px 46px;transition:border-color .25s,color .25s,background .25s;}
+.cta:hover{border-color:rgba(255,255,255,.3);color:rgba(255,255,255,.72);background:rgba(255,255,255,.04)}
+
+/* ── LIVE ── */
+#live{position:fixed;inset:0;z-index:10;opacity:0;pointer-events:none;transition:opacity 1.4s ease}
+#live.on{opacity:1;pointer-events:all}
+#video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1);filter:grayscale(1) brightness(.41) contrast(1.5) saturate(0);}
+.vov{position:absolute;inset:0;z-index:1;pointer-events:none;background:radial-gradient(ellipse 90% 90% at 50% 46%,rgba(5,5,18,.16) 0%,rgba(5,5,18,.74) 100%);}
+#lc{position:absolute;inset:0;width:100%;height:100%;z-index:2;cursor:default;}
+
+/* ── RICH CENTER CARD ── */
+#rccard{
+  position:absolute;z-index:7;pointer-events:none;
+  background:rgba(6,6,18,.92);
+  backdrop-filter:blur(28px) saturate(155%);
+  -webkit-backdrop-filter:blur(28px) saturate(155%);
+  border:1px solid rgba(255,255,255,.08);
+  border-top:2px solid rgba(255,255,255,.22);
+  border-radius:14px;padding:22px 26px 24px;
+  width:316px;
+  transform:translate(-50%,-50%);
+  opacity:0;transition:opacity .6s ease;
+}
+#rccard.show{opacity:1}
+#rcc-name{font-size:18px;font-weight:400;letter-spacing:-.01em;color:rgba(255,255,255,.92);}
+#rcc-role{font-size:9px;font-weight:300;letter-spacing:.18em;text-transform:uppercase;color:rgba(255,255,255,.26);margin-top:4px;margin-bottom:17px;}
+#rcc-quote{font-size:13px;font-weight:300;font-style:italic;color:rgba(255,255,255,.72);line-height:1.66;margin-bottom:17px;}
+.rcc-sep{height:1px;background:rgba(255,255,255,.07);margin-bottom:17px;}
+#rcc-dyn{font-size:11px;font-weight:300;color:rgba(255,255,255,.5);line-height:1.8;margin-bottom:16px;}
+#rcc-plbl{font-size:8px;font-weight:300;letter-spacing:.18em;text-transform:uppercase;color:rgba(255,255,255,.2);margin-bottom:7px;}
+#rcc-pats{font-size:10px;font-weight:300;color:rgba(255,255,255,.42);line-height:1.7;margin-bottom:15px;}
+#rcc-ctx{font-size:10px;font-weight:300;font-style:italic;color:rgba(255,255,255,.3);line-height:1.65;}
+
+/* ── INSPECT CARD (near beam) ── */
+#icard{
+  position:absolute;z-index:7;pointer-events:none;
+  background:rgba(7,7,22,.90);
+  backdrop-filter:blur(22px) saturate(150%);
+  -webkit-backdrop-filter:blur(22px) saturate(150%);
+  border:1px solid rgba(255,255,255,.07);
+  border-left:2px solid rgba(255,255,255,.28);
+  border-radius:11px;padding:14px 18px 16px;
+  min-width:215px;max-width:268px;
+  transform:translate(-50%,-50%);
+  opacity:0;transition:opacity .5s ease;
+}
+#icard.show{opacity:1}
+#ic-pat{font-size:13px;font-weight:400;letter-spacing:.01em;color:rgba(255,255,255,.9);margin-bottom:4px;}
+#ic-per{font-size:9px;font-weight:300;letter-spacing:.15em;text-transform:uppercase;color:rgba(255,255,255,.28);margin-bottom:12px;}
+.ic-sep{height:1px;background:rgba(255,255,255,.07);margin-bottom:12px;}
+#ic-desc{font-size:12px;font-weight:300;font-style:italic;color:rgba(255,255,255,.7);line-height:1.7;margin-bottom:10px;}
+#ic-note{font-size:10px;font-weight:300;color:rgba(255,255,255,.36);line-height:1.62;}
+
+/* ── CHROME ── */
+#loader{position:absolute;inset:0;z-index:8;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:300;letter-spacing:.2em;color:rgba(255,255,255,.26);transition:opacity .9s ease;}
+#loader.gone{opacity:0;pointer-events:none}
+#hint{position:absolute;bottom:30px;left:50%;transform:translateX(-50%);font-size:9px;font-weight:300;letter-spacing:.14em;color:rgba(255,255,255,.2);white-space:nowrap;pointer-events:none;transition:opacity 2.5s ease;}
+#hint.gone{opacity:0}
+.hlb{position:absolute;bottom:30px;font-size:8px;font-weight:300;letter-spacing:.24em;text-transform:uppercase;color:rgba(255,255,255,.12);pointer-events:none;}
+#hlbl{left:24px}#hlbr{right:24px}
+</style>
+</head>
+<body>
+
+<div id="intro">
+  <canvas id="ac"></canvas>
+  <div class="ii">
+    <div class="brand">heymia</div>
+    <div class="hed">right hand — people<br>left hand — patterns</div>
+    <div class="sub">
+      open both hands to see the full field<br>
+      pinch right thumb to a finger to select a person<br>
+      left thumb touches a pattern to inspect it
+    </div>
+    <button class="cta" id="actbtn">activate camera</button>
+  </div>
+</div>
+
+<div id="live">
+  <video id="video" autoplay muted playsinline></video>
+  <div class="vov"></div>
+  <canvas id="lc"></canvas>
+  <div id="loader">initializing…</div>
+  <div id="rccard">
+    <div id="rcc-name"></div>
+    <div id="rcc-role"></div>
+    <div id="rcc-quote"></div>
+    <div class="rcc-sep"></div>
+    <div id="rcc-dyn"></div>
+    <div id="rcc-plbl">patterns in this relationship</div>
+    <div id="rcc-pats"></div>
+    <div id="rcc-ctx"></div>
+  </div>
+  <div id="icard">
+    <div id="ic-pat"></div>
+    <div id="ic-per"></div>
+    <div class="ic-sep"></div>
+    <div id="ic-desc"></div>
+    <div id="ic-note"></div>
+  </div>
+  <div id="hint">right hand selects person · left thumb or click label to inspect pattern</div>
+  <div class="hlb" id="hlbl">people</div>
+  <div class="hlb" id="hlbr">patterns</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1640029074/camera_utils.js" crossorigin="anonymous"></script>
+<script>
+'use strict';
+
+if(!CanvasRenderingContext2D.prototype.roundRect){
+  CanvasRenderingContext2D.prototype.roundRect=function(x,y,w,h,r){
+    r=Math.min(r,w/2,h/2);this.moveTo(x+r,y);this.lineTo(x+w-r,y);this.arcTo(x+w,y,x+w,y+r,r);
+    this.lineTo(x+w,y+h-r);this.arcTo(x+w,y+h,x+w-r,y+h,r);this.lineTo(x+r,y+h);
+    this.arcTo(x,y+h,x,y+h-r,r);this.lineTo(x,y+r);this.arcTo(x,y,x+r,y,r);this.closePath();
+  };
+}
+
+// ── DATA ────────────────────────────────────────────────────────
+const PEOPLE=[
+  {id:'you',   label:'You',   role:'',                 f:0,lm:4, col:'#F2F2F8'},
+  {id:'jake',  label:'Jake',  role:'childhood friend', f:1,lm:8, col:'#EAC068'},
+  {id:'maya',  label:'Maya',  role:'partner',          f:2,lm:12,col:'#C090E8'},
+  {id:'sofia', label:'Sofia', role:'mother',           f:3,lm:16,col:'#EC90A8'},
+  {id:'ryan',  label:'Ryan',  role:'coworker',         f:4,lm:20,col:'#68D8E8'},
+];
+const GEN_PATS=[
+  {id:'fear',label:'fear of loss',        f:1,lm:8, col:'#F4ACAC',role:'your own pattern',desc:"you hold on tightly to what matters \u2014 because you know what it costs when it goes",note:"Loss isn\u2019t abstract for you. It shapes how close you let people get."},
+  {id:'appr',label:'approval seeking',    f:2,lm:12,col:'#C8A8F8',role:'your own pattern',desc:"somewhere along the way, being liked started to feel like being safe",note:"The performance is so well-practiced it can feel like personality."},
+  {id:'conf',label:'conflict avoidance',  f:3,lm:16,col:'#88D4EC',role:'your own pattern',desc:"keeping the peace has cost you things you didn\u2019t account for at the time",note:"The silence accumulates: unspoken things that weight the room."},
+  {id:'dep', label:'emotional dependence',f:4,lm:20,col:'#F0C09C',role:'your own pattern',desc:"you know how to need people \u2014 you\u2019re still learning how to let that be known",note:"Needing connection isn\u2019t the problem. It\u2019s the part worth building on."},
+];
+const REL={
+  jake:[
+    {id:'nos',label:'nostalgia loop',    f:1,lm:8, col:'#E8C870',role:'Jake — childhood friend',desc:"you return to who you were with him, not who you\u2019ve become",note:"The friendship is anchored in shared history. That\u2019s its strength \u2014 and its limit."},
+    {id:'con',label:'conflict avoidance',f:2,lm:12,col:'#88D4EC',role:'Jake — childhood friend',desc:"the friendship survives because neither of you says the hard thing",note:"The ease between you is partly real, partly an agreement not to disrupt."},
+    {id:'tru',label:'easy trust',        f:3,lm:16,col:'#A8E4C8',role:'Jake — childhood friend',desc:"with him, the armor comes off without a reason",note:"This trust was built before you learned to be careful. It still holds."},
+    {id:'loy',label:'unspoken loyalty',  f:4,lm:20,col:'#C8B8F0',role:'Jake — childhood friend',desc:"you\u2019d show up without being asked \u2014 and so would he",note:"The bond doesn\u2019t need maintenance because it predates the need for it."},
+  ],
+  maya:[
+    {id:'los',label:'fear of loss',         f:1,lm:8, col:'#F4ACAC',role:'Maya — partner',desc:"you seek closeness, but brace for distance before it happens",note:"The anticipation of loss becomes its own kind of distance."},
+    {id:'dep',label:'emotional dependence', f:2,lm:12,col:'#F0C09C',role:'Maya — partner',desc:"you mistake needing her for loving her",note:"Dependence and love can occupy the same space. Worth knowing which is which."},
+    {id:'saf',label:'safe attachment',      f:3,lm:16,col:'#98E4C0',role:'Maya — partner',desc:"when it\u2019s good, she\u2019s the place you stop performing",note:"There\u2019s something real here \u2014 a space where the self-management pauses."},
+    {id:'app',label:'approval seeking',     f:4,lm:20,col:'#C8A8F8',role:'Maya — partner',desc:"you still check her face to know how you\u2019re doing",note:"You\u2019ve made her a mirror for your worth. That\u2019s too much weight for one person."},
+  ],
+  sofia:[
+    {id:'gui',label:'guilt cycle',           f:1,lm:8, col:'#E8A8B8',role:'Sofia — mother',desc:"you love her and resent the weight of it in equal measure",note:"The guilt and the love are not opposites. They come from the same place."},
+    {id:'car',label:'caretaker reflex',      f:2,lm:12,col:'#F0D0A0',role:'Sofia — mother',desc:"you manage her feelings before your own",note:"This started as a survival strategy. At some point it became identity."},
+    {id:'rej',label:'rejection sensitivity', f:3,lm:16,col:'#C8A8E8',role:'Sofia — mother',desc:"her disappointment still lands like a verdict",note:"You learned early that her approval mattered. You\u2019re still learning how much."},
+    {id:'per',label:'performance mask',      f:4,lm:20,col:'#A8C8F0',role:'Sofia — mother',desc:"you perform competence to earn what should have been given",note:"The mask was built for her. You\u2019ve been wearing it everywhere else."},
+  ],
+  ryan:[
+    {id:'ple',label:'people pleasing',   f:1,lm:8, col:'#E8C870',role:'Ryan — coworker',desc:"you stay agreeable because disagreement feels risky",note:"The agreeableness is strategic, even if it doesn\u2019t feel that way."},
+    {id:'edi',label:'emotional distance',f:2,lm:12,col:'#88D4EC',role:'Ryan — coworker',desc:"close enough to be useful, far enough to stay safe",note:"The distance is managed, not natural. You\u2019re the one holding the measure."},
+    {id:'com',label:'competence mask',   f:3,lm:16,col:'#C4A0E0',role:'Ryan — coworker',desc:"you lead with capability so he won\u2019t look too closely",note:"The mask works. That\u2019s both the reassurance and the problem."},
+    {id:'bou',label:'boundary testing',  f:4,lm:20,col:'#F0B090',role:'Ryan — coworker',desc:"you\u2019re never sure where the professional ends and the personal begins",note:"Neither is he. That ambiguity is where things can become complicated."},
+  ],
+};
+const PCARDS={
+  jake:{col:'#EAC068',
+    quote:"your oldest bond sits outside the rules you\u2019ve applied to everyone else",
+    dynamic:"You met before the armor was built. What makes Jake different is also what makes him irreplaceable \u2014 and hard to update. The friendship survives not because it\u2019s easy, but because it predates the difficulty.",
+    pats:['nostalgia loop','conflict avoidance','easy trust','unspoken loyalty'],
+    ctx:"Your patterns with Jake are the oldest ones. They reveal who you were before the others.",
+  },
+  maya:{col:'#C090E8',
+    quote:"the relationship where you feel most yourself, and most afraid",
+    dynamic:"Intimacy and anxiety share the same space here. The closer you get, the more there is to lose \u2014 and the more vigilant you quietly become.",
+    pats:['fear of loss','emotional dependence','safe attachment','approval seeking'],
+    ctx:"Your love for Maya is real. So is the surveillance you maintain in case it ends.",
+  },
+  sofia:{col:'#EC90A8',
+    quote:"the original relationship \u2014 where the patterns were first written",
+    dynamic:"Sofia is where many of your emotional reflexes were first learned: the caretaking, the performance, the guilt, the sensitivity to rejection.",
+    pats:['guilt cycle','caretaker reflex','rejection sensitivity','performance mask'],
+    ctx:"Understanding this relationship changes how you read the others.",
+  },
+  ryan:{col:'#68D8E8',
+    quote:"the professional mirror you perform for without quite meaning to",
+    dynamic:"Work relationships carry emotional weight they\u2019re not supposed to. With Ryan, the mask is functional \u2014 until it isn\u2019t.",
+    pats:['people pleasing','emotional distance','competence mask','boundary testing'],
+    ctx:"The distance you maintain is protection. What you\u2019re protecting is worth examining.",
+  },
+};
+
+// ── UTIL ─────────────────────────────────────────────────────────
+function rgb(h,a){
+  const r=parseInt(h.slice(1,3),16),g=parseInt(h.slice(3,5),16),b=parseInt(h.slice(5,7),16);
+  return `rgba(${r},${g},${b},${Math.max(0,Math.min(1,a)).toFixed(3)})`;
+}
+
+// ── THREE.JS AMBIENT ─────────────────────────────────────────────
+{
+  const ac=document.getElementById('ac');
+  const ren=new THREE.WebGLRenderer({canvas:ac,alpha:true,antialias:true});
+  ren.setPixelRatio(Math.min(devicePixelRatio,2));ren.setClearColor(0,0);ren.setSize(innerWidth,innerHeight);
+  const sc=new THREE.Scene(),cam=new THREE.PerspectiveCamera(55,innerWidth/innerHeight,.1,100);cam.position.z=5;
+  const pal=[...PEOPLE,...GEN_PATS].map(x=>x.col);
+  const N=80,pp=new Float32Array(N*3),pc=new Float32Array(N*3),pv=[];
+  for(let i=0;i<N;i++){
+    pp[i*3]=(Math.random()-.5)*10;pp[i*3+1]=(Math.random()-.5)*6;pp[i*3+2]=(Math.random()-.5)*1.5;
+    pv.push({x:(Math.random()-.5)*.0015,y:(Math.random()-.5)*.0015});
+    const hx=pal[i%pal.length];
+    pc[i*3]=parseInt(hx.slice(1,3),16)/255;pc[i*3+1]=parseInt(hx.slice(3,5),16)/255;pc[i*3+2]=parseInt(hx.slice(5,7),16)/255;
+  }
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.BufferAttribute(pp,3));
+  geo.setAttribute('color',new THREE.BufferAttribute(pc,3));
+  sc.add(new THREE.Points(geo,new THREE.PointsMaterial({vertexColors:true,size:.022,transparent:true,opacity:.22,sizeAttenuation:true})));
+  let t3=0,r3;
+  (function tick(){
+    r3=requestAnimationFrame(tick);t3+=.006;
+    for(let i=0;i<N;i++){
+      pp[i*3]+=pv[i].x+Math.sin(t3*.41+i*.72)*.0005;pp[i*3+1]+=pv[i].y+Math.cos(t3*.36+i*.88)*.0005;
+      if(pp[i*3]>5)pp[i*3]=-5;if(pp[i*3]<-5)pp[i*3]=5;if(pp[i*3+1]>3)pp[i*3+1]=-3;if(pp[i*3+1]<-3)pp[i*3+1]=3;
+    }
+    geo.attributes.position.needsUpdate=true;ren.render(sc,cam);
+  })();
+  addEventListener('resize',()=>{ren.setSize(innerWidth,innerHeight);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();});
+  window._stopAmb=()=>cancelAnimationFrame(r3);
+}
+
+// ── CANVAS ───────────────────────────────────────────────────────
+const video=document.getElementById('video');
+const lc=document.getElementById('lc');
+const cx=lc.getContext('2d');
+const rccEl=document.getElementById('rccard');
+const icEl=document.getElementById('icard');
+
+const VW=()=>lc.width,VH=()=>lc.height;
+(function rsz(){lc.width=innerWidth;lc.height=innerHeight;})();
+addEventListener('resize',()=>{lc.width=innerWidth;lc.height=innerHeight;});
+
+// ── HAND STATE ────────────────────────────────────────────────────
+let active=false,T=0;
+const HS={
+  p:{lms:null,conf:0,ext:[0,0,0,0,0]}, // right physical hand (people), left of screen
+  q:{lms:null,conf:0,ext:[0,0,0,0,0]}, // left physical hand (patterns), right of screen
+};
+let selRaw=null,selStable=null,selFrames=0;
+let inspRaw=null,inspStable=null,inspFrames=0;
+const SEL_SETTLE=6,INSP_SETTLE=4;
+function tickSel(v){if(v===selRaw){if(++selFrames>=SEL_SETTLE)selStable=selRaw;}else{selRaw=v;selFrames=0;}}
+function tickInsp(v){if(v===inspRaw){if(++inspFrames>=INSP_SETTLE)inspStable=inspRaw;}else{inspRaw=v;inspFrames=0;}}
+
+// Hit areas for pattern labels — rebuilt every frame, used by click/hover handlers
+let patLabelHits=[];
+
+// ── FINGER EXTENSION ─────────────────────────────────────────────
+const TIP=[4,8,12,16,20],PIP=[3,6,10,14,18];
+function isExt(lms,f){
+  if(f===0){
+    const dt=Math.hypot(lms[4].x-lms[0].x,lms[4].y-lms[0].y);
+    const dm=Math.hypot(lms[2].x-lms[0].x,lms[2].y-lms[0].y);
+    return dt>dm*1.08&&Math.hypot(lms[4].x-lms[5].x,lms[4].y-lms[5].y)>0.065;
+  }
+  return lms[TIP[f]].y<lms[PIP[f]].y-0.012;
+}
+function lmPx(lm){return{x:(1-lm.x)*VW(),y:lm.y*VH()};}
+function ema(prev,raw){
+  const W=.26;if(!prev)return raw.map(l=>({x:l.x,y:l.y}));
+  return raw.map((l,i)=>({x:prev[i].x*(1-W)+l.x*W,y:prev[i].y*(1-W)+l.y*W}));
+}
+
+// ── DETECTION ────────────────────────────────────────────────────
+function detectSel(M,ext,conf){
+  if(!M||conf<.1)return null;
+  const th=M[4];
+  const map=[[8,'jake'],[12,'maya'],[16,'sofia'],[20,'ryan']];
+  for(const[lm,id]of map){if(Math.hypot(M[lm].x-th.x,M[lm].y-th.y)<62)return id;}
+  const up=[1,2,3,4].filter(f=>ext[f]>.55);
+  if(up.length===1){const m={1:'jake',2:'maya',3:'sofia',4:'ryan'};return m[up[0]]||null;}
+  return null;
+}
+function detectInsp(M,ext,conf,n){
+  if(!M||conf<.1)return null;
+  const th=M[4];
+  const lms=[8,12,16,20];
+  for(let i=0;i<n;i++){if(Math.hypot(M[lms[i]].x-th.x,M[lms[i]].y-th.y)<65)return i;}
+  return null;
+}
+
+// ── SKELETON ─────────────────────────────────────────────────────
+const SEGS=[[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[0,9],[9,10],[10,11],[11,12],[0,13],[13,14],[14,15],[15,16],[0,17],[17,18],[18,19],[19,20],[5,9],[9,13],[13,17]];
+function lmFg(lm){if(lm>=1&&lm<=4)return 0;if(lm>=5&&lm<=8)return 1;if(lm>=9&&lm<=12)return 2;if(lm>=13&&lm<=16)return 3;if(lm>=17&&lm<=20)return 4;return -1;}
+
+function drawSeg(x1,y1,x2,y2,col,a){
+  if(a<.007)return;
+  cx.save();cx.lineCap='round';
+  cx.beginPath();cx.moveTo(x1,y1);cx.lineTo(x2,y2);cx.strokeStyle=rgb(col,a*.07);cx.lineWidth=20;cx.shadowBlur=0;cx.stroke();
+  cx.beginPath();cx.moveTo(x1,y1);cx.lineTo(x2,y2);cx.strokeStyle=rgb(col,a*.38);cx.lineWidth=2.8;cx.shadowBlur=14;cx.shadowColor=rgb(col,.4);cx.stroke();
+  cx.beginPath();cx.moveTo(x1,y1);cx.lineTo(x2,y2);cx.strokeStyle=rgb(col,a*.86);cx.lineWidth=0.7;cx.shadowBlur=4;cx.shadowColor=rgb(col,.68);cx.stroke();
+  cx.restore();
+}
+function drawHand(M,conf,ext,hCol){
+  if(!M||conf<.04)return;
+  for(const[a,b]of SEGS){
+    const fa=lmFg(a),fb=lmFg(b),palm=fa===-1||fb===-1;
+    const act=!palm&&(fa===-1||ext[fa]>.5)&&(fb===-1||ext[fb]>.5);
+    drawSeg(M[a].x,M[a].y,M[b].x,M[b].y,hCol,palm?.13*conf:(act?.66:.035)*conf);
+  }
+  const w=M[0];
+  const gw=cx.createRadialGradient(w.x,w.y,0,w.x,w.y,48);
+  gw.addColorStop(0,rgb(hCol,conf*.08));gw.addColorStop(1,rgb(hCol,0));
+  cx.beginPath();cx.arc(w.x,w.y,48,0,Math.PI*2);cx.fillStyle=gw;cx.fill();
+  for(let f=0;f<5;f++){
+    if(ext[f]<.5)continue;
+    const p=M[TIP[f]];
+    const gr=cx.createRadialGradient(p.x,p.y,0,p.x,p.y,15);
+    gr.addColorStop(0,rgb(hCol,conf*.26));gr.addColorStop(1,rgb(hCol,0));
+    cx.beginPath();cx.arc(p.x,p.y,15,0,Math.PI*2);cx.fillStyle=gr;cx.fill();
+    cx.save();cx.beginPath();cx.arc(p.x,p.y,3.8,0,Math.PI*2);
+    cx.fillStyle=hCol;cx.shadowBlur=12;cx.shadowColor=rgb(hCol,.88);cx.fill();cx.restore();
+  }
+}
+
+// ── LASER: VIVID COLORED BEAM ─────────────────────────────────────
+function laser(x1,y1,x2,y2,col,a){
+  if(a<.008)return;
+  const mx=(x1+x2)/2,dist=Math.hypot(x2-x1,y2-y1);
+  const arc=Math.max(0,42-dist*.038);
+  const cy=(y1+y2)/2-arc;
+  cx.save();cx.lineCap='round';
+  // Wide outer halo — colored, normal blend
+  cx.beginPath();cx.moveTo(x1,y1);cx.quadraticCurveTo(mx,cy,x2,y2);
+  cx.strokeStyle=rgb(col,a*.42);cx.lineWidth=64;cx.shadowBlur=0;cx.stroke();
+  // Additive layers — each layer's light stacks, making the core blindingly bright
+  cx.globalCompositeOperation='lighter';
+  cx.beginPath();cx.moveTo(x1,y1);cx.quadraticCurveTo(mx,cy,x2,y2);
+  cx.strokeStyle=rgb(col,a*.52);cx.lineWidth=22;
+  cx.shadowBlur=48;cx.shadowColor=rgb(col,.95);cx.stroke();
+  cx.beginPath();cx.moveTo(x1,y1);cx.quadraticCurveTo(mx,cy,x2,y2);
+  cx.strokeStyle=rgb(col,a*.82);cx.lineWidth=7;
+  cx.shadowBlur=28;cx.shadowColor=rgb(col,1);cx.stroke();
+  cx.beginPath();cx.moveTo(x1,y1);cx.quadraticCurveTo(mx,cy,x2,y2);
+  cx.strokeStyle=rgb(col,a*.96);cx.lineWidth=2.8;
+  cx.shadowBlur=16;cx.shadowColor=rgb(col,1);cx.stroke();
+  // Burning white core
+  cx.beginPath();cx.moveTo(x1,y1);cx.quadraticCurveTo(mx,cy,x2,y2);
+  cx.strokeStyle=`rgba(255,255,255,${(a*.92).toFixed(3)})`;
+  cx.lineWidth=1.2;cx.shadowBlur=10;cx.shadowColor='rgba(255,255,255,.95)';cx.stroke();
+  cx.globalCompositeOperation='source-over';
+  cx.restore();
+}
+
+// ── PEOPLE LABEL (unchanged from v4) ─────────────────────────────
+function lbl(x,y,text,col,side,a,bold){
+  if(a<.015)return;
+  cx.save();cx.font=`${bold?'400':'300'} ${bold?12:10}px Inter,sans-serif`;
+  cx.textBaseline='bottom';cx.fillStyle=rgb(col,a);
+  cx.shadowBlur=bold&&a>.6?9:0;cx.shadowColor=rgb(col,.32);
+  if(side==='L'){cx.textAlign='right';cx.fillText(text,x-8,y-16);}
+  else{cx.textAlign='left';cx.fillText(text,x+8,y-16);}
+  cx.restore();
+}
+
+// ── PATTERN LABEL: close to orb, short connector, clickable ──────
+// patIdx is the index in pats[] so click handlers know which to open
+function lblPat(x,y,text,col,a,isInsp,patIdx){
+  if(a<.014)return;
+  cx.save();
+  cx.font=`${isInsp?'400':'300'} ${isInsp?11:10}px Inter,sans-serif`;
+  const tw=cx.measureText(text).width;
+
+  // Geometry: connector starts just outside node glow (~6px from center),
+  // runs 9px, then text begins — everything hugs the orb.
+  const cStart=6, cEnd=15, tX=17;
+
+  // Short connector line
+  cx.beginPath();cx.moveTo(x+cStart,y);cx.lineTo(x+cEnd,y);
+  cx.strokeStyle=rgb(col,a*.48);cx.lineWidth=0.55;cx.shadowBlur=0;cx.stroke();
+
+  // Label text, vertically centered on node
+  cx.textAlign='left';cx.textBaseline='middle';
+  cx.fillStyle=rgb(col,a);
+  cx.shadowBlur=isInsp?9:0;cx.shadowColor=rgb(col,.32);
+  cx.fillText(text,x+tX,y);
+
+  // Hit area: covers connector + text with comfortable padding
+  patLabelHits.push({
+    i:patIdx,
+    x:x+cStart-4, y:y-10,
+    w:(tX-cStart)+tw+10, h:20,
+  });
+
+  cx.restore();
+}
+
+// ── SPECIAL NODES ────────────────────────────────────────────────
+function drawYou(pt,conf,T){
+  const r=7.5+Math.sin(T*2.8)*.6;
+  const g=cx.createRadialGradient(pt.x,pt.y,0,pt.x,pt.y,r*4);
+  g.addColorStop(0,`rgba(242,242,252,${conf*.3})`);g.addColorStop(1,'rgba(242,242,252,0)');
+  cx.beginPath();cx.arc(pt.x,pt.y,r*4,0,Math.PI*2);cx.fillStyle=g;cx.fill();
+  cx.save();cx.beginPath();cx.arc(pt.x,pt.y,r,0,Math.PI*2);
+  cx.fillStyle='#F2F2FC';cx.shadowBlur=22;cx.shadowColor='rgba(255,255,255,.78)';cx.fill();cx.restore();
+}
+function drawPNode(pt,col,conf,isSel,isFaded,T){
+  const nr=isSel?7:4.2,na=(isFaded?.15:.88)*conf;
+  if(isSel){
+    const rr=nr+8+Math.sin(T*3)*.7;
+    cx.save();cx.beginPath();cx.arc(pt.x,pt.y,rr,0,Math.PI*2);
+    cx.strokeStyle=rgb(col,.44);cx.lineWidth=1.2;cx.shadowBlur=14;cx.shadowColor=rgb(col,.5);cx.stroke();cx.restore();
+  }
+  const g=cx.createRadialGradient(pt.x,pt.y,0,pt.x,pt.y,nr*4);
+  g.addColorStop(0,rgb(col,na*.24));g.addColorStop(1,rgb(col,0));
+  cx.beginPath();cx.arc(pt.x,pt.y,nr*4,0,Math.PI*2);cx.fillStyle=g;cx.fill();
+  cx.save();cx.beginPath();cx.arc(pt.x,pt.y,nr,0,Math.PI*2);
+  cx.fillStyle=col;cx.shadowBlur=isSel?20:12;cx.shadowColor=rgb(col,.88);cx.fill();cx.restore();
+}
+function drawQNode(pt,col,conf,isInsp,isFaded){
+  const nr=isInsp?7:4.2,na=(isFaded?.18:.84)*conf;
+  if(isInsp){
+    cx.save();cx.beginPath();cx.arc(pt.x,pt.y,nr+10,0,Math.PI*2);
+    cx.strokeStyle=rgb(col,.4);cx.lineWidth=1;cx.shadowBlur=12;cx.shadowColor=rgb(col,.5);cx.stroke();cx.restore();
+  }
+  const g=cx.createRadialGradient(pt.x,pt.y,0,pt.x,pt.y,nr*4);
+  g.addColorStop(0,rgb(col,na*.24));g.addColorStop(1,rgb(col,0));
+  cx.beginPath();cx.arc(pt.x,pt.y,nr*4,0,Math.PI*2);cx.fillStyle=g;cx.fill();
+  cx.save();cx.beginPath();cx.arc(pt.x,pt.y,nr,0,Math.PI*2);
+  cx.fillStyle=col;cx.shadowBlur=isInsp?22:12;cx.shadowColor=rgb(col,.9);cx.fill();cx.restore();
+}
+
+// ── CARD DOM ─────────────────────────────────────────────────────
+let lastRCC=null;
+function setRichCard(personId){
+  if(!personId){rccEl.classList.remove('show');return;}
+  rccEl.style.left=VW()/2+'px';rccEl.style.top=(VH()/2+10)+'px';
+  if(personId===lastRCC)return rccEl.classList.add('show');
+  lastRCC=personId;
+  const p=PEOPLE.find(x=>x.id===personId),d=PCARDS[personId];
+  document.getElementById('rcc-name').textContent=p.label;
+  document.getElementById('rcc-role').textContent=p.role;
+  document.getElementById('rcc-quote').textContent='\u201c'+d.quote+'\u201d';
+  document.getElementById('rcc-dyn').textContent=d.dynamic;
+  document.getElementById('rcc-pats').textContent=d.pats.join(' \u00b7 ');
+  document.getElementById('rcc-ctx').textContent=d.ctx;
+  rccEl.style.borderTopColor=d.col;
+  rccEl.classList.add('show');
+}
+let lastIC=null;
+function setICard(show,pat,youPos,patPos){
+  if(!show){icEl.classList.remove('show');return;}
+  const x=(youPos.x+patPos.x)/2,y=(youPos.y+patPos.y)/2-85;
+  icEl.style.left=x+'px';icEl.style.top=y+'px';
+  if(pat.id!==lastIC){
+    lastIC=pat.id;
+    document.getElementById('ic-pat').textContent=pat.label;
+    document.getElementById('ic-per').textContent=pat.role||'';
+    document.getElementById('ic-desc').textContent='\u201c'+pat.desc+'\u201d';
+    document.getElementById('ic-note').textContent=pat.note||'';
+    icEl.style.borderLeftColor=pat.col;
+  }
+  icEl.classList.add('show');
+}
+
+// ── RENDER LOOP ───────────────────────────────────────────────────
+(function frame(){
+  requestAnimationFrame(frame);
+  if(!active)return;
+  T+=.016;
+  cx.clearRect(0,0,VW(),VH());
+  patLabelHits.length=0; // reset hit areas each frame
+
+  const hp=HS.p,hq=HS.q;
+  const mp=hp.lms?hp.lms.map(lmPx):null;
+  const mq=hq.lms?hq.lms.map(lmPx):null;
+
+  tickSel(detectSel(mp,hp.ext,hp.conf));
+  const pats=selStable&&REL[selStable]?REL[selStable]:GEN_PATS;
+  tickInsp(detectInsp(mq,hq.ext,hq.conf,pats.length));
+
+  let inten=.82;
+  if(mp&&mq){const d=Math.hypot(mq[0].x-mp[0].x,mq[0].y-mp[0].y);inten=Math.max(.45,Math.min(1,1.12-d/570));}
+
+  const youPos=mp?mp[4]:null;
+  const youVis=mp&&hp.conf>.1;
+
+  // ── BEAMS ─────────────────────────────────────────────────
+  if(mp&&hp.conf>.1&&mq&&hq.conf>.1){
+    if(selStable){
+      // Person selected: You → all active REL patterns (unchanged)
+      for(let i=0;i<pats.length;i++){
+        const pat=pats[i];
+        if(hq.ext[pat.f]<.35&&inspStable!==i)continue;
+        let a;
+        if(inspStable!==null) a=(inspStable===i?.96:.14)*inten;
+        else a=.88*inten;
+        laser(youPos.x,youPos.y,mq[pat.lm].x,mq[pat.lm].y,pat.col,a);
+      }
+    } else {
+      // Full woven field: every active right-hand finger → every active left pattern
+      const actR=PEOPLE.filter(p=>p.f===0||hp.ext[p.f]>.45);
+      const actL=GEN_PATS.filter((_,i)=>hq.ext[GEN_PATS[i].f]>.35||inspStable===i);
+      const nB=Math.max(1,actR.length*actL.length);
+      // Alpha scales down with more beams so the field stays readable, not blown out
+      const baseA=nB>12?.24:nB>6?.35:nB>3?.50:nB>1?.65:.88;
+      for(const person of actR){
+        const src=mp[person.lm];
+        for(const pat of actL){
+          const pi=GEN_PATS.indexOf(pat);
+          const isInsp=inspStable===pi;
+          const isDim=inspStable!==null&&!isInsp;
+          const a=isDim?.07*inten:(isInsp?.92*inten:baseA*inten);
+          // Each person's beams use their own color → rainbow woven field
+          laser(src.x,src.y,mq[pat.lm].x,mq[pat.lm].y,person.id==='you'?pat.col:person.col,a);
+        }
+      }
+    }
+  }
+
+  // ── RIGHT HAND (people) ───────────────────────────────────
+  drawHand(mp,hp.conf,hp.ext,'#CCA040');
+  if(mp&&hp.conf>.08){
+    drawYou(mp[4],hp.conf,T);
+    lbl(mp[4].x,mp[4].y,'You','#F2F2FC','L',hp.conf*.86,true);
+    for(const p of PEOPLE.slice(1)){
+      const vis=hp.ext[p.f]>.5||selStable===p.id;
+      if(!vis)continue;
+      const pt=mp[p.lm],isSel=selStable===p.id,isFaded=selStable&&!isSel;
+      drawPNode(pt,p.col,hp.conf,isSel,isFaded,T);
+      const txt=isSel?`${p.label} \u2014 ${p.role}`:p.label;
+      lbl(pt.x,pt.y,txt,p.col,'L',hp.conf*(isFaded?.14:.86),isSel);
+    }
+  }
+
+  // ── LEFT HAND (patterns) ──────────────────────────────────
+  drawHand(mq,hq.conf,hq.ext,'#8AAAE8');
+  if(mq&&hq.conf>.08){
+    for(let i=0;i<pats.length;i++){
+      const pat=pats[i];
+      const vis=hq.ext[pat.f]>.5||inspStable===i;
+      if(!vis)continue;
+      const pt=mq[pat.lm],isInsp=inspStable===i,isFaded=inspStable!==null&&!isInsp;
+      drawQNode(pt,pat.col,hq.conf,isInsp,isFaded);
+      // ── pattern label: close to orb, short connector, clickable ──
+      lblPat(pt.x,pt.y,pat.label,pat.col,hq.conf*(isFaded?.16:.82),isInsp,i);
+    }
+    // Left thumb — inspect trigger indicator
+    if(hq.ext[0]>.38){
+      const pt=mq[4];
+      cx.save();
+      cx.beginPath();cx.moveTo(pt.x-5,pt.y);cx.lineTo(pt.x+5,pt.y);
+      cx.moveTo(pt.x,pt.y-5);cx.lineTo(pt.x,pt.y+5);
+      cx.strokeStyle=`rgba(255,255,255,${(hq.conf*.5).toFixed(3)})`;
+      cx.lineWidth=1;cx.shadowBlur=7;cx.shadowColor='rgba(255,255,255,.45)';cx.stroke();cx.restore();
+      lbl(pt.x,pt.y,'inspect','rgba(255,255,255,.6)','R',hq.conf*.52,false);
+    }
+  }
+
+  // ── CARDS ─────────────────────────────────────────────────
+  if(inspStable!==null&&mq&&hq.conf>.1){
+    rccEl.classList.remove('show');
+    const pat=pats[inspStable];
+    const patPos=mq[pat.lm];
+    // Anchor: midpoint between You and pattern when right hand visible, else above pattern
+    const srcPos=youPos||{x:patPos.x,y:patPos.y-140};
+    setICard(true,pat,srcPos,patPos);
+  } else if(selStable){
+    icEl.classList.remove('show');lastIC=null;
+    setRichCard(selStable);
+  } else {
+    rccEl.classList.remove('show');lastRCC=null;
+    icEl.classList.remove('show');lastIC=null;
+  }
+})();
+
+// ── MEDIAPIPE ────────────────────────────────────────────────────
+function initMP(){
+  const mp=new Hands({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/${f}`});
+  mp.setOptions({maxNumHands:2,modelComplexity:1,minDetectionConfidence:.68,minTrackingConfidence:.58});
+  mp.onResults(res=>{
+    let fp=false,fq=false;
+    if(res.multiHandLandmarks){
+      for(const raw of res.multiHandLandmarks){
+        const wx=(1-raw[0].x)*VW();
+        const isP=wx<VW()/2;
+        const hs=isP?HS.p:HS.q;
+        if(isP&&fp)continue;if(!isP&&fq)continue;
+        if(isP)fp=true;else fq=true;
+        hs.lms=ema(hs.lms,raw);
+        hs.conf=Math.min(1,hs.conf+.42);
+        for(let f=0;f<5;f++)hs.ext[f]=hs.ext[f]*.72+(isExt(hs.lms,f)?1:0)*.28;
+      }
+    }
+    if(!fp){HS.p.conf*=.82;if(HS.p.conf<.02){HS.p.conf=0;HS.p.lms=null;}}
+    if(!fq){HS.q.conf*=.82;if(HS.q.conf<.02){HS.q.conf=0;HS.q.lms=null;}}
+  });
+  const cam=new Camera(video,{onFrame:async()=>{await mp.send({image:video});},width:1280,height:720});
+  cam.start()
+    .then(()=>{document.getElementById('loader').classList.add('gone');setTimeout(()=>document.getElementById('hint').classList.add('gone'),10000);})
+    .catch(()=>{document.getElementById('loader').textContent='camera access required';});
+}
+
+// ── BOOT ─────────────────────────────────────────────────────────
+document.getElementById('actbtn').addEventListener('click',()=>{
+  document.getElementById('intro').classList.add('out');
+  document.getElementById('live').classList.add('on');
+  active=true;
+  setTimeout(()=>{if(window._stopAmb)window._stopAmb();initMP();},1050);
+});
+
+// ── PATTERN LABEL CLICK + HOVER ───────────────────────────────────
+// Labels are rebuilt in the canvas each frame with hit-test rects.
+// Clicking triggers the inspect card exactly as left-thumb pinch does.
+lc.addEventListener('mousemove',e=>{
+  if(!active)return;
+  const r=lc.getBoundingClientRect();
+  const mx=e.clientX-r.left,my=e.clientY-r.top;
+  lc.style.cursor=patLabelHits.some(h=>mx>=h.x&&mx<=h.x+h.w&&my>=h.y&&my<=h.y+h.h)?'pointer':'default';
+});
+lc.addEventListener('click',e=>{
+  if(!active)return;
+  const r=lc.getBoundingClientRect();
+  const mx=e.clientX-r.left,my=e.clientY-r.top;
+  const hit=patLabelHits.find(h=>mx>=h.x&&mx<=h.x+h.w&&my>=h.y&&my<=h.y+h.h);
+  if(hit){
+    // Immediately commit inspect — same result as left-thumb pinch
+    inspRaw=hit.i;inspFrames=INSP_SETTLE;inspStable=hit.i;
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,1685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neural Branching</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; overflow: hidden; cursor: crosshair; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif; }
+canvas { display: block; }
+
+/* ── HUD ── */
+#ui {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  color: rgba(167,139,250,0.35); font-size: 11px; letter-spacing: 0.22em;
+  text-transform: uppercase; pointer-events: none; white-space: nowrap;
+}
+#layer-ui {
+  position: fixed; top: 24px; right: 28px;
+  color: rgba(167,139,250,0.30); font-size: 10px; letter-spacing: 0.18em;
+  text-transform: uppercase; pointer-events: none;
+}
+
+/* ── LABELS ── */
+#label-layer {
+  position: fixed; inset: 0; pointer-events: none; z-index: 10;
+}
+.node-label {
+  position: absolute;
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 11px 5px 8px;
+  background: rgba(8, 2, 28, 0.72);
+  border: 1px solid rgba(139, 92, 246, 0.30);
+  border-radius: 999px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: rgba(214, 202, 255, 0.90);
+  font-size: 12.5px; font-weight: 350; letter-spacing: 0.04em;
+  text-transform: lowercase; white-space: nowrap;
+  box-shadow: 0 0 16px rgba(109,40,217,0.22), inset 0 1px 0 rgba(196,181,253,0.06);
+  transform: translate(-50%, -22px);
+  opacity: 0; transition: opacity 0.75s ease;
+  pointer-events: none;
+}
+.node-label.visible { opacity: 1; }
+.node-label-dot {
+  width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+  box-shadow: 0 0 6px currentColor;
+}
+/* Root label — slightly larger */
+.node-label.root-label {
+  font-size: 14px; font-weight: 400; letter-spacing: 0.08em;
+  border-color: rgba(196, 181, 253, 0.40);
+  background: rgba(8, 2, 28, 0.80);
+}
+
+/* ── CARD — desktop side panel ── */
+#card {
+  position: fixed; top: 50%; right: 32px;
+  transform: translateY(-50%) translateX(calc(100% + 40px));
+  width: 290px; max-height: 80vh; overflow-y: auto;
+  background: rgba(4, 1, 18, 0.92);
+  backdrop-filter: blur(24px) saturate(1.5);
+  -webkit-backdrop-filter: blur(24px) saturate(1.5);
+  border: 1px solid rgba(139, 92, 246, 0.28);
+  border-radius: 20px; padding: 24px;
+  transition: transform 0.55s cubic-bezier(0.16,1,0.3,1), opacity 0.4s ease;
+  opacity: 0; z-index: 20; pointer-events: none;
+  scrollbar-width: none;
+}
+#card::-webkit-scrollbar { display: none; }
+#card.open {
+  transform: translateY(-50%) translateX(0);
+  opacity: 1; pointer-events: auto;
+}
+
+/* ── FADE OVERLAY ── */
+#fade-overlay {
+  position: fixed; inset: 0; background: #000;
+  pointer-events: none; z-index: 200;
+  opacity: 1;
+}
+#fade-overlay.fading {
+  transition: opacity 2.0s cubic-bezier(0.4, 0, 0.15, 1);
+  opacity: 0;
+}
+
+/* ── CARD — mobile bottom sheet ── */
+@media (max-width: 767px) {
+  #card {
+    top: auto; right: 0; left: 0; bottom: 0;
+    width: 100%; max-height: 72vh;
+    transform: translateY(100%);
+    border-radius: 22px 22px 0 0;
+    border-bottom: none;
+    padding: 16px 20px 40px;
+    /* Peek height = handle(26px) + tag(16px) + title line(22px) + spacing ≈ 74px */
+  }
+  /* Peek: just handle + tag + title peeking above fold */
+  #card.peek {
+    transform: translateY(calc(100% - 74px));
+    pointer-events: auto;
+    opacity: 1;
+  }
+  #card.open {
+    transform: translateY(0);
+  }
+  #card-handle {
+    display: block;
+  }
+  /* Collapse content sections when peeking, show only title area */
+  #card.peek #card-insight,
+  #card.peek .card-section,
+  #card.peek .card-divider,
+  #card.peek #card-close { display: none; }
+  #card.peek #card-title { margin-bottom: 0; }
+  /* Expand hint on peek strip */
+  #card-peek-hint { display: flex; }
+}
+#card-handle {
+  display: none;
+  width: 36px; height: 4px; border-radius: 2px;
+  background: rgba(139,92,246,0.35);
+  margin: 0 auto 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+#card-handle:hover { background: rgba(167,139,250,0.55); }
+/* Peek expand hint — chevron + "tap to expand" */
+#card-peek-hint {
+  display: none;
+  align-items: center; gap: 5px;
+  color: rgba(139,92,246,0.50);
+  font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase;
+  position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+  pointer-events: none; white-space: nowrap;
+}
+
+#card-close {
+  position: absolute; top: 14px; right: 16px;
+  background: none; border: none; cursor: pointer;
+  color: rgba(167,139,250,0.45); font-size: 15px; line-height: 1;
+  transition: color 0.2s; z-index: 2;
+}
+#card-close:hover { color: rgba(196,181,253,0.9); }
+
+.card-tag {
+  font-size: 9px; letter-spacing: 0.25em; text-transform: uppercase;
+  color: rgba(139,92,246,0.65); margin-bottom: 10px;
+}
+#card-title {
+  font-size: 16px; font-weight: 500; color: rgba(221, 214, 254, 0.95);
+  line-height: 1.3; margin-bottom: 14px; padding-right: 20px;
+}
+#card-insight {
+  font-size: 12.5px; line-height: 1.65; color: rgba(196,181,253,0.72);
+  margin-bottom: 18px; font-style: italic;
+}
+.card-section { margin-bottom: 14px; }
+.card-section-label {
+  font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase;
+  color: rgba(139,92,246,0.55); margin-bottom: 6px;
+}
+.card-section p, .card-section li {
+  font-size: 11.5px; color: rgba(196,181,253,0.62); line-height: 1.6;
+}
+.card-section ul { list-style: none; padding: 0; }
+.card-section ul li::before { content: "·  "; color: rgba(139,92,246,0.55); }
+.card-divider { height: 1px; background: rgba(139,92,246,0.15); margin: 16px 0; }
+
+/* ── SMOOTH THEME TRANSITIONS ── */
+body, #ui, #layer-ui { transition: background 0.55s ease, color 0.55s ease; }
+.node-label {
+  transition: opacity 0.75s ease, background 0.45s ease, border-color 0.45s ease,
+              color 0.45s ease, box-shadow 0.45s ease;
+}
+#card {
+  transition: transform 0.55s cubic-bezier(0.16,1,0.3,1), opacity 0.4s ease,
+              background 0.45s ease, border-color 0.45s ease;
+}
+
+/* ── THEME TOGGLE ── */
+#theme-toggle {
+  position: fixed; top: 22px; left: 22px;
+  width: 48px; height: 26px;
+  background: rgba(55,18,95,0.28);
+  border: 1px solid rgba(139,92,246,0.32);
+  border-radius: 999px; cursor: pointer; z-index: 30;
+  transition: background 0.5s ease, border-color 0.5s ease;
+  padding: 0; outline: none; display: flex; align-items: center;
+}
+#theme-toggle::after {
+  content: ''; display: block;
+  width: 18px; height: 18px; border-radius: 50%;
+  margin-left: 3px; flex-shrink: 0;
+  background: rgba(196,181,253,0.88);
+  transition: transform 0.45s cubic-bezier(0.34,1.56,0.64,1), background 0.45s ease;
+}
+body.light-mode #theme-toggle {
+  background: rgba(238,228,235,0.72);
+  border-color: rgba(190,155,168,0.42);
+}
+body.light-mode #theme-toggle::after {
+  transform: translateX(22px);
+  background: rgba(155,80,108,0.80);
+}
+
+/* ── NEON CANVAS OVERLAY (light mode only) ── */
+#neon-canvas {
+  display: none;
+  position: fixed; inset: 0;
+  pointer-events: none; z-index: 5;
+}
+body.light-mode #neon-canvas { display: block; }
+
+/* ── LIGHT MODE ── */
+body.light-mode { background: #f4f4f6; }
+body.light-mode #ui        { color: rgba(125,82,93,0.40); }
+body.light-mode #layer-ui  { color: rgba(125,82,93,0.32); }
+
+body.light-mode .node-label {
+  background: rgba(250,246,248,0.90);
+  border-color: rgba(188,155,165,0.30);
+  color: rgba(56,36,46,0.88);
+  box-shadow: 0 1px 10px rgba(160,118,135,0.10), inset 0 1px 0 rgba(255,255,255,0.5);
+  text-shadow: none;
+}
+body.light-mode .node-label.root-label { border-color: rgba(188,155,165,0.45); }
+
+body.light-mode #card {
+  background: rgba(250,246,248,0.92);
+  border-color: rgba(195,165,175,0.28);
+}
+body.light-mode .card-tag          { color: rgba(155,88,108,0.65); }
+body.light-mode #card-title        { color: rgba(44,26,36,0.92); }
+body.light-mode #card-insight      { color: rgba(70,50,58,0.72); }
+body.light-mode .card-section-label{ color: rgba(125,80,95,0.55); }
+body.light-mode .card-section p,
+body.light-mode .card-section li   { color: rgba(85,60,70,0.68); }
+body.light-mode .card-section ul li::before { color: rgba(155,88,108,0.55); }
+body.light-mode .card-divider      { background: rgba(190,158,168,0.18); }
+body.light-mode #card-close        { color: rgba(125,82,93,0.45); }
+body.light-mode #card-handle       { background: rgba(188,155,168,0.32); }
+body.light-mode #card-peek-hint    { color: rgba(125,82,93,0.45); }
+</style>
+</head>
+<body>
+<canvas id="neon-canvas"></canvas>
+<button id="theme-toggle" aria-label="Toggle light/dark mode"></button>
+<div id="fade-overlay"></div>
+<div id="ui">drag to tilt · scroll to traverse · click nodes to explore</div>
+<div id="layer-ui">LAYER 1 · 3</div>
+<div id="label-layer"></div>
+
+<div id="card">
+  <div id="card-handle"></div>
+  <button id="card-close">✕</button>
+  <span id="card-peek-hint">▲ &nbsp;tap to expand</span>
+  <div class="card-tag" id="card-tag">Emotional force</div>
+  <div id="card-title"></div>
+  <div id="card-insight"></div>
+  <div class="card-section" id="card-s-triggers">
+    <div class="card-section-label">Triggers</div>
+    <ul id="card-triggers"></ul>
+  </div>
+  <div class="card-divider" id="card-div1"></div>
+  <div class="card-section" id="card-s-origin">
+    <div class="card-section-label">Origin</div>
+    <p id="card-origin"></p>
+  </div>
+  <div class="card-section" id="card-s-themes">
+    <div class="card-section-label">Themes</div>
+    <p id="card-themes"></p>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer }  from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass }      from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+// ══════════════════════════════════════════════════════════
+//  PSYCHOLOGICAL CONTENT TREE
+// ══════════════════════════════════════════════════════════
+const DATA = [
+  { label: "fear of disappointing",
+    card: { tag:"Emotional force", title:"Fear of Disappointing", insight:"Before you act, you map out who might be let down. Approval isn't a bonus—it's the baseline you're protecting.", triggers:["silence after sharing something","sensing even mild disapproval","being given a free choice"], origin:"Environments where love was expressed through approval and withdrawn through quiet.", themes:"perfectionism · people-pleasing · conditional worth" },
+    children: [
+      { label:"a parent who went quiet", card:{ tag:"Relationship", title:"A Parent Who Went Quiet", insight:"Their silence after disappointment landed harder than any raised voice. You learned to read emotional weather before stepping outside.", triggers:["car ride home after a failure","being asked 'are you sure?'","watching a face for signs"], origin:"Childhood home. The first lessons in emotional prediction.", themes:"emotional withdrawal · silence as consequence" },
+        children:[
+          {label:"the drive home after a bad test", card:{tag:"Moment",title:"The Drive Home After a Bad Test",insight:"The verdict delivered without words.",origin:"Parental conditional regard.",themes:"shame · silence · performance"}},
+          {label:"watching their face read your report card", card:{tag:"Moment",title:"Watching Their Face Read Your Report Card",insight:"You read them reading you. A second exam.",origin:"Achievement tied to safety.",themes:"vigilance · parental approval"}},
+          {label:"changing your answer when they frowned", card:{tag:"Behavior",title:"Changing Your Answer When They Frowned",insight:"You learned to revise your truth in real time.",origin:"Approval as orientation.",themes:"self-abandonment · truth-editing"}},
+          {label:"rehearsing what to say before telling them", card:{tag:"Behavior",title:"Rehearsing What to Say Before Telling Them",insight:"The preparation was the anxiety speaking.",origin:"Anticipatory dread.",themes:"performance · self-protection"}},
+          {label:"the relief when they finally smiled", card:{tag:"Moment",title:"The Relief When They Finally Smiled",insight:"That relief was disproportionate—and you knew it.",origin:"Intermittent reinforcement.",themes:"validation · relief · dependency"}}
+        ]
+      },
+      { label:"romantic anxiety", card:{ tag:"Relationship", title:"Romantic Anxiety", insight:"Partners carry the same stakes as caregivers once did. You wait for them to quietly pull away.", triggers:["slower replies than usual","sensing irritation in their voice","a partner needing space"], origin:"Intimate relationships. Love that feels contingent.", themes:"abandonment fear · hypervigilance · protest behavior" },
+        children:[
+          {label:"rereading a sent message for tone", card:{tag:"Behavior",title:"Rereading a Sent Message for Tone",insight:"Looking for the version they might misread.",origin:"Communication anxiety.",themes:"rumination · self-monitoring"}},
+          {label:"asking 'are we okay?' after minor friction", card:{tag:"Behavior",title:"Asking 'Are We Okay?' After Minor Friction",insight:"The question was never about the friction.",origin:"Attachment anxiety.",themes:"reassurance seeking · hypervigilance"}},
+          {label:"doing something you didn't want to avoid tension", card:{tag:"Behavior",title:"Doing Something to Avoid Tension",insight:"You traded your preference for their comfort.",origin:"Fear of loss.",themes:"self-erasure · fawn response"}},
+          {label:"noticing their energy shift before they speak", card:{tag:"Behavior",title:"Noticing Their Energy Shift Before They Speak",insight:"You're always a few seconds ahead of the signal.",origin:"Hyperactivated attachment system.",themes:"hypervigilance · somatic awareness"}},
+          {label:"apologizing before knowing if you were wrong", card:{tag:"Behavior",title:"Apologizing Before Knowing If You Were Wrong",insight:"The apology was an insurance policy.",origin:"Conflict pre-emption.",themes:"preemptive accommodation · self-erasure"}}
+        ]
+      },
+      { label:"work perfectionism", card:{ tag:"Context", title:"Work Perfectionism", insight:"The standard isn't excellence—it's prevention of visible failure. You work to forestall critique, not to enjoy the output.", triggers:["ambiguous feedback","being asked to delegate","praise that feels conditional"], origin:"Professional life. Performance as proof of value.", themes:"imposter syndrome · overdelivering · control" },
+        children:[
+          {label:"revising an email twelve times", card:{tag:"Behavior",title:"Revising an Email Twelve Times",insight:"Each draft a negotiation with imagined judgment.",origin:"Perfectionism as protection.",themes:"rumination · performance anxiety"}},
+          {label:"staying late so nothing can be criticized", card:{tag:"Behavior",title:"Staying Late So Nothing Can Be Criticized",insight:"The extra hours weren't for the work.",origin:"Anticipatory shame.",themes:"overwork · control · worth-proving"}},
+          {label:"a neutral 'thanks' that felt like failure", card:{tag:"Moment",title:"A Neutral 'Thanks' That Felt Like Failure",insight:"Absence of praise read as negative feedback.",origin:"Conditional approval conditioning.",themes:"approval hunger · misread signals"}},
+          {label:"preparing for every outcome of a meeting", card:{tag:"Behavior",title:"Preparing for Every Outcome of a Meeting",insight:"The over-preparation was anxiety wearing productivity's clothes.",origin:"Uncertainty as threat.",themes:"control · anticipatory anxiety"}},
+          {label:"dreading the moment feedback is given", card:{tag:"Experience",title:"Dreading the Moment Feedback Is Given",insight:"No matter the actual words, the body was already in trial.",origin:"Harsh early evaluation.",themes:"shame anticipation · vulnerability"}}
+        ]
+      },
+      { label:"the approval loop", card:{ tag:"Pattern", title:"The Approval Loop", insight:"You return to certain people or contexts for confirmation. The reassurance is never quite enough to last.", triggers:["accomplishing something alone","absence of external validation","praise that fades quickly"], origin:"Relationships with inconsistent positive reinforcement.", themes:"validation seeking · external locus of control · repetition" },
+        children:[
+          {label:"posting something and watching for response", card:{tag:"Behavior",title:"Posting Something and Watching for Response",insight:"The content was secondary to the count.",origin:"Reflected appraisal dependency.",themes:"external validation · visibility anxiety"}},
+          {label:"feeling empty after being praised", card:{tag:"Experience",title:"Feeling Empty After Being Praised",insight:"The praise landed and disappeared like water on sand.",origin:"Approval can't fill the original wound.",themes:"validation hunger · hollow recognition"}},
+          {label:"not knowing what to do with your own assessment", card:{tag:"Experience",title:"Not Knowing What to Do With Your Own Assessment",insight:"Internal validation has no traction.",origin:"Worth dependent on external mirror.",themes:"self-trust deficit · dependency"}},
+          {label:"needing to tell someone before it feels real", card:{tag:"Behavior",title:"Needing to Tell Someone Before It Feels Real",insight:"Reality required a witness to solidify.",origin:"Co-regulation of self-worth.",themes:"reflected experience · dependency"}},
+          {label:"feeling checked out after brief recognition", card:{tag:"Experience",title:"Feeling Checked Out After Brief Recognition",insight:"The recognition was real, but so was the return to baseline.",origin:"Intermittent reinforcement pattern.",themes:"reassurance cycle · temporary relief"}}
+        ]
+      },
+      { label:"friendship guilt", card:{ tag:"Relationship", title:"Friendship Guilt", insight:"You monitor whether friends are okay and feel responsible for gaps you didn't create.", triggers:["not replying fast enough","a friend seeming distant","plans falling through"], origin:"Social dynamics where you became the emotional regulator.", themes:"over-responsibility · fawn response · invisible debt" },
+        children:[
+          {label:"lying awake after canceling plans", card:{tag:"Experience",title:"Lying Awake After Canceling Plans",insight:"The guilt was disproportionate and familiar.",origin:"Over-responsibility as identity.",themes:"guilt · self-punishment · obligation"}},
+          {label:"over-explaining an absence", card:{tag:"Behavior",title:"Over-Explaining an Absence",insight:"The explanation was longer than the situation required.",origin:"Fear of being found disappointing.",themes:"excessive justification · approval seeking"}},
+          {label:"checking in when you did nothing wrong", card:{tag:"Behavior",title:"Checking In When You Did Nothing Wrong",insight:"The check-in was emotional insurance.",origin:"Pre-emptive repair.",themes:"fawn response · hypervigilance"}},
+          {label:"staying available while running on empty", card:{tag:"Behavior",title:"Staying Available While Running on Empty",insight:"You gave from reserves, not surplus.",origin:"Self-erasure in service of connection.",themes:"martyrdom pattern · resentment seed"}},
+          {label:"carrying guilt for someone else's mood", card:{tag:"Experience",title:"Carrying Guilt for Someone Else's Mood",insight:"You claimed responsibility before cause was established.",origin:"Over-identification as caretaker.",themes:"enmeshment · guilt"}}
+        ]
+      },
+      { label:"saying no", card:{ tag:"Pattern", title:"Saying No", insight:"Refusal feels like rupture. You can see the word forming and then watch yourself not say it.", triggers:["a clear ask with social stakes","being asked again after a soft decline","hearing yourself agree"], origin:"Contexts where no carried relational cost.", themes:"boundary avoidance · compliance · resentment accumulation" },
+        children:[
+          {label:"agreeing and feeling dread immediately", card:{tag:"Behavior",title:"Agreeing and Feeling Dread Immediately",insight:"The yes and the regret were simultaneous.",origin:"Refusal as threat.",themes:"compulsive compliance · body-knowing conflict"}},
+          {label:"over-explaining a refusal until it became agreement", card:{tag:"Behavior",title:"Over-Explaining a Refusal Until It Became Agreement",insight:"The justification undermined the position.",origin:"Need for approval to decline.",themes:"boundary collapse · self-abandonment"}},
+          {label:"doing the thing while feeling invisible inside it", card:{tag:"Experience",title:"Doing the Thing While Feeling Invisible Inside It",insight:"Present in body, absent in consent.",origin:"Dissociation from self during compliance.",themes:"self-erasure · resentment · body knowing"}},
+          {label:"not mentioning that it cost you", card:{tag:"Behavior",title:"Not Mentioning That It Cost You",insight:"The cost went unnamed and became the resentment.",origin:"Inability to claim emotional expense.",themes:"silent cost · suppression"}},
+          {label:"saying 'of course' when you meant 'I can't'", card:{tag:"Behavior",title:"Saying 'Of Course' When You Meant 'I Can't'",insight:"The automatic yes. The delayed grief.",origin:"Refusal trained out.",themes:"compulsive agreement · disconnection from need"}}
+        ]
+      }
+    ]
+  },
+  { label: "emotional shutdown",
+    card: { tag:"Emotional force", title:"Emotional Shutdown", insight:"When feeling becomes too much or too risky, something closes. You remain present but unreachable—even to yourself.", triggers:["confrontation you didn't see coming","being asked what you feel mid-conflict","sustained emotional demand"], origin:"Situations where expressing feeling led to escalation, dismissal, or punishment.", themes:"emotional numbing · freeze response · protective withdrawal" },
+    children:[
+      { label:"conflict escalation", card:{ tag:"Trigger", title:"Conflict Escalation", insight:"When voices rise or tension spikes, something goes offline before you choose it.", triggers:["raised voices","repeated interruption","feeling cornered"], origin:"Exposure to conflict that couldn't be resolved or escaped.", themes:"hyperarousal · emotional flooding · freeze" },
+        children:[
+          {label:"going blank in the middle of an argument", card:{tag:"Behavior",title:"Going Blank in the Middle of an Argument",insight:"The system shut down to prevent further damage.",origin:"Emotional flooding as self-protection.",themes:"freeze response · shutdown"}},
+          {label:"staring and saying nothing when accused", card:{tag:"Behavior",title:"Staring and Saying Nothing When Accused",insight:"Not silence as choice. Silence as disappearance.",origin:"Overwhelm beyond speech.",themes:"dissociation · freeze · shutdown"}},
+          {label:"leaving your body while still in the room", card:{tag:"Experience",title:"Leaving Your Body While Still in the Room",insight:"Physical presence without emotional occupation.",origin:"Dissociative protection during threat.",themes:"dissociation · protective absence"}},
+          {label:"nodding to end things without meaning it", card:{tag:"Behavior",title:"Nodding to End Things Without Meaning It",insight:"Agreement as exit strategy.",origin:"Peace at the cost of truth.",themes:"false resolution · shutdown · compliance"}},
+          {label:"not knowing what happened until hours later", card:{tag:"Experience",title:"Not Knowing What Happened Until Hours Later",insight:"The emotion arrived after the danger had passed.",origin:"Delayed processing after freeze.",themes:"deferred feeling · nervous system lag"}}
+        ]
+      },
+      { label:"being asked how you feel", card:{ tag:"Trigger", title:"Being Asked How You Feel", insight:"Direct questions about your inner state create a kind of arrest. You know something is there but can't reach it on demand.", triggers:["'what are you thinking?'","being asked during conflict","therapy-style prompts"], origin:"Environments where feelings were interrogated, dismissed, or weaponized.", themes:"emotional inaccessibility · alexithymia · pressure to perform feeling" },
+        children:[
+          {label:"saying 'I don't know' and meaning it", card:{tag:"Experience",title:"Saying 'I Don't Know' and Meaning It",insight:"Not evasion. Genuine absence of signal.",origin:"Emotional numbness.",themes:"alexithymia · disconnection"}},
+          {label:"feeling watched while trying to locate a feeling", card:{tag:"Experience",title:"Feeling Watched While Trying to Locate a Feeling",insight:"The performance pressure made access impossible.",origin:"Feelings under surveillance.",themes:"emotional performance pressure · shutdown"}},
+          {label:"anger that comes out instead of sadness", card:{tag:"Behavior",title:"Anger That Comes Out Instead of Sadness",insight:"The accessible emotion arrived for the buried one.",origin:"Emotional substitution.",themes:"emotional substitution · protection via anger"}},
+          {label:"filling the silence with logic instead of feeling", card:{tag:"Behavior",title:"Filling the Silence With Logic Instead of Feeling",insight:"The intellect dispatched to cover the interior.",origin:"Intellectualization as defense.",themes:"intellectualization · emotional avoidance"}},
+          {label:"noticing hours later what you actually felt", card:{tag:"Experience",title:"Noticing Hours Later What You Actually Felt",insight:"The feeling arrived when it was safe enough.",origin:"Delayed emotional processing.",themes:"deferred affect · safety-dependent feeling"}}
+        ]
+      },
+      { label:"emotional demand", card:{ tag:"Context", title:"Emotional Demand", insight:"Extended emotional labor—even from someone you love—depletes reserves that refill slowly and alone.", triggers:["someone in repeated crisis","emotional conversations at the end of the day","being needed when empty"], origin:"Caretaking roles, emotional parentification, high-need relationships.", themes:"empathy fatigue · withdrawal as self-protection · emotional resource depletion" },
+        children:[
+          {label:"disappearing into your phone while they talk", card:{tag:"Behavior",title:"Disappearing Into Your Phone While They Talk",insight:"The phone was a valve.",origin:"Overwhelm without exit.",themes:"shutdown · withdrawal · self-protection"}},
+          {label:"pretending to be fine so they need less", card:{tag:"Behavior",title:"Pretending to Be Fine So They Need Less",insight:"Managing their need by hiding your own.",origin:"Caretaking above self-disclosure.",themes:"self-suppression · false availability"}},
+          {label:"feeling nothing when supposed to feel moved", card:{tag:"Experience",title:"Feeling Nothing When Supposed to Feel Moved",insight:"The tank was empty before the moment arrived.",origin:"Empathy fatigue.",themes:"emotional depletion · numbness"}},
+          {label:"resenting someone you love for needing too much", card:{tag:"Experience",title:"Resenting Someone You Love for Needing Too Much",insight:"The resentment arrived with shame attached.",origin:"Depletion meets obligation.",themes:"caretaking resentment · ambivalence"}},
+          {label:"being physically present and completely gone", card:{tag:"Experience",title:"Being Physically Present and Completely Gone",insight:"Dissociation in service of endurance.",origin:"Emotional absence as survival.",themes:"dissociation · emotional shutdown"}}
+        ]
+      },
+      { label:"vulnerability that got used", card:{ tag:"Experience", title:"Vulnerability That Got Used", insight:"Something you offered honestly became material for harm. The door is harder to open since.", triggers:["being teased about something you shared","having a confession brought up in a fight","people who know too much"], origin:"Moments when openness led to exposure or betrayal.", themes:"trust rupture · guarded intimacy · self-protection" },
+        children:[
+          {label:"a secret brought up in front of others", card:{tag:"Moment",title:"A Secret Brought Up in Front of Others",insight:"Public exposure of private trust.",origin:"Betrayal of confidence.",themes:"shame · trust rupture · withdrawal"}},
+          {label:"being called 'too sensitive' after honesty", card:{tag:"Moment",title:"Being Called 'Too Sensitive' After Honesty",insight:"The vulnerability was turned against you.",origin:"Emotional invalidation.",themes:"emotional dismissal · self-silencing"}},
+          {label:"deciding not to bring it up again", card:{tag:"Decision",title:"Deciding Not to Bring It Up Again",insight:"The closure was not resolution but withdrawal.",origin:"Self-protection after exposure.",themes:"emotional withdrawal · trust collapse"}},
+          {label:"being laughed at after sharing how you felt", card:{tag:"Moment",title:"Being Laughed at After Sharing How You Felt",insight:"Laughter as the worst possible response.",origin:"Ridicule of vulnerability.",themes:"shame · trust wound · closure"}},
+          {label:"watching yourself share nothing from the outside", card:{tag:"Experience",title:"Watching Yourself Share Nothing From the Outside",insight:"Observing your own guardedness from a distance.",origin:"Protective dissociation.",themes:"self-observation · emotional shutdown"}}
+        ]
+      },
+      { label:"emotional climate at home", card:{ tag:"Origin", title:"Emotional Climate at Home", insight:"The emotional register of childhood—who expressed what, who went quiet, what was never discussed—lives in your nervous system.", triggers:["family gatherings","being around someone who 'doesn't talk about feelings'","silence as standard"], origin:"The household emotional climate you grew up inside.", themes:"learned suppression · emotional inheritance · patterned shutdown" },
+        children:[
+          {label:"a parent who said 'we don't talk about that'", card:{tag:"Moment",title:"A Parent Who Said 'We Don't Talk About That'",insight:"The lid was placed early.",origin:"Family emotional suppression.",themes:"suppression · inherited patterns"}},
+          {label:"watching someone cry and no one moving", card:{tag:"Moment",title:"Watching Someone Cry and No One Moving",insight:"Distress without response became the norm.",origin:"Emotional neglect as standard.",themes:"learned helplessness · affect regulation failure"}},
+          {label:"learning the sounds that meant the house was safe", card:{tag:"Learning",title:"Learning the Sounds That Meant the House Was Safe",insight:"Somatic reading of emotional atmosphere.",origin:"Hypervigilance as childhood skill.",themes:"somatic vigilance · nervous system calibration"}},
+          {label:"feeling dramatic for having a feeling", card:{tag:"Experience",title:"Feeling Dramatic for Having a Feeling",insight:"Normal feelings re-classified as excess.",origin:"Emotional minimization.",themes:"shame around feeling · self-editing"}},
+          {label:"having no word for something you've always felt", card:{tag:"Experience",title:"Having No Word for Something You've Always Felt",insight:"Emotional experience without vocabulary—it was real but unnamed.",origin:"Impoverished emotional language at home.",themes:"alexithymia · emotional vocabulary gap"}}
+        ]
+      },
+      { label:"after an outburst", card:{ tag:"Pattern", title:"After an Outburst", insight:"After feeling finally breaks through, shame arrives and seals you back up tighter than before.", triggers:["crying in front of someone","losing your temper","any uncontrolled emotional expression"], origin:"Contexts where emotional expression was met with judgment or discomfort.", themes:"shame cycle · emotional self-punishment · post-expression shutdown" },
+        children:[
+          {label:"leaving the room immediately after crying", card:{tag:"Behavior",title:"Leaving the Room Immediately After Crying",insight:"The exit was to contain the exposure.",origin:"Shame after vulnerability.",themes:"shame retreat · self-protection"}},
+          {label:"apologizing for showing justified anger", card:{tag:"Behavior",title:"Apologizing for Showing Justified Anger",insight:"You apologized for the feeling, not the delivery.",origin:"Emotional expression trained as transgression.",themes:"self-punishment · emotional shame"}},
+          {label:"going very calm after something huge", card:{tag:"Behavior",title:"Going Very Calm After Something Huge",insight:"The calm was shutdown, not resolution.",origin:"Post-expression retraction.",themes:"shutdown after expression · freeze"}},
+          {label:"disgust at yourself for breaking down", card:{tag:"Experience",title:"Disgust at Yourself for Breaking Down",insight:"You witnessed yourself feel and found it unacceptable.",origin:"Internalized emotional contempt.",themes:"self-contempt · shame · emotional self-rejection"}},
+          {label:"pretending the outburst didn't happen", card:{tag:"Behavior",title:"Pretending the Outburst Didn't Happen",insight:"Erasure as the only available repair.",origin:"Shame avoidance.",themes:"denial · shame management · suppression"}}
+        ]
+      }
+    ]
+  },
+  { label: "closeness anxiety",
+    card: { tag:"Emotional force", title:"Closeness Anxiety", insight:"Intimacy draws you in and then triggers an alarm. The closer someone gets, the more exposed the risk of losing them—or yourself.", triggers:["someone wanting more access","deep honesty returned","prolonged physical closeness"], origin:"Relationships where closeness preceded loss, intrusion, or suffocation.", themes:"attachment ambivalence · avoidant pattern · push-pull" },
+    children:[
+      { label:"fear of being known", card:{ tag:"Pattern", title:"Fear of Being Known", insight:"There is something you believe, once visible, would make you less lovable. So you offer access slowly, then pull back.", triggers:["deep personal questions","someone accurately describing you","being seen in a moment you didn't control"], origin:"Situations where being fully known led to judgment or abandonment.", themes:"authentic self vs. presented self · shame · exposure fear" },
+        children:[
+          {label:"changing the subject when it gets too real", card:{tag:"Behavior",title:"Changing the Subject When It Gets Too Real",insight:"The pivot was protection.",origin:"Intimacy threshold.",themes:"avoidance · self-protection"}},
+          {label:"liking someone more when they know less", card:{tag:"Experience",title:"Liking Someone More When They Know Less",insight:"Safety in partial knowledge.",origin:"Closeness as risk.",themes:"guardedness · intimacy avoidance"}},
+          {label:"feeling discomfort when someone 'gets' you", card:{tag:"Experience",title:"Feeling Discomfort When Someone 'Gets' You",insight:"Being understood felt like being caught.",origin:"Visibility as exposure.",themes:"exposure fear · intimacy discomfort"}},
+          {label:"revealing something then wishing you hadn't", card:{tag:"Experience",title:"Revealing Something Then Wishing You Hadn't",insight:"The regret arrived before any consequence.",origin:"Anticipatory exposure fear.",themes:"self-disclosure anxiety · retraction wish"}},
+          {label:"testing with partial truths before sharing more", card:{tag:"Behavior",title:"Testing With Partial Truths Before Sharing More",insight:"Incremental disclosure as safety check.",origin:"Earned trust model.",themes:"graduated disclosure · trust testing"}}
+        ]
+      },
+      { label:"pull-back after closeness", card:{ tag:"Pattern", title:"Pull-Back After Closeness", insight:"After real intimacy, something in you retreats. It doesn't mean you care less—it means the closeness was too bright.", triggers:["a conversation that went very deep","physical tenderness","feeling genuinely loved"], origin:"The morning after emotional exposure.", themes:"intimacy hangover · protective withdrawal · post-closeness retraction" },
+        children:[
+          {label:"being colder the day after a vulnerable night", card:{tag:"Behavior",title:"Being Colder the Day After a Vulnerable Night",insight:"Emotional credit withdrawn after overdraft.",origin:"Post-closeness regulation.",themes:"withdrawal · self-protection · intimacy cycle"}},
+          {label:"finding reasons to be annoyed after a close moment", card:{tag:"Behavior",title:"Finding Reasons to Be Annoyed After a Close Moment",insight:"The irritation was distance wearing a mask.",origin:"Closeness regulation through conflict.",themes:"manufactured distance · defense mechanism"}},
+          {label:"creating distance without being able to say why", card:{tag:"Experience",title:"Creating Distance Without Being Able to Say Why",insight:"The mechanism operated without your understanding.",origin:"Automatic closeness-regulation.",themes:"unconscious avoidance · relationship confusion"}},
+          {label:"relief when plans cancel after an intense interaction", card:{tag:"Experience",title:"Relief When Plans Cancel After an Intense Interaction",insight:"The cancellation was a narrowly avoided re-exposure.",origin:"Closeness fatigue.",themes:"avoidance relief · intimacy threshold"}},
+          {label:"strange sadness after something genuinely good", card:{tag:"Experience",title:"Strange Sadness After Something Genuinely Good",insight:"The closeness illuminated the normal distance.",origin:"Grief at the gap between connection and norm.",themes:"intimacy grief · ambivalence"}}
+        ]
+      },
+      { label:"romantic relationships", card:{ tag:"Relationship", title:"Romantic Relationships", insight:"Love feels urgent and necessary until it feels like a cage. You want closeness and simultaneously need the door to stay open.", triggers:["someone expecting consistent access","meeting someone who wants all of you","your own longing for full union"], origin:"Romantic history. Love that felt suffocating or that disappeared.", themes:"anxious-avoidant cycle · ambivalent attachment · push-pull" },
+        children:[
+          {label:"sabotaging something good when it got real", card:{tag:"Behavior",title:"Sabotaging Something Good When It Got Real",insight:"The threat detector fired at its own happiness.",origin:"Love as precursor to loss.",themes:"self-sabotage · intimacy avoidance"}},
+          {label:"falling hardest for people with some distance", card:{tag:"Pattern",title:"Falling Hardest for People With Some Distance",insight:"Unavailability felt like safety.",origin:"Anxious-avoidant pairing.",themes:"attracted to unavailability · repetition"}},
+          {label:"wanting them back the moment they pulled away", card:{tag:"Experience",title:"Wanting Them Back the Moment They Pulled Away",insight:"Distance activated attachment.",origin:"Protest behavior.",themes:"hyperactivated attachment · protest behavior"}},
+          {label:"feeling trapped by someone you chose", card:{tag:"Experience",title:"Feeling Trapped by Someone You Chose",insight:"The closeness you wanted became the thing you resisted.",origin:"Closeness ambivalence.",themes:"entrapment feeling · avoidant response"}},
+          {label:"loving someone more after they left", card:{tag:"Experience",title:"Loving Someone More After They Left",insight:"Safety returned the love you'd been withholding.",origin:"Attachment activated by loss.",themes:"loss activation · avoidant longing"}}
+        ]
+      },
+      { label:"friendships that intensified", card:{ tag:"Relationship", title:"Friendships That Intensified", insight:"A friendship that deepened quickly started to feel like obligation. You wanted the closeness and then couldn't maintain the heat of it.", triggers:["a friend who expects too much access","shared vulnerability that now feels like debt","plans that feel like demands"], origin:"Close friendships that crossed into enmeshment.", themes:"enmeshment · social overwhelm · intimacy fatigue" },
+        children:[
+          {label:"going quiet when a friend needed too much", card:{tag:"Behavior",title:"Going Quiet When a Friend Needed Too Much",insight:"Withdrawal before the relationship could take more.",origin:"Emotional resource depletion.",themes:"withdrawal · emotional self-protection"}},
+          {label:"dreading someone you genuinely like", card:{tag:"Experience",title:"Dreading Someone You Genuinely Like",insight:"The care and the dread coexisted.",origin:"Closeness fatigue.",themes:"ambivalence · intimacy paradox"}},
+          {label:"not responding for days and dreading the backlog", card:{tag:"Experience",title:"Not Responding for Days and Dreading the Backlog",insight:"The silence created the pressure that prevented breaking it.",origin:"Avoidance feedback loop.",themes:"avoidance loop · guilt accumulation"}},
+          {label:"relief when a close friendship naturally cooled", card:{tag:"Experience",title:"Relief When a Close Friendship Naturally Cooled",insight:"Sadness and relief were indistinguishable.",origin:"Enmeshment resolution.",themes:"relief at distance · ambivalent loss"}},
+          {label:"feeling guilty for not being excited to see them", card:{tag:"Experience",title:"Feeling Guilty for Not Being Excited to See Them",insight:"The guilt confirmed the care. The dread confirmed the limits.",origin:"Closeness exhaustion.",themes:"obligation · guilt · closeness fatigue"}}
+        ]
+      },
+      { label:"family enmeshment", card:{ tag:"Origin", title:"Family Enmeshment", insight:"The lines between yourself and certain family members were never clearly drawn. Closeness and suffocation were the same thing.", triggers:["family expectations that feel like invasions","being 'understood' in a way that doesn't allow change","being needed by a parent"], origin:"Family systems without individual space.", themes:"identity diffusion · emotional parentification · boundary absence" },
+        children:[
+          {label:"not knowing what you think before asking a parent", card:{tag:"Experience",title:"Not Knowing What You Think Before Asking a Parent",insight:"The external voice replaced the internal one.",origin:"Enmeshment and dependency.",themes:"identity diffusion · external reference point"}},
+          {label:"feeling responsible for a sibling's wellbeing", card:{tag:"Experience",title:"Feeling Responsible for a Sibling's Wellbeing",insight:"Caretaking that wasn't yours to hold.",origin:"Parentified role.",themes:"over-responsibility · role confusion"}},
+          {label:"changing who you are around your family", card:{tag:"Behavior",title:"Changing Who You Are Around Your Family",insight:"The old self re-activates on contact.",origin:"Regression in enmeshed systems.",themes:"identity regression · context-dependent self"}},
+          {label:"the specific dread of a family phone call", card:{tag:"Experience",title:"The Specific Dread of a Family Phone Call",insight:"Not the person. The field they represent.",origin:"Enmeshed family system.",themes:"dread · obligation · loss of self"}},
+          {label:"loving people who don't leave room for you to grow", card:{tag:"Pattern",title:"Loving People Who Don't Leave Room for You to Grow",insight:"Familiar love. Familiar constraint.",origin:"Repetition of enmeshed dynamic.",themes:"repetition compulsion · growth inhibition"}}
+        ]
+      },
+      { label:"fear of losing yourself", card:{ tag:"Pattern", title:"Fear of Losing Yourself", insight:"In closeness, you notice your own preferences, opinions, and edges going soft. The intimacy is real—but so is the disappearance.", triggers:["adapting views for someone else","noticing you've changed since being with someone","feeling anonymous in your relationship"], origin:"Relationships where love required self-erasure.", themes:"identity loss · enmeshment · co-dependence · self-dissolution" },
+        children:[
+          {label:"not knowing what you want until they decide", card:{tag:"Experience",title:"Not Knowing What You Want Until They Decide",insight:"The preference had outsourced itself.",origin:"Identity erosion in intimacy.",themes:"will erosion · dependency · self-loss"}},
+          {label:"realizing you stopped doing something you loved", card:{tag:"Experience",title:"Realizing You Stopped Doing Something You Loved",insight:"The absence arrived slowly, then suddenly.",origin:"Identity contraction in relationship.",themes:"identity erosion · gradual self-loss"}},
+          {label:"wearing what makes them comfortable", card:{tag:"Behavior",title:"Wearing What Makes Them Comfortable",insight:"The body reshaped to fit their comfort.",origin:"Physical self-erasure.",themes:"accommodation · self-subordination"}},
+          {label:"not recognizing your own preferences", card:{tag:"Experience",title:"Not Recognizing Your Own Preferences",insight:"Asked what you wanted and genuinely not knowing.",origin:"Extended self-suppression.",themes:"preference loss · self-disconnection"}},
+          {label:"saying yes to things your past self would refuse", card:{tag:"Behavior",title:"Saying Yes to Things Your Past Self Would Refuse",insight:"A marker of drift.",origin:"Gradual value erosion.",themes:"boundary erosion · self-drift · compliance"}}
+        ]
+      }
+    ]
+  },
+  { label: "anger after silence",
+    card: { tag:"Emotional force", title:"Anger After Silence", insight:"The anger comes out too big, too late, over something small. It was never really about the small thing.", triggers:["a final minor irritation after days of unexpressed frustration","being asked one too many times","something that makes the invisible visible"], origin:"Contexts where direct anger was unsafe. Feelings stored until they compound.", themes:"suppressed anger · emotional accumulation · delayed outburst" },
+    children:[
+      { label:"stored resentments", card:{ tag:"Pattern", title:"Stored Resentments", insight:"Nothing was addressed, so nothing disappeared. It just found other containers.", triggers:["the same pattern for the tenth time","being asked to let something go too soon","a small reminder of something large"], origin:"Relationships or environments where complaints weren't safe.", themes:"unspoken grievance · passive hostility · accumulated frustration" },
+        children:[
+          {label:"snapping at something unrelated", card:{tag:"Behavior",title:"Snapping at Something Unrelated",insight:"The small trigger carried months of weight.",origin:"Suppressed anger finding an exit.",themes:"displaced anger · emotional overflow"}},
+          {label:"bringing up old things in a current fight", card:{tag:"Behavior",title:"Bringing Up Old Things in a Current Fight",insight:"The catalog got opened.",origin:"Unprocessed resentment.",themes:"grievance accumulation · unfiled complaints"}},
+          {label:"saying 'it's fine' while everything is catalogued", card:{tag:"Behavior",title:"Saying 'It's Fine' While Everything Is Catalogued",insight:"Fine as cover for the running record.",origin:"Suppression as conflict avoidance.",themes:"suppression · passive resentment · false agreement"}},
+          {label:"cold tone after a small request", card:{tag:"Behavior",title:"Cold Tone After a Small Request",insight:"The tone said what the words weren't allowed to.",origin:"Indirect anger expression.",themes:"indirect hostility · leaking anger"}},
+          {label:"refusing to articulate what's actually wrong", card:{tag:"Behavior",title:"Refusing to Articulate What's Actually Wrong",insight:"The refusal was partly punishment, partly genuine blankness.",origin:"Anger beyond access.",themes:"emotional inaccessibility · indirect expression"}}
+        ]
+      },
+      { label:"indirect communication", card:{ tag:"Pattern", title:"Indirect Communication", insight:"You signal rather than state. You expect them to ask rather than tell them. The gap between signal and understanding becomes another grievance.", triggers:["someone who doesn't notice the signal","being asked to just say it directly","repeating yourself in different codes"], origin:"Households or relationships where directness led to conflict.", themes:"passive communication · emotional invisibility · unmet interpretation" },
+        children:[
+          {label:"going quiet hoping they'll notice", card:{tag:"Behavior",title:"Going Quiet Hoping They'll Notice",insight:"The silence was a statement with plausible deniability.",origin:"Indirect expression of need.",themes:"passive communication · hope for attunement"}},
+          {label:"'nothing' meaning everything", card:{tag:"Behavior",title:"'Nothing' Meaning Everything",insight:"The word was accurate and completely untrue.",origin:"Deniable communication of pain.",themes:"indirect expression · emotional dishonesty"}},
+          {label:"short sentences as a warning", card:{tag:"Behavior",title:"Short Sentences as a Warning",insight:"The brevity was a weather report.",origin:"Indirect signaling.",themes:"tonal communication · indirect anger"}},
+          {label:"the explosion after prolonged hinting", card:{tag:"Experience",title:"The Explosion After Prolonged Hinting",insight:"No one decoded the signal in time.",origin:"Indirect communication breakdown.",themes:"communication failure · accumulated frustration · explosion"}},
+          {label:"feeling unseen when signals aren't translated", card:{tag:"Experience",title:"Feeling Unseen When Signals Aren't Translated",insight:"The expectation of translation was the source of the pain.",origin:"Mind-reading expectation.",themes:"unmet expectation · emotional invisibility"}}
+        ]
+      },
+      { label:"unmet expectations", card:{ tag:"Pattern", title:"Unmet Expectations", insight:"You hold a standard quietly and feel it as a wound when it isn't met—even if it was never spoken aloud.", triggers:["being treated as an afterthought","something important going unnoticed","doing something significant with no acknowledgment"], origin:"Relationships where your emotional needs were present but unnamed.", themes:"silent standard · entitlement grief · unexpressed need" },
+        children:[
+          {label:"being upset without being able to explain why", card:{tag:"Experience",title:"Being Upset Without Being Able to Explain Why",insight:"The why was an unspoken expectation.",origin:"Silent standard unmet.",themes:"implicit expectation · grief without cause"}},
+          {label:"a birthday that was fine but wrong", card:{tag:"Experience",title:"A Birthday That Was Fine but Wrong",insight:"The objective facts were correct. Something was still missed.",origin:"Unspoken wish.",themes:"unexpressed need · disappointment"}},
+          {label:"working hard and having it go unmentioned", card:{tag:"Experience",title:"Working Hard and Having It Go Unmentioned",insight:"The silence confirmed a quiet fear.",origin:"Unrecognized effort.",themes:"invisibility · unmet recognition need"}},
+          {label:"noticing they did it for someone else", card:{tag:"Experience",title:"Noticing They Did It for Someone Else",insight:"Not jealousy. Confirmation.",origin:"Differential treatment.",themes:"comparison pain · worth differential"}},
+          {label:"crying over something that doesn't sound worth crying over", card:{tag:"Experience",title:"Crying Over Something That Doesn't Sound Worth It",insight:"The sound bite was small. The accumulated weight wasn't.",origin:"Overflow after sustained unmet needs.",themes:"emotional accumulation · overflow"}}
+        ]
+      },
+      { label:"a parent relationship", card:{ tag:"Relationship", title:"A Parent Relationship", insight:"The oldest unresolved anger lives here. Things said once that stayed forever. Things never said that also stayed.", triggers:["a parent repeating an old pattern","feeling reduced to a child version of yourself","being compared or dismissed"], origin:"The original wound. The first place anger had nowhere to go.", themes:"unresolved childhood anger · role reversal · loyalty bind" },
+        children:[
+          {label:"still angry about something from years ago", card:{tag:"Experience",title:"Still Angry About Something From Years Ago",insight:"It stayed because it was never answered.",origin:"Unresolved parental wound.",themes:"unresolved anger · injury without repair"}},
+          {label:"a phone call that ends the way it always has", card:{tag:"Experience",title:"A Phone Call That Ends the Way It Always Has",insight:"The pattern survived the years.",origin:"Ingrained relational dynamic.",themes:"repetition · resignation · unresolved pattern"}},
+          {label:"defending yourself at an age when you shouldn't have to", card:{tag:"Experience",title:"Defending Yourself at an Age When You Shouldn't Have To",insight:"The dynamic hadn't received the update.",origin:"Static family role.",themes:"role rigidity · self-defense · developmental grief"}},
+          {label:"the tone that brings everything back", card:{tag:"Experience",title:"The Tone That Brings Everything Back",insight:"One sound frequency. Entire history.",origin:"Somatic memory of parental affect.",themes:"somatic trigger · regression · body memory"}},
+          {label:"realizing you've performed calm your whole life", card:{tag:"Realization",title:"Realizing You've Performed Calm Your Whole Life",insight:"The calm was a survival costume.",origin:"Suppressed anger normalized.",themes:"performance of calm · suppressed lifetime anger"}}
+        ]
+      },
+      { label:"feeling unheard", card:{ tag:"Pattern", title:"Feeling Unheard", insight:"When you've said the thing clearly and it still doesn't register—that specific invisible anger.", triggers:["repeating yourself","being interrupted","being given advice instead of acknowledgment"], origin:"Relationships and contexts where being heard wasn't consistently offered.", themes:"emotional dismissal · validation hunger · invisible anger" },
+        children:[
+          {label:"finishing a sentence they talked over", card:{tag:"Experience",title:"Finishing a Sentence They Talked Over",insight:"You finished it for yourself.",origin:"Chronic interruption.",themes:"interruption · invisibility · suppressed frustration"}},
+          {label:"explaining something only to be contradicted", card:{tag:"Experience",title:"Explaining Something Only to Be Contradicted",insight:"Your experience got corrected.",origin:"Dismissal of subjective reality.",themes:"invalidation · gaslighting-adjacent"}},
+          {label:"getting advice instead of acknowledgment", card:{tag:"Experience",title:"Getting Advice Instead of Acknowledgment",insight:"They solved the feeling instead of meeting it.",origin:"Mismatch in emotional attunement.",themes:"solution instead of witness · loneliness in being heard"}},
+          {label:"a one-word response to something important", card:{tag:"Experience",title:"A One-Word Response to Something Important",insight:"The weight of what you shared met its negative.",origin:"Emotional attunement failure.",themes:"dismissal · emotional disproportionality"}},
+          {label:"feeling loudest when you're being ignored", card:{tag:"Experience",title:"Feeling Loudest When You're Being Ignored",insight:"The internal volume was inverse to your external traction.",origin:"Chronic unheard state.",themes:"internal noise · external invisibility"}}
+        ]
+      },
+      { label:"perfectionism under pressure", card:{ tag:"Pattern", title:"Perfectionism Under Pressure", insight:"When you're holding everything together precisely, casual errors by others can feel like personal insults.", triggers:["someone not doing their part","sloppiness near your careful work","others being casual about what you take seriously"], origin:"High-stakes environments, caregiving roles, systems that put you in charge.", themes:"control · resentment of carelessness · perfectionism as identity" },
+        children:[
+          {label:"cleaning aggressively after someone leaves a mess", card:{tag:"Behavior",title:"Cleaning Aggressively After Someone Leaves a Mess",insight:"The cleaning was a controlled outburst.",origin:"Anger expressed through task.",themes:"displaced anger · behavioral expression"}},
+          {label:"silent fuming while doing everything yourself", card:{tag:"Experience",title:"Silent Fuming While Doing Everything Yourself",insight:"The martyrdom was partly chosen.",origin:"Control through over-function.",themes:"over-functioning · resentful self-reliance"}},
+          {label:"being told to relax about something that matters", card:{tag:"Experience",title:"Being Told to Relax About Something That Matters",insight:"The dismissal of the standard felt like a dismissal of the person.",origin:"Standard misread as rigidity.",themes:"invalidation · dismissed care"}},
+          {label:"fixing what someone else did so they notice", card:{tag:"Behavior",title:"Fixing What Someone Else Did So They Notice",insight:"The fix was the message.",origin:"Indirect communication of standard.",themes:"passive correction · indirect anger"}},
+          {label:"sharp tone when someone underperforms near you", card:{tag:"Behavior",title:"Sharp Tone When Someone Underperforms Near You",insight:"The tone carried what the words didn't say.",origin:"Suppressed standard violation.",themes:"leaking anger · displaced perfectionism"}}
+        ]
+      }
+    ]
+  },
+  { label: "over-control",
+    card: { tag:"Emotional force", title:"Over-Control", insight:"Control is the nervous system's answer to unpredictability. You learned that managing everything tightly enough might prevent the bad thing.", triggers:["uncertainty without a plan","delegating something important","situations that won't resolve on your timeline"], origin:"Environments where chaos was real, or where vigilance genuinely prevented harm.", themes:"anxiety management · control as safety · hypervigilance · rigidity" },
+    children:[
+      { label:"childhood unpredictability", card:{ tag:"Origin", title:"Childhood Unpredictability", insight:"Someone or something in your early environment couldn't be relied on. Hyper-control was the logical adaptation.", triggers:["unpredictable authority figures","household instability","having to manage what adults couldn't"], origin:"The home you grew up in. The first curriculum in uncertainty.", themes:"early vigilance · adaptive control · parentification" },
+        children:[
+          {label:"knowing the adult's mood before entering the room", card:{tag:"Skill",title:"Knowing the Adult's Mood Before Entering the Room",insight:"A survival skill that stayed past its usefulness.",origin:"Hypervigilance as child.",themes:"somatic attunement · vigilance · hypervigilance"}},
+          {label:"preparing multiple scenarios before any conversation", card:{tag:"Behavior",title:"Preparing Multiple Scenarios Before Any Conversation",insight:"Every interaction pre-simulated for safety.",origin:"Anticipatory threat detection.",themes:"over-preparation · anticipatory anxiety"}},
+          {label:"doing things yourself rather than waiting", card:{tag:"Behavior",title:"Doing Things Yourself Rather Than Waiting",insight:"Waiting meant exposure to unpredictability.",origin:"Self-reliance as protection.",themes:"control through self-reliance · trust deficit"}},
+          {label:"being the one who kept track of everything", card:{tag:"Role",title:"Being the One Who Kept Track of Everything",insight:"The role wasn't chosen—it was filled.",origin:"Parentified caretaker role.",themes:"responsibility adoption · emotional labor · control"}},
+          {label:"difficulty letting a messy environment alone", card:{tag:"Behavior",title:"Difficulty Letting a Messy Environment Alone",insight:"External order as internal regulation.",origin:"Environmental control as anxiety management.",themes:"somatic control · order as safety"}}
+        ]
+      },
+      { label:"intimate relationships", card:{ tag:"Relationship", title:"Intimate Relationships", insight:"In love, uncertainty feels like danger. You manage, structure, and predict as protection—but it's exhausting and keeps intimacy at arm's length.", triggers:["not knowing where you stand","a partner who is hard to read","being surprised by someone you love"], origin:"Romantic relationships where unpredictability preceded pain.", themes:"relationship rigidity · intimacy through control · certainty seeking" },
+        children:[
+          {label:"asking 'where is this going' very early", card:{tag:"Behavior",title:"Asking 'Where Is This Going' Very Early",insight:"The question was anxiety needing resolution.",origin:"Uncertainty intolerance in attachment.",themes:"certainty seeking · anticipatory anxiety"}},
+          {label:"making plans on behalf of both of you", card:{tag:"Behavior",title:"Making Plans on Behalf of Both of You",insight:"Planning as a form of closeness and control simultaneously.",origin:"Anxiety management through structure.",themes:"over-function · control in love"}},
+          {label:"anxiety when they're late without explanation", card:{tag:"Experience",title:"Anxiety When They're Late Without Explanation",insight:"The gap filled itself with the worst version.",origin:"Unpredictability as threat.",themes:"catastrophizing · control gap · anxiety"}},
+          {label:"analyzing messages for signs", card:{tag:"Behavior",title:"Analyzing Messages for Signs",insight:"The subtext had a dedicated analyst.",origin:"Uncertainty intolerance.",themes:"hypervigilance · rumination · control attempt"}},
+          {label:"replaying conversations to identify risks", card:{tag:"Behavior",title:"Replaying Conversations to Identify Risks",insight:"The post-game analysis as threat detection.",origin:"Anticipatory anxiety.",themes:"rumination · risk-mapping · control"}}
+        ]
+      },
+      { label:"work and output", card:{ tag:"Context", title:"Work and Output", insight:"Your output is controlled to the point of private perfectionism. Good is never the goal—safe from critique is.", triggers:["collaborative work with less control","a deadline that doesn't allow polish","working in chaos"], origin:"Professional or academic contexts where mistakes had significant consequences.", themes:"perfectionism · output-based worth · control through excellence" },
+        children:[
+          {label:"redoing what someone else did", card:{tag:"Behavior",title:"Redoing What Someone Else Did",insight:"The quality was sufficient. The control wasn't restored.",origin:"Standard as control.",themes:"perfectionism · control · implicit criticism"}},
+          {label:"unable to submit without one more revision", card:{tag:"Behavior",title:"Unable to Submit Without One More Revision",insight:"The revision was never the last one.",origin:"Anxiety managed through improvement.",themes:"perfectionism · incompleteness anxiety"}},
+          {label:"physical discomfort around shared disorder", card:{tag:"Experience",title:"Physical Discomfort Around Shared Disorder",insight:"The discomfort was somatic, not aesthetic.",origin:"Environmental control tied to nervous system.",themes:"somatic response · order dependency"}},
+          {label:"rage at a decision made in your domain", card:{tag:"Experience",title:"Rage at a Decision Made in Your Domain",insight:"The intrusion felt like aggression.",origin:"Domain control violation.",themes:"territorial control · boundary violation · rage"}},
+          {label:"unable to rest until the thing is done", card:{tag:"Experience",title:"Unable to Rest Until the Thing Is Done",insight:"The body held the task until release.",origin:"Completion as relief from vigilance.",themes:"completion anxiety · somatic holding"}}
+        ]
+      },
+      { label:"physical routines", card:{ tag:"Context", title:"Physical Routines", insight:"The body and its rhythms become the last domain of perfect predictability. Disruption here carries disproportionate weight.", triggers:["sleep disruption","a broken routine","illness or physical unpredictability"], origin:"A nervous system using structure to regulate itself.", themes:"somatic control · ritualized behavior · predictability as calm" },
+        children:[
+          {label:"anxiety when a routine is broken", card:{tag:"Experience",title:"Anxiety When a Routine Is Broken",insight:"The routine was doing more work than it appeared.",origin:"Structure as regulation.",themes:"routine dependency · disruption sensitivity"}},
+          {label:"tracking everything that enters your body", card:{tag:"Behavior",title:"Tracking Everything That Enters Your Body",insight:"The body became a controlled variable.",origin:"Somatic control.",themes:"body control · anxiety management"}},
+          {label:"irritability when your schedule is altered by others", card:{tag:"Experience",title:"Irritability When Your Schedule Is Altered by Others",insight:"The alteration was an intrusion on order.",origin:"Schedule as safety.",themes:"control violation · irritability · structure dependency"}},
+          {label:"the dread of unplanned days", card:{tag:"Experience",title:"The Dread of Unplanned Days",insight:"Freedom was indistinguishable from threat.",origin:"Unstructured time as anxiety trigger.",themes:"freedom anxiety · structure dependency"}},
+          {label:"difficulty resting without structure", card:{tag:"Experience",title:"Difficulty Resting Without Structure",insight:"The nervous system required a container.",origin:"Structural co-regulation.",themes:"rest difficulty · somatic regulation"}}
+        ]
+      },
+      { label:"planning and decisions", card:{ tag:"Pattern", title:"Planning and Decisions", insight:"Open-ended choices feel like exposure. You research, prepare, and plan not from excitement but from the need to foreclose uncertainty.", triggers:["spontaneous invitations","last-minute changes","no clear best option"], origin:"Decision environments where the wrong choice had real cost.", themes:"analysis paralysis · choice anxiety · uncertainty intolerance" },
+        children:[
+          {label:"planning a trip months in advance for safety", card:{tag:"Behavior",title:"Planning a Trip Months in Advance for Safety",insight:"The plan was the destination.",origin:"Certainty through preparation.",themes:"anticipatory control · safety-through-planning"}},
+          {label:"being unable to enjoy it while still in it", card:{tag:"Experience",title:"Being Unable to Enjoy It While Still in It",insight:"Presence required safety. Safety required it to be over.",origin:"Anxiety during the controlled event.",themes:"anticipatory relief · presence difficulty"}},
+          {label:"needing to know the restaurant before agreeing to go", card:{tag:"Behavior",title:"Needing to Know the Restaurant Before Agreeing to Go",insight:"The agreement was contingent on having a preview.",origin:"Uncertainty intolerance.",themes:"preview-seeking · spontaneity fear"}},
+          {label:"second-guessing a decision that was right", card:{tag:"Experience",title:"Second-Guessing a Decision That Was Right",insight:"The rightness wasn't sufficient to quiet the review.",origin:"Hypervigilance applied to resolved decisions.",themes:"rumination · decision anxiety"}},
+          {label:"feeling behind when you haven't planned the next thing", card:{tag:"Experience",title:"Feeling Behind When You Haven't Planned the Next Thing",insight:"The void between plans felt like exposure.",origin:"Structure as forward movement.",themes:"continuity of control · plan gap anxiety"}}
+        ]
+      },
+      { label:"letting go", card:{ tag:"Pattern", title:"Letting Go", insight:"Something that was hard to hold has become harder to release. The control itself became the relationship.", triggers:["being told to relax","not knowing the outcome","accepting a result you didn't create"], origin:"History of loss or harm that followed release of control.", themes:"trust deficit · chronic holding · identity through vigilance" },
+        children:[
+          {label:"waking up early running scenarios", card:{tag:"Experience",title:"Waking Up Early Running Scenarios",insight:"The mind began working before the body was ready.",origin:"Night vigilance.",themes:"rumination · hypervigilance · body-mind split"}},
+          {label:"returning to check something already checked", card:{tag:"Behavior",title:"Returning to Check Something Already Checked",insight:"The reassurance didn't hold.",origin:"OCD-adjacent checking behavior.",themes:"checking · reassurance loop"}},
+          {label:"managing the future instead of being present", card:{tag:"Experience",title:"Managing the Future Instead of Being Present",insight:"Presence was sacrificed for preparedness.",origin:"Future-orientation as protection.",themes:"presence difficulty · future management"}},
+          {label:"still worrying about something already resolved", card:{tag:"Experience",title:"Still Worrying About Something Already Resolved",insight:"The mental file stayed open past its usefulness.",origin:"Worry independent of circumstance.",themes:"worry as habit · resolution inaccessibility"}},
+          {label:"strange grief after successfully letting go", card:{tag:"Experience",title:"Strange Grief After Successfully Letting Go",insight:"The release revealed what the holding had been doing.",origin:"Identity in vigilance.",themes:"grief at release · identity tied to control"}}
+        ]
+      }
+    ]
+  },
+  { label: "self-erasure",
+    card: { tag:"Emotional force", title:"Self-Erasure", insight:"You make yourself smaller, quieter, less. Not from absence but from a learned belief that taking up space invites harm.", triggers:["group settings where opinions differ","anyone who seems more certain than you","being called selfish for having a need"], origin:"Environments where your presence was a problem, or where selflessness was the only kind of goodness available.", themes:"self-abandonment · hyperadaptation · lost self · invisible presence" },
+    children:[
+      { label:"shrinking in groups", card:{ tag:"Pattern", title:"Shrinking in Groups", insight:"In collective spaces, your thoughts arrive and then are quietly filed before you can offer them.", triggers:["a confident voice in the room","being asked your opinion publicly","disagreeing with someone with authority"], origin:"School, work, or family settings where your input was minimized or overruled.", themes:"social contraction · opinion suppression · invisible participant" },
+        children:[
+          {label:"watching someone else say your thought", card:{tag:"Experience",title:"Watching Someone Else Say Your Thought",insight:"You watched the window close from the inside.",origin:"Self-censorship before expression.",themes:"self-silencing · invisible contribution"}},
+          {label:"nodding at things you don't agree with", card:{tag:"Behavior",title:"Nodding at Things You Don't Agree With",insight:"The nod was a small self-erasure.",origin:"Social harmony above authentic response.",themes:"false agreement · self-suppression"}},
+          {label:"editing your opinion until it matches theirs", card:{tag:"Behavior",title:"Editing Your Opinion Until It Matches Theirs",insight:"The original thought was revised out of existence.",origin:"Opinion suppression under social pressure.",themes:"self-erasure · accommodation · truth erosion"}},
+          {label:"laughing at something that wasn't funny to you", card:{tag:"Behavior",title:"Laughing at Something That Wasn't Funny to You",insight:"Performed response to maintain belonging.",origin:"Social conformity at expense of self.",themes:"performed reaction · self-abandonment"}},
+          {label:"feeling invisible in a room full of people you know", card:{tag:"Experience",title:"Feeling Invisible in a Room Full of People You Know",insight:"Familiar people didn't require visibility.",origin:"Habitual self-effacement.",themes:"invisibility · belonging without presence"}}
+        ]
+      },
+      { label:"putting others first", card:{ tag:"Pattern", title:"Putting Others First", insight:"Selflessness became identity. 'I'm easy' became the truest thing about you. Now you're not sure what you actually want.", triggers:["being asked what you need","your own desires feeling like inconveniences","resentment you can't explain"], origin:"Caregiving roles, parentification, or contexts where your needs were secondary.", themes:"self-abandonment · resentment undercurrent · desire atrophy" },
+        children:[
+          {label:"ordering last to match what others chose", card:{tag:"Behavior",title:"Ordering Last to Match What Others Chose",insight:"The adaptation was automatic.",origin:"Self-erasure as default.",themes:"preference suppression · accommodation"}},
+          {label:"not mentioning you're uncomfortable", card:{tag:"Behavior",title:"Not Mentioning You're Uncomfortable",insight:"The discomfort was privatized.",origin:"Need minimization.",themes:"silent suffering · accommodation"}},
+          {label:"saying 'whatever you want' with a strong preference", card:{tag:"Behavior",title:"Saying 'Whatever You Want' With a Strong Preference",insight:"The preference was present and undisclosed.",origin:"Preference-hiding as accommodation.",themes:"self-denial · desire invisibility"}},
+          {label:"feeling angry at someone you sacrificed for", card:{tag:"Experience",title:"Feeling Angry at Someone You Sacrificed for",insight:"The resentment revealed the cost of the sacrifice.",origin:"Unmourned self-erasure.",themes:"resentment · sacrifice · invisible cost"}},
+          {label:"not knowing how you feel until everyone is satisfied", card:{tag:"Experience",title:"Not Knowing How You Feel Until Everyone Is Satisfied",insight:"Your feelings were queued behind everyone else's.",origin:"Delayed self-attunement.",themes:"self-last · deferred self-awareness"}}
+        ]
+      },
+      { label:"romantic dynamics", card:{ tag:"Relationship", title:"Romantic Dynamics", insight:"In relationships, you accommodate until the accommodation becomes the relationship. Your original self waits somewhere just outside it.", triggers:["being asked about your needs","a partner who doesn't have to shrink","the person you were before this relationship"], origin:"Relationships where being valued required being small.", themes:"codependency · self-loss in love · relationship-as-erasure" },
+        children:[
+          {label:"stopping a habit because they didn't like it", card:{tag:"Behavior",title:"Stopping a Habit Because They Didn't Like It",insight:"You handed the veto on your own preferences.",origin:"Approval over self-maintenance.",themes:"self-erasure · accommodation · preference surrender"}},
+          {label:"not mentioning a feeling for months", card:{tag:"Behavior",title:"Not Mentioning a Feeling for Months",insight:"The timing was never right because the threshold was never reached.",origin:"Emotional self-deprioritization.",themes:"delayed disclosure · accumulation"}},
+          {label:"having nothing to say about yourself when asked", card:{tag:"Experience",title:"Having Nothing to Say About Yourself When Asked",insight:"The self that could answer had gone quiet.",origin:"Identity erosion in relationship.",themes:"identity loss · self-disconnection"}},
+          {label:"becoming their preferences", card:{tag:"Experience",title:"Becoming Their Preferences",insight:"Gradual identity substitution.",origin:"Long-term accommodation.",themes:"identity drift · preference adoption"}},
+          {label:"still agreeable after losing the argument", card:{tag:"Experience",title:"Still Agreeable After Losing the Argument",insight:"You'd been agreeable so long you forgot you had a position.",origin:"Long-term self-suppression.",themes:"eroded position · self-loss"}}
+        ]
+      },
+      { label:"professional identity", card:{ tag:"Context", title:"Professional Identity", insight:"At work, you contribute with reservation. You downplay accomplishments before anyone can misread them as arrogance.", triggers:["being praised in front of others","claiming credit that is yours","being promoted or made visible"], origin:"Workplaces or education where standing out carried social cost.", themes:"professional self-diminishment · visibility fear · imposter amplification" },
+        children:[
+          {label:"deflecting compliments before they land", card:{tag:"Behavior",title:"Deflecting Compliments Before They Land",insight:"The compliment was redirected before it could require belief.",origin:"Discomfort with positive visibility.",themes:"deflection · self-diminishment"}},
+          {label:"'it's probably not that good'", card:{tag:"Behavior",title:"'It's Probably Not That Good'",insight:"The pre-emptive self-critique.",origin:"Preemptive self-erasure.",themes:"anticipatory diminishment · exposure prevention"}},
+          {label:"minimizing your role in a success", card:{tag:"Behavior",title:"Minimizing Your Role in a Success",insight:"You distributed credit before anyone could dispute it.",origin:"Visibility discomfort.",themes:"credit redistribution · achievement erasure"}},
+          {label:"not applying for something you're qualified for", card:{tag:"Behavior",title:"Not Applying for Something You're Qualified For",insight:"The filter of worthiness was applied before anyone else's.",origin:"Pre-rejection through self-exclusion.",themes:"imposter threshold · self-limitation"}},
+          {label:"feeling exposed and fraudulent when recognized", card:{tag:"Experience",title:"Feeling Exposed and Fraudulent When Recognized",insight:"The recognition confirmed the fear of being found out.",origin:"Achievement dissonance.",themes:"imposter syndrome · exposure · recognition anxiety"}}
+        ]
+      },
+      { label:"speaking up", card:{ tag:"Pattern", title:"Speaking Up", insight:"You see the problem clearly. The words form. Then they don't come out.", triggers:["being in the minority opinion","addressing conflict with someone with more power","saying something that might disappoint"], origin:"Situations where speaking up resulted in consequences.", themes:"voice suppression · conflict with authority · unexpressed position" },
+        children:[
+          {label:"sitting with a grievance instead of raising it", card:{tag:"Behavior",title:"Sitting With a Grievance Instead of Raising It",insight:"Endurance instead of expression.",origin:"Voice perceived as dangerous.",themes:"suppressed complaint · silent grievance"}},
+          {label:"composing a message and deleting it", card:{tag:"Behavior",title:"Composing a Message and Deleting It",insight:"The message was written in a safe space and disappeared.",origin:"Expression allowed in private, not in public.",themes:"unsent communication · self-censorship"}},
+          {label:"saying something five hours after you should have", card:{tag:"Experience",title:"Saying Something Five Hours After You Should Have",insight:"The moment required safety that arrived late.",origin:"Delayed voice.",themes:"belated expression · safety-dependent voice"}},
+          {label:"editing a position into a suggestion", card:{tag:"Behavior",title:"Editing a Position Into a Suggestion",insight:"The certainty was removed before transmission.",origin:"Authority dilution of own voice.",themes:"softening · self-dilution · position erosion"}},
+          {label:"agreeing to what you should have refused", card:{tag:"Behavior",title:"Agreeing to What You Should Have Refused",insight:"The agreement was a form of voice suppression.",origin:"Compliance over self-advocacy.",themes:"compliance · self-silencing · boundary failure"}}
+        ]
+      },
+      { label:"self-punishment", card:{ tag:"Pattern", title:"Self-Punishment", insight:"When you do take up space and something goes wrong, you are both judge and the harshest sentence.", triggers:["making a mistake in front of others","criticism that echoes your own inner voice","being imperfect visibly"], origin:"Critical environments where mistakes had moral meaning.", themes:"harsh inner critic · shame-based identity · self-as-prosecution" },
+        children:[
+          {label:"reviewing what you said for hours afterward", card:{tag:"Behavior",title:"Reviewing What You Said for Hours Afterward",insight:"The transcript on repeat.",origin:"Rumination as self-punishment.",themes:"rumination · shame loop"}},
+          {label:"not sleeping because of a minor error", card:{tag:"Experience",title:"Not Sleeping Because of a Minor Error",insight:"The error was small. The verdict was large.",origin:"Disproportionate self-judgment.",themes:"sleep disruption · self-punishment · shame escalation"}},
+          {label:"assuming someone's mood is because of you", card:{tag:"Experience",title:"Assuming Someone's Mood Is Because of You",insight:"You claimed causality before investigation.",origin:"Over-responsibility.",themes:"self-attribution · hypervigilance · guilt reflex"}},
+          {label:"holding a mistake from years ago as current evidence", card:{tag:"Experience",title:"Holding a Mistake From Years Ago as Current Evidence",insight:"The file never closed.",origin:"Ongoing self-prosecution.",themes:"accumulated self-evidence · narrative fixation"}},
+          {label:"criticizing yourself first so others can't", card:{tag:"Behavior",title:"Criticizing Yourself First So Others Can't",insight:"Pre-emptive strike against incoming judgment.",origin:"Internalized critical voice.",themes:"pre-emption · self-punishment as shield"}}
+        ]
+      }
+    ]
+  },
+  { label: "fear of being too much",
+    card: { tag:"Emotional force", title:"Fear of Being Too Much", insight:"You have learned to perform containment. To be slightly less than your full size. To offer your feelings in smaller doses that others can metabolize.", triggers:["someone pulling back after you've opened up","being called intense","high emotional registers"], origin:"Relationships where your full presence was responded to with withdrawal, discomfort, or the request to tone it down.", themes:"emotional excess shame · self-editing · intensity guilt" },
+    children:[
+      { label:"being called intense", card:{ tag:"Experience", title:"Being Called Intense", insight:"This word—or its cousins—arrived like a diagnosis. You've been auditing yourself for intensity ever since.", triggers:["becoming passionate about something","expressing strong care","being visibly moved"], origin:"Specific moments when full presence was received as too much.", themes:"emotional self-monitoring · intensity as flaw · pre-emptive self-reduction" },
+        children:[
+          {label:"toning yourself down mid-conversation", card:{tag:"Behavior",title:"Toning Yourself Down Mid-Conversation",insight:"You performed a real-time dimmer switch.",origin:"Intensity monitoring.",themes:"self-editing · real-time reduction"}},
+          {label:"shame after laughing too loudly", card:{tag:"Experience",title:"Shame After Laughing Too Loudly",insight:"Joy audited for volume.",origin:"Expressive shame.",themes:"joy shame · expressive self-monitoring"}},
+          {label:"not saying how much you care", card:{tag:"Behavior",title:"Not Saying How Much You Care",insight:"The care was real. The disclosure was rationed.",origin:"Fear of care being too much.",themes:"care concealment · self-editing"}},
+          {label:"over-qualifying your enthusiasm", card:{tag:"Behavior",title:"Over-Qualifying Your Enthusiasm",insight:"The hedge arrived before the feeling.",origin:"Enthusiasm pre-apology.",themes:"enthusiasm shame · preemptive diminishment"}},
+          {label:"being proud of yourself for staying controlled", card:{tag:"Experience",title:"Being Proud of Yourself for Staying Controlled",insight:"The trophy was for self-suppression.",origin:"Control as achievement.",themes:"suppression as virtue · pride in self-erasure"}}
+        ]
+      },
+      { label:"emotional expression", card:{ tag:"Pattern", title:"Emotional Expression", insight:"Feeling things strongly is native to you. The shame arrived later, as feedback.", triggers:["crying in front of someone","expressing anger that feels too big","being visibly moved in public"], origin:"Environments where strong feeling was met with discomfort or contempt.", themes:"feeling shame · performed detachment · emotional authenticity as risk" },
+        children:[
+          {label:"apologizing for crying", card:{tag:"Behavior",title:"Apologizing for Crying",insight:"The apology made the feeling a transgression.",origin:"Emotional expression as imposition.",themes:"feeling shame · apology for self"}},
+          {label:"not letting yourself feel something fully when watched", card:{tag:"Behavior",title:"Not Letting Yourself Feel Something Fully When Watched",insight:"Full feeling required privacy.",origin:"Witnessed feeling as exposure.",themes:"guarded feeling · private emotion"}},
+          {label:"watching their discomfort and pulling back your feeling", card:{tag:"Behavior",title:"Watching Their Discomfort and Pulling Back Your Feeling",insight:"Their comfort regulated your interior.",origin:"Co-regulated self-suppression.",themes:"other-directed emotion · self-suppression for others"}},
+          {label:"hating yourself for needing comfort", card:{tag:"Experience",title:"Hating Yourself for Needing Comfort",insight:"The need itself was the indictment.",origin:"Dependency shame.",themes:"need shame · self-contempt for vulnerability"}},
+          {label:"laughing then feeling you overdid it", card:{tag:"Experience",title:"Laughing Then Feeling You Overdid It",insight:"The joy measured and found excessive.",origin:"Expressive self-monitoring.",themes:"joy audit · expressive shame"}}
+        ]
+      },
+      { label:"past relationships", card:{ tag:"Relationship", title:"Past Relationships", insight:"Someone important taught you that your full self was a problem. The lesson stayed longer than the relationship.", triggers:["partners who needed you more contained","someone who left because things got 'too heavy'","love that was conditional on your temperature"], origin:"Specific relationships. Specific feedback. Specific exits.", themes:"relational conditioning · love-as-conditional-on-size · post-relationship self-editing" },
+        children:[
+          {label:"being told 'you're a lot' by someone you loved", card:{tag:"Moment",title:"Being Told 'You're a Lot' by Someone You Loved",insight:"The assessment from someone with access landed differently.",origin:"Intimate dismissal of self.",themes:"intimate rejection of intensity · core wound"}},
+          {label:"being left during a hard period", card:{tag:"Experience",title:"Being Left During a Hard Period",insight:"The timing confirmed the theory.",origin:"Loss during vulnerability.",themes:"abandonment during need · conditional love"}},
+          {label:"a relationship that felt stable when you were small", card:{tag:"Experience",title:"A Relationship That Felt Stable When You Were Small",insight:"The correlation was unmistakable.",origin:"Self-reduction as relational strategy.",themes:"stability through erasure · size as relationship management"}},
+          {label:"someone's face when you fully shared how you felt", card:{tag:"Moment",title:"Someone's Face When You Fully Shared How You Felt",insight:"The face told you before the words did.",origin:"Nonverbal rejection of vulnerability.",themes:"facial feedback · nonverbal dismissal"}},
+          {label:"learning to be lighter than you'd earned the right to be", card:{tag:"Behavior",title:"Learning to Be Lighter Than You'd Earned the Right to Be",insight:"The performance of ease.",origin:"Post-relationship self-editing.",themes:"performed lightness · grief compression"}}
+        ]
+      },
+      { label:"social performance", card:{ tag:"Pattern", title:"Social Performance", insight:"In groups, you manage your register carefully. The goal is not to stand out as too loud, too sad, too alive.", triggers:["noticing you're more animated than others","being in a quiet social setting","genuine enthusiasm that feels inappropriate"], origin:"Social contexts with unspoken rules about acceptable emotional range.", themes:"social emotional self-monitoring · performance of moderation · affect management" },
+        children:[
+          {label:"modulating your volume halfway through a sentence", card:{tag:"Behavior",title:"Modulating Your Volume Halfway Through a Sentence",insight:"The self-edit arrived mid-expression.",origin:"Real-time social monitoring.",themes:"real-time self-regulation · expressive self-editing"}},
+          {label:"embarrassed by your own enthusiasm", card:{tag:"Experience",title:"Embarrassed by Your Own Enthusiasm",insight:"The enthusiasm was authentic. The embarrassment followed automatically.",origin:"Enthusiasm as social risk.",themes:"enthusiasm shame · social self-monitoring"}},
+          {label:"pretending to be less curious than you are", card:{tag:"Behavior",title:"Pretending to Be Less Curious Than You Are",insight:"Curiosity performed at social-acceptable levels.",origin:"Intensity modulation.",themes:"intellectual self-editing · curiosity suppression"}},
+          {label:"sitting on excitement so it doesn't overwhelm others", card:{tag:"Behavior",title:"Sitting on Excitement So It Doesn't Overwhelm Others",insight:"The containment was a gift they didn't know was given.",origin:"Excitement management for others.",themes:"self-suppression for social comfort"}},
+          {label:"feeling like too much in a room that loves you", card:{tag:"Experience",title:"Feeling Like Too Much in a Room That Loves You",insight:"The fear ran independently of the actual evidence.",origin:"Internalized 'too much' regardless of context.",themes:"evidence-independent self-monitoring · internalized too-much"}}
+        ]
+      },
+      { label:"family of origin", card:{ tag:"Origin", title:"Family of Origin", insight:"The family dynamic had an unspoken ceiling on emotional decibel. You learned to feel within the permitted range.", triggers:["a parent visibly uncomfortable with your distress","being told 'it's not that big a deal'","being the 'dramatic' one"], origin:"Home. Where the ceiling was first set.", themes:"emotional range restriction · original self-editing · feeling-as-excess origin" },
+        children:[
+          {label:"a parent visibly uncomfortable with your distress", card:{tag:"Moment",title:"A Parent Visibly Uncomfortable With Your Distress",insight:"Their discomfort became your regulation task.",origin:"Emotional burden transfer.",themes:"co-regulation reversal · caretaking own feeling for their sake"}},
+          {label:"'it's not that big a deal'", card:{tag:"Moment",title:"'It's Not That Big a Deal'",insight:"The magnitude of feeling was adjudicated and found disproportionate.",origin:"Emotional minimization by caregiver.",themes:"minimization · feeling-shame · proportion assignment"}},
+          {label:"learning to go to your room when you felt something big", card:{tag:"Learning",title:"Learning to Go to Your Room When You Felt Something Big",insight:"Big feelings were private by requirement.",origin:"Emotional containment as family rule.",themes:"private feeling · emotion-as-burden"}},
+          {label:"becoming the easy one so they didn't have to manage you", card:{tag:"Role",title:"Becoming the Easy One So They Didn't Have to Manage You",insight:"A role created to relieve parental burden.",origin:"Parentification variant.",themes:"parentification · emotional labor as child"}},
+          {label:"not knowing how large your feelings are allowed to be", card:{tag:"Experience",title:"Not Knowing How Large Your Feelings Are Allowed to Be",insight:"The permitted range was never clearly defined.",origin:"Ambiguous emotional permission.",themes:"feeling calibration uncertainty · size confusion"}}
+        ]
+      },
+      { label:"new connections", card:{ tag:"Pattern", title:"New Connections", insight:"With new people, you introduce yourself in portions. The version that arrives first is usually a few degrees cooler than the actual person.", triggers:["meeting someone you care about impressing","early vulnerability in a friendship or relationship","being fully yourself before knowing if it's safe"], origin:"Past experiences where early disclosure was penalized.", themes:"gradual self-rationing · trust-based reveal · self-presentation management" },
+        children:[
+          {label:"holding back your best story for later", card:{tag:"Behavior",title:"Holding Back Your Best Story for Later",insight:"The reserve was in case they left.",origin:"Staged self-disclosure.",themes:"protective rationing · anticipatory loss"}},
+          {label:"performing normalcy for months before being real", card:{tag:"Behavior",title:"Performing Normalcy for Months Before Being Real",insight:"The performance ran long.",origin:"Safety threshold for self-disclosure.",themes:"performed normalcy · deferred authenticity"}},
+          {label:"the specific joy when someone sees you and doesn't flinch", card:{tag:"Experience",title:"The Specific Joy When Someone Sees You and Doesn't Flinch",insight:"The relief was proportional to the risk you'd expected.",origin:"Disclosure met without rejection.",themes:"acceptance relief · non-flinch joy"}},
+          {label:"testing someone with a small truth first", card:{tag:"Behavior",title:"Testing Someone With a Small Truth First",insight:"The test result would determine what followed.",origin:"Graduated disclosure as risk management.",themes:"trust testing · disclosure rationing"}},
+          {label:"not knowing when it's safe", card:{tag:"Experience",title:"Not Knowing When It's Safe",insight:"The safety signal never became reliable.",origin:"Trust calibration difficulty.",themes:"trust uncertainty · disclosure paralysis"}}
+        ]
+      }
+    ]
+  },
+  { label: "conflict avoidance",
+    card: { tag:"Emotional force", title:"Conflict Avoidance", insight:"The discomfort of conflict feels larger than the problem itself. You smooth, deflect, agree, or vanish before friction can develop.", triggers:["sensing disagreement about to surface","being challenged directly","the face someone makes before an argument"], origin:"Environments where conflict was unsafe, unpredictable, or resolved by someone losing.", themes:"peace as armor · compulsive accommodation · suppressed conflict" },
+    children:[
+      { label:"parental conflict", card:{ tag:"Origin", title:"Parental Conflict", insight:"What happened between your parents—or between them and you—established the vocabulary of conflict in your nervous system.", triggers:["raised voices","passive conflict you can feel but not see","the energy before an argument"], origin:"Childhood home. The original conflict classroom.", themes:"conflict as danger · hypervigilance to tension · body memory" },
+        children:[
+          {label:"leaving the room when voices changed", card:{tag:"Behavior",title:"Leaving the Room When Voices Changed",insight:"Exit as the only available response.",origin:"Conflict as threat without resolution.",themes:"avoidance · threat response"}},
+          {label:"mediating between adults as a child", card:{tag:"Role",title:"Mediating Between Adults as a Child",insight:"A role that arrived before you were equipped for it.",origin:"Parentification in conflict.",themes:"childhood mediator · over-responsibility"}},
+          {label:"becoming very still during tension", card:{tag:"Behavior",title:"Becoming Very Still During Tension",insight:"Invisibility as survival.",origin:"Freeze response in conflict.",themes:"freeze · somatic stillness"}},
+          {label:"doing something to reduce the atmosphere", card:{tag:"Behavior",title:"Doing Something to Reduce the Atmosphere",insight:"Defusing instead of processing.",origin:"Conflict management as child role.",themes:"tension-diffusion · learned peacemaking"}},
+          {label:"not knowing conflict could end without someone losing", card:{tag:"Learning",title:"Not Knowing Conflict Could End Without Someone Losing",insight:"The only available model was zero-sum.",origin:"Win-lose conflict exposure.",themes:"conflict model · zero-sum belief"}}
+        ]
+      },
+      { label:"romantic disagreements", card:{ tag:"Relationship", title:"Romantic Disagreements", insight:"In relationships, conflict feels like preview of loss. You manage friction before it has a chance to mean something.", triggers:["'I need to talk'","disagreement that isn't resolving quickly","someone upset with you"], origin:"Relationships where conflict preceded abandonment or punishment.", themes:"conflict = abandonment fear · preemptive accommodation · resolution hunger" },
+        children:[
+          {label:"apologizing before understanding what happened", card:{tag:"Behavior",title:"Apologizing Before Understanding What Happened",insight:"The apology was damage control.",origin:"Pre-emptive conflict resolution.",themes:"preemptive apology · conflict fear"}},
+          {label:"conceding an argument you believe you're right about", card:{tag:"Behavior",title:"Conceding an Argument You Believe You're Right About",insight:"Peace purchased at the cost of truth.",origin:"Resolution over accuracy.",themes:"false concession · truth sacrifice"}},
+          {label:"agreeing and feeling resentful immediately", card:{tag:"Experience",title:"Agreeing and Feeling Resentful Immediately",insight:"The agreement and the regret were simultaneous.",origin:"Compulsive accommodation.",themes:"instant resentment · compulsive agreement"}},
+          {label:"not bringing something up to avoid starting something", card:{tag:"Behavior",title:"Not Bringing Something Up to Avoid Starting Something",insight:"The preemptive suppression.",origin:"Conflict avoidance before conflict exists.",themes:"suppression · preemptive peace"}},
+          {label:"wishing you'd said something three days ago", card:{tag:"Experience",title:"Wishing You'd Said Something Three Days Ago",insight:"The window closed while you were deciding.",origin:"Delayed expression after conflict avoidance.",themes:"delayed voice · lost moment · retrospective clarity"}}
+        ]
+      },
+      { label:"friendships and social groups", card:{ tag:"Context", title:"Friendships and Social Groups", insight:"You keep the peace. You absorb tension. You are the one who doesn't cause problems, and you've forgotten what your own opinion tastes like.", triggers:["two friends in conflict wanting your alignment","disagreeing with a friend's behavior","being honest in a group"], origin:"Social contexts where maintaining peace was a survival skill.", themes:"social peacekeeper · alignment erasure · invisible dissent" },
+        children:[
+          {label:"saying 'that's fair' to something unfair", card:{tag:"Behavior",title:"Saying 'That's Fair' to Something Unfair",insight:"The endorsement was a form of disappearing.",origin:"Social peace over integrity.",themes:"false validation · self-suppression"}},
+          {label:"not defending yourself in a group", card:{tag:"Behavior",title:"Not Defending Yourself in a Group",insight:"The defense would have required conflict.",origin:"Group conflict avoidance.",themes:"public self-erasure · silent defense"}},
+          {label:"taking a side privately but not publicly", card:{tag:"Behavior",title:"Taking a Side Privately but Not Publicly",insight:"The opinion lived in private.",origin:"Opinion without expression.",themes:"private position · public neutrality"}},
+          {label:"editing a message until it couldn't upset anyone", card:{tag:"Behavior",title:"Editing a Message Until It Couldn't Upset Anyone",insight:"The message was revised into harmlessness.",origin:"Communication without risk.",themes:"message disarming · self-editing"}},
+          {label:"never being honest in the group chat", card:{tag:"Experience",title:"Never Being Honest in the Group Chat",insight:"The group only received the safe version of you.",origin:"Social performance without authenticity.",themes:"social performance · authenticity deficit"}}
+        ]
+      },
+      { label:"professional life", card:{ tag:"Context", title:"Professional Life", insight:"Workplace conflict triggers the same alarm as intimate conflict. You avoid it at the cost of your standing.", triggers:["a manager who is wrong about you","a colleague taking credit","being passed over without explanation"], origin:"Workplaces or schools where speaking up had professional or social consequences.", themes:"professional silencing · conflict avoidance at cost · advocacy failure" },
+        children:[
+          {label:"not responding to an unfair email for three days", card:{tag:"Behavior",title:"Not Responding to an Unfair Email for Three Days",insight:"The delay was the avoidance.",origin:"Professional conflict paralysis.",themes:"avoidance delay · conflict paralysis"}},
+          {label:"letting something pass that shouldn't have", card:{tag:"Behavior",title:"Letting Something Pass That Shouldn't Have",insight:"The passage was a quiet self-betrayal.",origin:"Professional conflict avoidance.",themes:"self-abandonment · silent allowing"}},
+          {label:"agreeing in a meeting and seething after", card:{tag:"Behavior",title:"Agreeing in a Meeting and Seething After",insight:"The agreement was the performance.",origin:"Public compliance with private dissent.",themes:"public compliance · private resentment"}},
+          {label:"not making a complaint you were entitled to make", card:{tag:"Behavior",title:"Not Making a Complaint You Were Entitled to Make",insight:"The entitlement was present. The expression wasn't.",origin:"Advocacy suppression.",themes:"suppressed complaint · self-denial of rights"}},
+          {label:"choosing harmony over being right", card:{tag:"Decision",title:"Choosing Harmony Over Being Right",insight:"The trade was clear and quietly made.",origin:"Peace above accuracy.",themes:"harmony preference · truth sacrifice"}}
+        ]
+      },
+      { label:"self-directed conflict", card:{ tag:"Pattern", title:"Self-Directed Conflict", insight:"You avoid conflict with others but run it internally. The argument never ends—it just moves inside.", triggers:["a decision someone was disappointed by","your own anger at not speaking up","replaying conversations where you should have said more"], origin:"The inner court where you prosecute yourself instead.", themes:"internalized conflict · rumination as avoidance · self-as-opponent" },
+        children:[
+          {label:"the conversation you have with yourself instead of them", card:{tag:"Experience",title:"The Conversation You Have With Yourself Instead of Them",insight:"The argument was complete. They just weren't in it.",origin:"Internalized conflict expression.",themes:"internal dialogue · avoided real conflict"}},
+          {label:"arguing with someone who is asleep", card:{tag:"Experience",title:"Arguing With Someone Who Is Asleep",insight:"The unfinished business conducted in private.",origin:"Nocturnal processing of avoided conflict.",themes:"nocturnal conflict · avoidance continuation"}},
+          {label:"angrier at yourself than at them", card:{tag:"Experience",title:"Angrier at Yourself Than at Them",insight:"The anger redirected toward the easier target.",origin:"Self-directed anger after conflict avoidance.",themes:"self-directed anger · avoidance guilt"}},
+          {label:"rehearsing the conversation but never having it", card:{tag:"Behavior",title:"Rehearsing the Conversation but Never Having It",insight:"The preparation never graduated to action.",origin:"Rehearsal as substitute for expression.",themes:"rehearsal loop · voice without delivery"}},
+          {label:"deciding it doesn't matter when you know it does", card:{tag:"Decision",title:"Deciding It Doesn't Matter When You Know It Does",insight:"The decision was a form of self-deception that bought temporary peace.",origin:"Self-silencing rationalization.",themes:"minimization · self-deception · suppression"}}
+        ]
+      },
+      { label:"what was never said", card:{ tag:"Pattern", title:"What Was Never Said", insight:"There are things filed under 'not worth the friction.' The collection is larger than you'd like to admit.", triggers:["something still irritating from years ago","someone who never knew what they did","a friendship that faded without explanation"], origin:"A lifetime of choosing silence over friction.", themes:"unsaid accumulation · silent rupture · quiet unfinished business" },
+        children:[
+          {label:"a friendship that ended without explanation", card:{tag:"Experience",title:"A Friendship That Ended Without Explanation",insight:"The explanation was the thing you never gave.",origin:"Conflict avoidance as the exit method.",themes:"silent exit · unacknowledged rupture"}},
+          {label:"still bothered by something from years ago", card:{tag:"Experience",title:"Still Bothered by Something From Years Ago",insight:"It stayed because it was never aired.",origin:"Unresolved moment.",themes:"unresolved residue · time-resistant frustration"}},
+          {label:"the apology you never received", card:{tag:"Experience",title:"The Apology You Never Received",insight:"The account was left open.",origin:"Unrepaired rupture.",themes:"unpaired wound · waiting for repair"}},
+          {label:"the words that left with you when you stopped seeing someone", card:{tag:"Experience",title:"The Words That Left With You When You Stopped Seeing Someone",insight:"They went unsaid and stayed yours.",origin:"Unsaid things as relational residue.",themes:"unexpressed residue · internal monologue"}},
+          {label:"the conversation that could have changed things", card:{tag:"Realization",title:"The Conversation That Could Have Changed Things",insight:"It was available and not taken.",origin:"Window of expression missed.",themes:"missed repair · counterfactual loss"}}
+        ]
+      }
+    ]
+  },
+  { label: "longing for reassurance",
+    card: { tag:"Emotional force", title:"Longing for Reassurance", insight:"The need isn't validation—it's the quieting of a specific alarm. The signal never fully stops, so no amount of reassurance is ever quite permanent.", triggers:["ambiguity in a relationship","silence after a vulnerable moment","absence of confirmation that things are okay"], origin:"Attachment experiences where love was available but inconsistently signaled.", themes:"anxious attachment · hypervigilance to approval · internal alarm · temporary relief" },
+    children:[
+      { label:"anxious attachment", card:{ tag:"Pattern", title:"Anxious Attachment", insight:"You love with one eye on the exit. Not yours—theirs. You track closeness like an instrument you can't stop reading.", triggers:["slower replies than usual","a change in their energy","intimacy followed by normal distance"], origin:"Inconsistent early caregiving. Love that was there, then wasn't, without explanation.", themes:"protest behavior · hyperactivated attachment · monitoring · proximity seeking" },
+        children:[
+          {label:"checking your phone after sending something real", card:{tag:"Behavior",title:"Checking Your Phone After Sending Something Real",insight:"The wait was measured in anxiety units.",origin:"Attachment response to vulnerability disclosure.",themes:"post-disclosure monitoring · reassurance seeking"}},
+          {label:"assuming something is wrong when nothing was said", card:{tag:"Experience",title:"Assuming Something Is Wrong When Nothing Was Said",insight:"The silence filled itself.",origin:"Negative attribution bias in attachment.",themes:"negative interpretation · hypervigilance"}},
+          {label:"soothed then anxious again an hour later", card:{tag:"Experience",title:"Soothed Then Anxious Again an Hour Later",insight:"The reassurance dissolved faster than it arrived.",origin:"Anxious attachment cycle.",themes:"temporary relief · reassurance half-life"}},
+          {label:"needing confirmation for what you already know", card:{tag:"Experience",title:"Needing Confirmation for What You Already Know",insight:"The knowledge required external ratification.",origin:"Trust deficit in self-knowing.",themes:"external confirmation · self-trust deficit"}},
+          {label:"the exhaustion of monitoring a relationship for signs", card:{tag:"Experience",title:"The Exhaustion of Monitoring a Relationship for Signs",insight:"The surveillance was depleting.",origin:"Chronic attachment hypervigilance.",themes:"monitoring fatigue · hypervigilance cost"}}
+        ]
+      },
+      { label:"an inconsistent caregiver", card:{ tag:"Origin", title:"An Inconsistent Caregiver", insight:"Love was available but never predictable. You became expert at reading whether it was present today.", triggers:["unpredictable emotional warmth","someone who is fine and then suddenly not","love that has shifting conditions"], origin:"The original attachment figure. The first calibration.", themes:"inconsistent reinforcement · love as unpredictable · attunement as survival skill" },
+        children:[
+          {label:"not knowing if they'd be warm or withdrawn that day", card:{tag:"Experience",title:"Not Knowing If They'd Be Warm or Withdrawn That Day",insight:"Every approach was an experiment.",origin:"Unpredictable caregiving.",themes:"day-by-day uncertainty · somatic preparation"}},
+          {label:"anxiety waiting for a parent to come home", card:{tag:"Experience",title:"Anxiety Waiting for a Parent to Come Home",insight:"The arrival held all possible outcomes.",origin:"Parental unpredictability.",themes:"arrival anxiety · anticipatory dread"}},
+          {label:"doing something to earn their warmth", card:{tag:"Behavior",title:"Doing Something to Earn Their Warmth",insight:"Warmth that could be earned was warmth that could be withheld.",origin:"Contingent affection.",themes:"earned warmth · love as labor"}},
+          {label:"feeling loved and then unsure if it was real", card:{tag:"Experience",title:"Feeling Loved and Then Unsure If It Was Real",insight:"The warmth couldn't be trusted to stay.",origin:"Inconsistent reinforcement of love.",themes:"love uncertainty · trust in warmth"}},
+          {label:"not fully trusting the good days", card:{tag:"Experience",title:"Not Fully Trusting the Good Days",insight:"The good day was experienced with one eye on tomorrow.",origin:"Learned unpredictability.",themes:"good day distrust · anticipatory protection"}}
+        ]
+      },
+      { label:"needing to be told it's okay", card:{ tag:"Pattern", title:"Needing to Be Told It's Okay", insight:"You know the logic. The reassurance lands while it's being given. It's just that you need it again tomorrow.", triggers:["doing something new and uncertain","a decision that can't be undone","a relationship in a quiet phase"], origin:"History where 'okay' required external sources.", themes:"internal safety deficit · co-regulation dependency · reassurance cycle" },
+        children:[
+          {label:"asking 'are you mad at me?' when they're just tired", card:{tag:"Behavior",title:"Asking 'Are You Mad at Me?' When They're Just Tired",insight:"The question was for you, not about them.",origin:"Attachment anxiety projected onto neutral behavior.",themes:"negative attribution · reassurance seeking"}},
+          {label:"needing to be told you did the right thing", card:{tag:"Experience",title:"Needing to Be Told You Did the Right Thing",insight:"Your own assessment wasn't sufficient.",origin:"External locus of self-evaluation.",themes:"validation seeking · decision insecurity"}},
+          {label:"texting 'we're good, right?' after nothing happened", card:{tag:"Behavior",title:"Texting 'We're Good, Right?' After Nothing Happened",insight:"A routine maintenance check on the relationship's safety.",origin:"Relationship security scanning.",themes:"reassurance loop · pre-emptive repair"}},
+          {label:"being told it's fine and still not feeling fine", card:{tag:"Experience",title:"Being Told It's Fine and Still Not Feeling Fine",insight:"The words landed correctly. The alarm didn't receive them.",origin:"Nervous system reassurance deficit.",themes:"unresolvable alarm · reassurance inaccessibility"}},
+          {label:"the relief that's real for about an hour", card:{tag:"Experience",title:"The Relief That's Real for About an Hour",insight:"The half-life of external reassurance.",origin:"Anxious attachment reassurance cycle.",themes:"temporary relief · reassurance decay"}}
+        ]
+      },
+      { label:"distance in love", card:{ tag:"Relationship", title:"Distance in Love", insight:"You are drawn to people who keep some distance and then spend the relationship trying to close it.", triggers:["someone who doesn't offer reassurance freely","avoidant partners","being loved in the way they know how"], origin:"The familiar pattern recreated with different faces.", themes:"recreating insecure attachment · chasing closeness · protest behavior" },
+        children:[
+          {label:"trying harder when they pull back", card:{tag:"Behavior",title:"Trying Harder When They Pull Back",insight:"Distance activated pursuit.",origin:"Protest behavior in anxious attachment.",themes:"protest behavior · pursuit · withdrawal activation"}},
+          {label:"misreading neutrality as rejection", card:{tag:"Experience",title:"Misreading Neutrality as Rejection",insight:"The neutral face had no neutral interpretation.",origin:"Negative attribution in attachment.",themes:"misinterpretation · hypervigilance"}},
+          {label:"feeling more in love when they come back after distance", card:{tag:"Experience",title:"Feeling More in Love When They Come Back After Distance",insight:"Intermittent reinforcement felt like love.",origin:"Inconsistent availability.",themes:"intermittent reinforcement · love under scarcity"}},
+          {label:"interpreting space as the beginning of the end", card:{tag:"Experience",title:"Interpreting Space as the Beginning of the End",insight:"Normal distance read as terminal.",origin:"Anxious attachment.",themes:"catastrophic interpretation · space as threat"}},
+          {label:"exhausting yourself to make someone consistently available", card:{tag:"Experience",title:"Exhausting Yourself to Make Someone Consistently Available",insight:"You were trying to solve an inconsistency that wasn't yours to solve.",origin:"Protest behavior.",themes:"protest behavior · depletion · unavailability"}}
+        ]
+      },
+      { label:"self-worth needing input", card:{ tag:"Pattern", title:"Self-Worth Needing Input", insight:"Internally generated worth is available, but thin. It needs external signal to hold its shape.", triggers:["absence of feedback","working in isolation","doing something important with no one watching"], origin:"Contexts where worth was always reflective—only visible in others' eyes.", themes:"mirror-dependent self-concept · reflected appraisal · worth without witness" },
+        children:[
+          {label:"feeling invisible when unrecognized", card:{tag:"Experience",title:"Feeling Invisible When Unrecognized",insight:"The acknowledgment was part of the experience.",origin:"Worth through recognition.",themes:"visibility-worth link · recognition dependency"}},
+          {label:"not knowing if something was good until told so", card:{tag:"Experience",title:"Not Knowing if Something Was Good Until Told So",insight:"Assessment outsourced to audience.",origin:"External locus of evaluation.",themes:"self-assessment deficit · external judgment"}},
+          {label:"the deflation of finishing something alone", card:{tag:"Experience",title:"The Deflation of Finishing Something Alone",insight:"Completion without witness felt incomplete.",origin:"Worth requiring reflection.",themes:"witnessed achievement · unwitnessed deflation"}},
+          {label:"not being able to hold belief in yourself between reassurances", card:{tag:"Experience",title:"Not Being Able to Hold Belief in Yourself Between Reassurances",insight:"The belief was real but had poor shelf life.",origin:"Worth requiring renewal.",themes:"belief decay · reassurance dependency"}},
+          {label:"needing someone in the room for the work to count", card:{tag:"Experience",title:"Needing Someone in the Room for the Work to Count",insight:"Witnessed effort felt real. Unwitnessed felt questionable.",origin:"Worth through observation.",themes:"work validation · witnessed value"}}
+        ]
+      },
+      { label:"after conflict resolution", card:{ tag:"Pattern", title:"After Conflict Resolution", insight:"Even when conflict has officially ended, your body hasn't received the message. You stay alert in the aftermath.", triggers:["a fight resolved with 'I'm fine'","the day after a hard conversation","rebuilding closeness after rupture"], origin:"Experiences where 'we're okay' was said before it was true.", themes:"post-conflict hypervigilance · trust repair deficit · alarm after resolution" },
+        children:[
+          {label:"monitoring for signs after being told it's resolved", card:{tag:"Behavior",title:"Monitoring for Signs After Being Told It's Resolved",insight:"The surveillance continued past the resolution.",origin:"Nervous system uncertainty.",themes:"post-resolution vigilance · continued monitoring"}},
+          {label:"asking 'are we really okay?' the next day", card:{tag:"Behavior",title:"Asking 'Are We Really Okay?' the Next Day",insight:"One confirmation wasn't enough.",origin:"Incomplete repair.",themes:"repeated reassurance seeking · trust deficit"}},
+          {label:"being extra careful for a week after an argument", card:{tag:"Behavior",title:"Being Extra Careful for a Week After an Argument",insight:"Behavioral insurance.",origin:"Rupture-repair uncertainty.",themes:"post-conflict caution · behavioral self-monitoring"}},
+          {label:"not trusting repair that came too easily", card:{tag:"Experience",title:"Not Trusting Repair That Came Too Easily",insight:"Fast resolution felt suspicious.",origin:"History of false resolution.",themes:"repair distrust · fast resolution suspicion"}},
+          {label:"the return of normal feeling like a trap", card:{tag:"Experience",title:"The Return of Normal Feeling Like a Trap",insight:"The good felt precarious.",origin:"Hypervigilance after repair.",themes:"normalcy distrust · precarious positive"}}
+        ]
+      }
+    ]
+  }
+];
+
+// ══════════════════════════════════════════════════════════
+//  THREE.JS SETUP
+// ══════════════════════════════════════════════════════════
+const W = window.innerWidth, H = window.innerHeight;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x01000c);
+scene.fog = new THREE.FogExp2(0x01000c, 0.010);
+const camera = new THREE.PerspectiveCamera(50, W / H, 0.1, 300);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(W, H);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.45;
+document.body.appendChild(renderer.domElement);
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(W, H), 2.6, 0.52, 0.0);
+composer.addPass(bloom);
+
+// ══════════════════════════════════════════════════════════
+//  PALETTE
+// ══════════════════════════════════════════════════════════
+const C = {
+  deep:new THREE.Color(0x2e0060),violet:new THREE.Color(0x5b21b6),
+  purple:new THREE.Color(0x7c3aed),lav:new THREE.Color(0xa78bfa),
+  light:new THREE.Color(0xc4b5fd),blue:new THREE.Color(0x3730a3),
+  indigo:new THREE.Color(0x4f46e5),sky:new THREE.Color(0x6366f1),
+  white:new THREE.Color(0xe0d7ff),bright:new THREE.Color(0xffffff),
+  pink:new THREE.Color(0x8b5cf6),
+};
+const FIL  = [C.deep,C.violet,C.violet,C.purple,C.blue,C.indigo,C.sky,C.lav];
+const MAIN = [C.purple,C.lav,C.light,C.sky,C.white,C.pink,C.indigo];
+
+// ── Light mode palettes — vivid neon-glow style matching the reference image ──
+// Mesh 0 (core) stays white in both modes so it blooms. LM_MAIN is for mesh 1 (body).
+// These are saturated pink/violet/rose hues that read strongly via NormalBlending on #f4f4f6.
+const LM_MAIN = [
+  new THREE.Color(0xd060a0),  // vivid pink-rose
+  new THREE.Color(0x9a66d8),  // vivid violet
+  new THREE.Color(0x6682cc),  // vivid blue-violet
+  new THREE.Color(0xe058b8),  // vivid magenta-rose
+  new THREE.Color(0x8858cc),  // vivid purple
+  new THREE.Color(0xcc60e0),  // vivid magenta-violet
+  new THREE.Color(0x8878d0),  // vivid violet-blue
+];
+// Filler strands: medium-saturation colors — visible but lighter than main strands
+const LM_FIL = [
+  new THREE.Color(0xc87aaa),  // medium rose
+  new THREE.Color(0xa898d8),  // medium lavender
+  new THREE.Color(0x88a8d0),  // medium blue-grey
+  new THREE.Color(0xc890b0),  // medium blush
+  new THREE.Color(0x98a8d0),  // medium blue
+  new THREE.Color(0xb890cc),  // medium mauve
+  new THREE.Color(0x88a8b8),  // medium slate
+  new THREE.Color(0xbc90b4),  // medium blush-grey
+];
+
+let lightMode = false; // theme state — toggled by setTheme()
+
+// ══════════════════════════════════════════════════════════
+//  CONSTANTS & EASING
+// ══════════════════════════════════════════════════════════
+const ROOT=new THREE.Vector3(-15,0,0), BX=[-15,0,15,28];
+const isMobile = window.innerWidth < 768;
+const CAM_Z_NEAR = isMobile ? 6   : 4.5;
+const CAM_Z_FAR  = isMobile ? 32  : 22;
+const MAX_YAW=0.20, MAX_PITCH=0.13;
+const easeOutCubic   = t => 1-Math.pow(1-t,3);
+const easeInOutQuad  = t => t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
+const easeOutExpo    = t => t===1?1:1-Math.pow(2,-10*t);
+const easeInOutCubic = t => t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
+
+// Dot colour per card tag — dark mode
+const DOT_COLOR = {
+  'Emotional force':'#e879f9', 'Pattern':'#f472b6',  'Trigger':'#fb923c',
+  'Relationship':   '#818cf8', 'Context':'#818cf8',   'Origin':'#a78bfa',
+  'Moment':         '#c084fc', 'Experience':'#a78bfa','Behavior':'#6ee7b7',
+  'Realization':    '#fbbf24', 'Decision':'#60a5fa',  'Learning':'#34d399',
+  'Role':           '#f472b6', 'Skill':'#34d399',
+};
+// Light mode dot colours — muted, from the orb reference palette
+const DOT_COLOR_LIGHT = {
+  'Emotional force':'#b85870', 'Pattern':'#c07090',  'Trigger':'#c07838',
+  'Relationship':   '#6070b8', 'Context':'#6878b0',  'Origin':'#9068a8',
+  'Moment':         '#9865b0', 'Experience':'#9068a8','Behavior':'#4e9870',
+  'Realization':    '#c09030', 'Decision':'#4878a8',  'Learning':'#3a8060',
+  'Role':           '#b06080', 'Skill':'#3a8060',
+};
+function dotColor(tag){ return (lightMode ? DOT_COLOR_LIGHT : DOT_COLOR)[tag] || (lightMode?'#9068a8':'#a78bfa'); }
+
+// Frame the camera squarely on the active generation (endX cluster).
+// endX lands at ~60 % from the left edge — slightly right of centre so labels
+// have natural breathing room on the right and incoming strands appear as
+// context on the left without competing equally for focus.
+// The previous generation is not explicitly kept in view; it recedes naturally.
+function camScrollTarget(origX, endX){
+  const fovRad = 50 * Math.PI / 180;
+  const halfW  = CAM_Z_FAR * Math.tan(fovRad / 2) * (window.innerWidth / window.innerHeight);
+  // NDC offset: 0.20 puts endX at 60 % from left (NDC = 0.20 → screen = 60 %)
+  return endX - halfW * 0.20;
+}
+
+const rnd=(a,b)=>a+Math.random()*(b-a), pick=a=>a[Math.floor(Math.random()*a.length)];
+const clamp=(v,lo,hi)=>v<lo?lo:v>hi?hi:v, lerp=(a,b,t)=>a+(b-a)*t;
+function mkMat(c,o,l=false){
+  if(l)return new THREE.LineBasicMaterial({color:c,transparent:true,opacity:o,blending:THREE.AdditiveBlending,depthWrite:false});
+  return new THREE.MeshBasicMaterial({color:c,transparent:true,opacity:o,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide});
+}
+
+// ══════════════════════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════════════════════
+const strands=[], clickable=[], sparks=[];
+let depth=0, layerDone=[false,false,false], selBranch=[null,null];
+
+// Camera
+let scrollX=ROOT.x, scrollV=0, lookY=0, lookYTgt=0, camZ=CAM_Z_NEAR;
+let orbYaw=0,orbYawTgt=0,orbPit=0,orbPitTgt=0;
+let drag=false,dragLX=0,dragLY=0,dragMoved=0;
+const introEndX = camScrollTarget(ROOT.x, BX[1]);
+// Two-phase intro: camZ pulls back first, scrollX follows with a slight delay
+let intro={
+  active:false, timer:0,
+  delay:    0.35,   // still moment before anything moves
+  zDuration:2.6,    // camZ pull-back (easeOutExpo — fast lift then settles)
+  xDelay:   0.9,    // scrollX starts this many seconds after camZ
+  xDuration:2.8,    // scrollX pan (easeInOutCubic — graceful arc)
+  startX:ROOT.x, endX:introEndX,
+  startZ:CAM_Z_NEAR, endZ:CAM_Z_FAR,
+};
+let tran=null;
+
+// Labels
+const labelLayer=document.getElementById('label-layer');
+const labelMap=new Map();
+// "You" root label — pill style
+const rootLabel=document.createElement('div');
+rootLabel.className='node-label root-label';
+const rootDot=document.createElement('span'); rootDot.className='node-label-dot';
+rootDot.style.cssText='background:#c4b5fd;color:#c4b5fd;width:7px;height:7px;';
+const rootText=document.createTextNode('you');
+rootLabel.appendChild(rootDot); rootLabel.appendChild(rootText);
+labelLayer.appendChild(rootLabel);
+
+// Card
+const cardEl=document.getElementById('card');
+
+// ══════════════════════════════════════════════════════════
+//  NEON CANVAS (light mode main-strand rendering)
+// ══════════════════════════════════════════════════════════
+// In light mode, main strands are drawn here instead of via Three.js tubes.
+// Two passes only:
+//   1. Colored stroke with heavy shadowBlur — the blur IS the soft glow falloff.
+//      No hard edges, genuine Gaussian spread, atmospheric fade.
+//   2. Tapered white core on top — incandescent center, tapers to a point at both ends.
+const neonCanvas = document.getElementById('neon-canvas');
+const neonCtx    = neonCanvas.getContext('2d');
+function resizeNeonCanvas(){ neonCanvas.width=window.innerWidth; neonCanvas.height=window.innerHeight; }
+resizeNeonCanvas();
+
+function strandRGB(s){ const c=s.lightCols[2]; return [c.r*255|0, c.g*255|0, c.b*255|0]; }
+
+function drawNeonStrand(s){
+  if(s.gone)return;
+  const aMul = s.closing ? s.closingAlpha : 1.0;
+  if(aMul<0.02)return;
+  const maxT=Math.min(s.progress,1.0);
+  if(maxT<0.01)return;
+
+  const W=window.innerWidth, H=window.innerHeight, N=32;
+  const pts=[];
+  for(let i=0;i<=N;i++){
+    const t=(i/N)*maxT;
+    const p=s.curve.getPointAt(t);
+    const v=p.clone().project(camera);
+    if(v.z>1)return;
+    pts.push([(v.x*.5+.5)*W,(-v.y*.5+.5)*H]);
+  }
+  if(pts.length<2)return;
+
+  const [r,g,b]=strandRGB(s);
+  neonCtx.lineCap='round'; neonCtx.lineJoin='round';
+
+  // ── Pass 1: colored atmospheric glow ──────────────────
+  // Single full-path stroke with shadowBlur — the blurred shadow IS the halo.
+  // No bands, no hard contour: just a Gaussian soft spread of the vivid color.
+  neonCtx.save();
+  neonCtx.shadowBlur  = 22;
+  neonCtx.shadowColor = `rgba(${r},${g},${b},${(.92*aMul).toFixed(3)})`;
+  neonCtx.strokeStyle = `rgba(${r},${g},${b},${(.28*aMul).toFixed(3)})`;
+  neonCtx.lineWidth   = 2.2;
+  neonCtx.beginPath();
+  pts.forEach(([x,y],i)=>i===0?neonCtx.moveTo(x,y):neonCtx.lineTo(x,y));
+  neonCtx.stroke();
+  neonCtx.restore();
+
+  // ── Pass 2: white incandescent core ───────────────────
+  // Per-segment for taper; minimal shadowBlur just slightly softens the edge.
+  neonCtx.save();
+  neonCtx.shadowBlur  = 4;
+  neonCtx.shadowColor = `rgba(255,242,255,${(.55*aMul).toFixed(3)})`;
+  for(let i=1;i<pts.length;i++){
+    const tMid=(i-.5)/(pts.length-1);
+    const tap=Math.pow(Math.sin(tMid*Math.PI),.52);
+    neonCtx.beginPath();
+    neonCtx.moveTo(pts[i-1][0],pts[i-1][1]); neonCtx.lineTo(pts[i][0],pts[i][1]);
+    neonCtx.strokeStyle=`rgba(255,252,255,${(.90*aMul).toFixed(3)})`;
+    neonCtx.lineWidth=1.6*tap;
+    neonCtx.stroke();
+  }
+  neonCtx.restore();
+}
+
+// ══════════════════════════════════════════════════════════
+//  SOFT GLOW SPRITES
+// ══════════════════════════════════════════════════════════
+function makeGlowTex(inner,outer,size=128){
+  const c=document.createElement('canvas'); c.width=c.height=size;
+  const ctx=c.getContext('2d'), g=ctx.createRadialGradient(size/2,size/2,0,size/2,size/2,size/2);
+  g.addColorStop(0,inner); g.addColorStop(.18,outer.replace('1)','0.55)'));
+  g.addColorStop(.5,outer.replace('1)','0.18)')); g.addColorStop(1,outer.replace('1)','0)'));
+  ctx.fillStyle=g; ctx.fillRect(0,0,size,size); return new THREE.CanvasTexture(c);
+}
+const glowTexCore=makeGlowTex('rgba(255,245,255,1)','rgba(200,160,255,1)');
+const glowTexEndpt=makeGlowTex('rgba(240,230,255,1)','rgba(140,100,240,1)');
+
+// Light mode terminal halo: soft filled disc — NormalBlending creates a visible
+// colored halo on the light background without additive white-washing.
+function makeGlowDiscLight(color='rgba(210,80,160,1)',size=160){
+  const c=document.createElement('canvas'); c.width=c.height=size;
+  const ctx=c.getContext('2d');
+  const g=ctx.createRadialGradient(size/2,size/2,0,size/2,size/2,size/2);
+  g.addColorStop(0,    color.replace('1)','0.0)'));   // transparent center (core shows through)
+  g.addColorStop(0.18, color.replace('1)','0.0)'));
+  g.addColorStop(0.38, color.replace('1)','0.62)'));  // peak glow ring
+  g.addColorStop(0.62, color.replace('1)','0.28)'));
+  g.addColorStop(0.85, color.replace('1)','0.08)'));
+  g.addColorStop(1,    color.replace('1)','0.0)'));
+  ctx.fillStyle=g; ctx.fillRect(0,0,size,size); return new THREE.CanvasTexture(c);
+}
+const glowTexRing=makeGlowDiscLight();
+function mkSprite(tex,color,opacity,worldSize){
+  const s=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,color,transparent:true,opacity,blending:THREE.AdditiveBlending,depthWrite:false}));
+  s.scale.setScalar(worldSize); return s;
+}
+
+// Root glow — refs stored for theme switching
+const rootGlowCore=new THREE.Mesh(new THREE.SphereGeometry(.09,8,8),mkMat(C.bright,.92)); rootGlowCore.position.copy(ROOT); scene.add(rootGlowCore);
+const rootGlowAura=mkSprite(glowTexCore,0xb89aff,.22,1.8); rootGlowAura.position.copy(ROOT); scene.add(rootGlowAura);
+
+// ══════════════════════════════════════════════════════════
+//  TAPERED TUBE GEOMETRY
+// ══════════════════════════════════════════════════════════
+function taperedTube(curve,segments,maxR,radSeg,taperExp){
+  const frames=curve.computeFrenetFrames(segments,false);
+  const pos=new Float32Array((segments+1)*(radSeg+1)*3), uv=new Float32Array((segments+1)*(radSeg+1)*2), idx=[];
+  let pi=0,ui=0;
+  for(let i=0;i<=segments;i++){
+    const t=i/segments, r=maxR*Math.pow(Math.sin(t*Math.PI),taperExp);
+    const p=curve.getPointAt(t), N=frames.normals[i], B=frames.binormals[i];
+    for(let j=0;j<=radSeg;j++){const a=(j/radSeg)*Math.PI*2,ca=Math.cos(a),sa=Math.sin(a);
+      pos[pi++]=p.x+r*(ca*N.x+sa*B.x); pos[pi++]=p.y+r*(ca*N.y+sa*B.y); pos[pi++]=p.z+r*(ca*N.z+sa*B.z);
+      uv[ui++]=t; uv[ui++]=j/radSeg;
+    }
+  }
+  for(let i=0;i<segments;i++)for(let j=0;j<radSeg;j++){
+    const a=(radSeg+1)*i+j,b=(radSeg+1)*(i+1)+j; idx.push(a,b,a+1,b,b+1,a+1);
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.BufferAttribute(pos,3)); g.setAttribute('uv',new THREE.BufferAttribute(uv,2)); g.setIndex(idx); return g;
+}
+
+// ══════════════════════════════════════════════════════════
+//  CURVE BUILDER
+// ══════════════════════════════════════════════════════════
+function buildCurve(s,e){
+  const dx=e.x-s.x;
+  return new THREE.CatmullRomCurve3([s.clone(),
+    new THREE.Vector3(s.x+dx*rnd(.06,.20),s.y+(e.y-s.y)*rnd(.01,.10)+rnd(-1.2,1.2),s.z+rnd(-1.5,1.5)),
+    new THREE.Vector3(s.x+dx*rnd(.38,.60),s.y+(e.y-s.y)*rnd(.32,.68)+rnd(-2,2),(s.z+e.z)*.5+rnd(-2,2)),
+    new THREE.Vector3(s.x+dx*rnd(.78,.94),e.y+rnd(-.6,.6),e.z*rnd(.55,1)),
+    e.clone()],false,'catmullrom',.5);
+}
+
+// ══════════════════════════════════════════════════════════
+//  STRAND FACTORY
+// ══════════════════════════════════════════════════════════
+function makeStrand(origin,endpoint,{layer,kind,delay,nodeData}){
+  const curve=buildCurve(origin,endpoint), geos=[], meshes=[], baseOps=[], baseCols=[], lightCols=[], lightOps=[];
+  if(kind==='main'){
+    const ci=Math.floor(Math.random()*MAIN.length);
+    const color=MAIN[ci], lc=LM_MAIN[ci%LM_MAIN.length];
+    const rad=rnd(.013,.022),op=rnd(.68,.90),SEG=80;
+    // Light mode luminous structure (matches the YOU root node):
+    //   lightCols[0] = white           — incandescent inner core
+    //   lightCols[1] = near-white tint — body stays pale/almost-white (88% white + 12% vivid)
+    //   lightCols[2] = vivid LM_MAIN   — color only emerges in the wide outer falloff
+    const lcPale = lc.clone().lerp(new THREE.Color(1,1,1), 0.88); // near-white with subtle hue
+    [{c:C.bright, lc:C.bright, o:op*.78, lo:0.92, r:rad*.20, rs:4, exp:.50},
+     {c:color,    lc:lcPale,   o:op,     lo:0.42, r:rad,     rs:4, exp:.55},
+     {c:color,    lc:lc,       o:op*.052,lo:0.16, r:rad*7,   rs:4, exp:.55}
+    ].forEach(({c,lc:lco,o,lo,r,rs,exp})=>{
+      const g=taperedTube(curve,SEG,r,rs,exp); g.setDrawRange(0,0);
+      const m=new THREE.Mesh(g,mkMat(c,o)); scene.add(m);
+      geos.push(g); meshes.push(m); baseOps.push(o); baseCols.push(c.clone()); lightCols.push(lco.clone()); lightOps.push(lo);
+    });
+  } else if(kind==='thick'){
+    const ci=Math.floor(Math.random()*FIL.length);
+    const color=FIL[ci], lc=LM_FIL[ci%LM_FIL.length];
+    const rad=rnd(.004,.010),op=rnd(.22,.52),SEG=45;
+    [{c:color,lc:lc,o:op,    lo:op*.55,r:rad,  exp:.50},
+     {c:color,lc:lc,o:op*.044,lo:0.022, r:rad*5,exp:.50}
+    ].forEach(({c,lc:lco,o,lo,r,exp})=>{
+      const g=taperedTube(curve,SEG,r,3,exp); g.setDrawRange(0,0);
+      const m=new THREE.Mesh(g,mkMat(c,o)); scene.add(m);
+      geos.push(g); meshes.push(m); baseOps.push(o); baseCols.push(c.clone()); lightCols.push(lco.clone()); lightOps.push(lo);
+    });
+  } else {
+    const ci=Math.floor(Math.random()*FIL.length);
+    const color=FIL[ci], lc=LM_FIL[ci%LM_FIL.length];
+    const op=rnd(.09,.28),PTS=68;
+    const g=new THREE.BufferGeometry().setFromPoints(curve.getPoints(PTS)); g.setDrawRange(0,0);
+    const m=new THREE.Line(g,mkMat(color,op,true)); scene.add(m);
+    geos.push(g); meshes.push(m); baseOps.push(op); baseCols.push(color.clone()); lightCols.push(lc.clone()); lightOps.push(op*.42);
+  }
+  const s={curve,endPt:endpoint.clone(),layer,kind,geos,meshes,
+    baseOps,baseCols,lightCols,lightOps,
+    nodeData:nodeData||null,
+    progress:0,growing:false,done:false,delay:delay??rnd(0,.60),duration:rnd(.85,1.65),
+    timer:0,isLine:kind==='thin',termCore:null,termHalo:null,hitMesh:null,
+    closing:false,closingAlpha:1,closingOps:null,gone:false};
+  // If already in light mode, immediately apply light theme to the new strand
+  if(lightMode){
+    const bl=THREE.NormalBlending;
+    meshes.forEach((m,i)=>{
+      if(lightCols[i]) m.material.color.copy(lightCols[i]);
+      m.material.opacity=lightOps[i]; m.material.blending=bl; m.material.needsUpdate=true;
+      if(kind==='main') m.visible=false; // canvas draws main strands in light mode
+    });
+  }
+  strands.push(s); return s;
+}
+
+// ══════════════════════════════════════════════════════════
+//  FAN GENERATOR (accepts content array for main strands)
+// ══════════════════════════════════════════════════════════
+function spawnFan(origin,endX,{nThick,nThin},layerN,contentArray){
+  const nMain=contentArray?contentArray.length:0;
+  const dx=endX-origin.x, halfY=9.0, halfZ=5.5;
+  const mains=[];
+  for(let i=0;i<nMain;i++){
+    const t=nMain===1?.5:i/(nMain-1);
+    const angle=(t-.5)*2*(Math.PI*.244);
+    const yEnd=origin.y+Math.tan(angle)*dx*rnd(.80,.97);
+    const zEnd=origin.z+rnd(-halfZ*.60,halfZ*.60);
+    const s=makeStrand(origin,new THREE.Vector3(endX,yEnd,zEnd),
+      {layer:layerN,kind:'main',delay:rnd(0,.30),nodeData:contentArray[i]});
+    mains.push(s);
+  }
+  for(let i=0;i<nThick;i++){
+    const raw=(i/(nThick-1)-.5)*2;
+    const angle=Math.sign(raw)*Math.pow(Math.abs(raw),.65)*Math.PI*.36;
+    const reach=rnd(.58,1.02), len=dx*reach;
+    const yEnd=origin.y+Math.tan(angle)*len+rnd(-1.4,1.4), zEnd=origin.z+rnd(-halfZ,halfZ);
+    makeStrand(origin,new THREE.Vector3(origin.x+len,yEnd,zEnd),{layer:layerN,kind:'thick',delay:rnd(0,.70)});
+  }
+  for(let i=0;i<nThin;i++){
+    const angle=rnd(-Math.PI*.42,Math.PI*.42), zAngle=rnd(-.35,.35), len=dx*rnd(.30,1.05);
+    const yEnd=origin.y+Math.tan(angle)*len*rnd(.30,.65), zEnd=origin.z+Math.tan(zAngle)*len+rnd(-halfZ*.5,halfZ*.5);
+    makeStrand(origin,new THREE.Vector3(origin.x+len,yEnd,zEnd),{layer:layerN,kind:'thin',delay:rnd(0,.80)});
+  }
+  return mains;
+}
+
+// ══════════════════════════════════════════════════════════
+//  TERMINAL NODES & LABELS
+// ══════════════════════════════════════════════════════════
+function addTerminal(strand){
+  const p=strand.endPt;
+  const core=new THREE.Mesh(new THREE.SphereGeometry(.045,6,6),mkMat(C.bright,.88)); core.position.copy(p); scene.add(core);
+  const aura=mkSprite(glowTexEndpt,0x9b7dff,.28,.75); aura.position.copy(p); scene.add(aura);
+  const hit=new THREE.Mesh(new THREE.SphereGeometry(.55,7,7),new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false}));
+  hit.position.copy(p); scene.add(hit);
+  strand.termCore=core; strand.termHalo=aura; strand.hitMesh=hit;
+  if(strand.layer<3) clickable.push({hit,strand});
+  else clickable.push({hit,strand}); // L3 still clickable for card
+  // Label
+  if(strand.nodeData){
+    const el=document.createElement('div'); el.className='node-label';
+    // Dot
+    const dot=document.createElement('span'); dot.className='node-label-dot';
+    const dc=dotColor(strand.nodeData.card?.tag||'');
+    dot.style.cssText=`background:${dc};color:${dc};box-shadow:0 0 5px ${dc};`;
+    el.appendChild(dot);
+    // Text
+    el.appendChild(document.createTextNode(strand.nodeData.label));
+    labelLayer.appendChild(el);
+    labelMap.set(strand,el);
+  }
+}
+
+function addSparks(strand){
+  for(let i=0;i<1+Math.floor(Math.random()*2);i++){
+    const m=new THREE.Mesh(new THREE.SphereGeometry(.038,6,6),mkMat(C.bright,.85)); scene.add(m);
+    sparks.push({strand,t:Math.random(),speed:rnd(.07,.20),mesh:m});
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+//  GROW ENGINE
+// ══════════════════════════════════════════════════════════
+function growStrand(s,dt){
+  if(!s.growing||s.done||s.closing||s.gone)return;
+  s.timer+=dt; if(s.timer<s.delay)return;
+  s.progress=Math.min(1,(s.timer-s.delay)/s.duration);
+  s.geos.forEach(g=>{const total=s.isLine?g.attributes.position.count:g.index.count; g.setDrawRange(0,Math.floor(total*s.progress));});
+  if(s.progress>=1&&!s.done){s.done=true; s.growing=false; if(s.kind==='main'){addTerminal(s); addSparks(s);}}
+}
+function checkLayerDone(n){const ls=strands.filter(s=>s.layer===n&&!s.gone); return ls.length>0&&ls.every(s=>s.done||s.closing);}
+
+// ══════════════════════════════════════════════════════════
+//  CLOSE LAYER
+// ══════════════════════════════════════════════════════════
+function closeLayer(n){
+  if(depth<n)return;
+  for(let i=clickable.length-1;i>=0;i--){
+    if(clickable[i].strand.layer!==n)continue;
+    const{hit,strand}=clickable[i]; scene.remove(hit);
+    [strand.termCore,strand.termHalo].forEach(m=>m&&scene.remove(m));
+    // Remove label
+    const el=labelMap.get(strand); if(el){el.remove(); labelMap.delete(strand);}
+    clickable.splice(i,1);
+  }
+  strands.filter(s=>s.layer===n&&!s.gone).forEach(s=>{s.closing=true; s.closingAlpha=1; s.closingOps=s.meshes.map(m=>m.material.opacity);});
+  depth=n-1; layerDone[n-1]=false;
+  if(n===2){selBranch[0]=null; lookYTgt=0;}
+  else if(n===3){selBranch[1]=null; lookYTgt=selBranch[0]?selBranch[0].endPt.y*.40:0;}
+  document.getElementById('layer-ui').textContent=depth>0?`LAYER ${depth} · 3`:'LAYER 1 · 3';
+  hideCard();
+}
+
+// ══════════════════════════════════════════════════════════
+//  CARD SYSTEM
+// ══════════════════════════════════════════════════════════
+function showCard(nodeData){
+  if(!nodeData)return;
+  const cd=nodeData.card; if(!cd)return;
+  document.getElementById('card-tag').textContent=cd.tag||'';
+  document.getElementById('card-title').textContent=cd.title||'';
+  document.getElementById('card-insight').textContent=cd.insight||cd.note||'';
+  // Triggers
+  const tEl=document.getElementById('card-triggers'); tEl.innerHTML='';
+  if(cd.triggers&&cd.triggers.length){
+    cd.triggers.forEach(t=>{const li=document.createElement('li'); li.textContent=t; tEl.appendChild(li);});
+    document.getElementById('card-s-triggers').style.display='';
+  } else { document.getElementById('card-s-triggers').style.display='none'; }
+  // Origin
+  if(cd.origin){ document.getElementById('card-origin').textContent=cd.origin; document.getElementById('card-s-origin').style.display=''; }
+  else document.getElementById('card-s-origin').style.display='none';
+  // Themes
+  if(cd.themes){ document.getElementById('card-themes').textContent=cd.themes; document.getElementById('card-s-themes').style.display=''; }
+  else document.getElementById('card-s-themes').style.display='none';
+  // Divider
+  document.getElementById('card-div1').style.display=(cd.origin||cd.themes)?'':'none';
+  // Mobile → peek (collapsed teaser); desktop → open
+  if(isMobile){
+    cardEl.classList.remove('open');
+    cardEl.classList.add('peek');
+  } else {
+    cardEl.classList.remove('peek');
+    cardEl.classList.add('open');
+  }
+}
+function hideCard(){ cardEl.classList.remove('open','peek'); }
+document.getElementById('card-close').addEventListener('click',()=>hideCard());
+// Card handle: toggle peek ↔ open on mobile
+document.getElementById('card-handle').addEventListener('click',e=>{
+  e.stopPropagation();
+  if(cardEl.classList.contains('open')){
+    cardEl.classList.remove('open'); cardEl.classList.add('peek');
+  } else if(cardEl.classList.contains('peek')){
+    cardEl.classList.remove('peek'); cardEl.classList.add('open');
+  }
+});
+// Tap the peeking strip (tag + title area) to expand
+cardEl.addEventListener('click',e=>{
+  if(cardEl.classList.contains('peek')){
+    cardEl.classList.remove('peek'); cardEl.classList.add('open');
+  }
+});
+
+// ══════════════════════════════════════════════════════════
+//  TRANSITION + LAYER OPENERS
+// ══════════════════════════════════════════════════════════
+function startTransition({endX,endY=0,duration=1.25,branchDelay=.55,branchFn}){
+  tran={timer:0,duration,startX:scrollX,endX,startY:lookY,endY,branchDelay,branchFired:false,branchFn,done:false};
+  scrollV=0;
+}
+
+function openLayer1(){
+  if(depth>=1)return; depth=1;
+  spawnFan(ROOT,BX[1],{nThick:42,nThin:52},1,DATA);
+  strands.filter(s=>s.layer===1).forEach(s=>s.growing=true);
+  intro.active=true; intro.timer=0;
+  // Cinematic dissolve-from-black
+  requestAnimationFrame(()=>document.getElementById('fade-overlay').classList.add('fading'));
+}
+
+// Highlight selected strand differently in each theme
+function highlightStrand(parent){
+  if(lightMode){
+    parent.meshes.slice(0,2).forEach(m=>{m.material.opacity=Math.min(.95,m.material.opacity*1.22);});
+  } else {
+    parent.meshes.slice(0,2).forEach((m,i)=>{m.material.opacity=Math.min(1,m.material.opacity*(i===0?1.9:1.5)); m.material.color.lerp(C.bright,.35);});
+  }
+}
+
+function openLayer2(parent){
+  if(depth>=2)return; depth=2; selBranch[0]=parent;
+  highlightStrand(parent);
+  const orig=parent.endPt, l2Data=parent.nodeData?.children;
+  document.getElementById('layer-ui').textContent='LAYER 2 · 3';
+  showCard(parent.nodeData);
+  const tgtX = camScrollTarget(orig.x, BX[2]);
+  startTransition({endX:tgtX, endY:orig.y*.42, duration:1.3, branchDelay:.55,
+    branchFn:()=>{
+      lookYTgt=orig.y*.42;
+      spawnFan(orig,BX[2],{nThick:28,nThin:36},2,l2Data||[]);
+      strands.filter(s=>s.layer===2).forEach(s=>s.growing=true);
+    }});
+}
+
+function openLayer3(parent){
+  if(depth>=3)return; depth=3; selBranch[1]=parent;
+  highlightStrand(parent);
+  const orig=parent.endPt, l3Data=parent.nodeData?.children;
+  document.getElementById('layer-ui').textContent='LAYER 3 · 3';
+  showCard(parent.nodeData);
+  const tgtX = camScrollTarget(orig.x, BX[3]);
+  startTransition({endX:tgtX, endY:orig.y*.35, duration:1.2, branchDelay:.50,
+    branchFn:()=>{
+      lookYTgt=orig.y*.35;
+      spawnFan(orig,BX[3],{nThick:20,nThin:26},3,l3Data||[]);
+      strands.filter(s=>s.layer===3).forEach(s=>s.growing=true);
+    }});
+}
+
+// ══════════════════════════════════════════════════════════
+//  AMBIENT PARTICLES
+// ══════════════════════════════════════════════════════════
+let particlesMesh;
+{const N=550,pos=new Float32Array(N*3),cols=new Float32Array(N*3);
+for(let i=0;i<N;i++){pos[i*3]=rnd(ROOT.x-4,BX[3]+6);pos[i*3+1]=rnd(-14,14);pos[i*3+2]=rnd(-12,12);const c=pick([...FIL,...MAIN]);cols[i*3]=c.r;cols[i*3+1]=c.g;cols[i*3+2]=c.b;}
+const geo=new THREE.BufferGeometry(); geo.setAttribute('position',new THREE.BufferAttribute(pos,3)); geo.setAttribute('color',new THREE.BufferAttribute(cols,3));
+particlesMesh=new THREE.Points(geo,new THREE.PointsMaterial({size:.042,transparent:true,opacity:.22,vertexColors:true,blending:THREE.AdditiveBlending,depthWrite:false}));
+scene.add(particlesMesh);}
+
+// ══════════════════════════════════════════════════════════
+//  RAYCASTER / INPUT
+// ══════════════════════════════════════════════════════════
+const ray=new THREE.Raycaster(), mouse=new THREE.Vector2();
+
+window.addEventListener('click',e=>{
+  if(dragMoved>10)return;
+  mouse.set((e.clientX/window.innerWidth)*2-1,-(e.clientY/window.innerHeight)*2+1);
+  ray.setFromCamera(mouse,camera);
+  const hits=ray.intersectObjects(clickable.map(c=>c.hit),false);
+  if(!hits.length)return;
+  const ct=clickable.find(c=>c.hit===hits[0].object); if(!ct)return;
+  const sl=ct.strand.layer;
+
+  if(sl===3){
+    // Leaf node — always just show card
+    showCard(ct.strand.nodeData);
+  } else if(sl===2){
+    // Close L3 if a different L2 node was selected (or L3 already open)
+    if(depth>=3) closeLayer(3);
+    // Now open L3 from this L2 — guard inside openLayer3 handles double-open
+    if(layerDone[1]) openLayer3(ct.strand);
+  } else if(sl===1){
+    // Close any open deeper layers first, then open L2 from this L1 node
+    if(depth>=3) closeLayer(3);
+    if(depth>=2) closeLayer(2);
+    if(layerDone[0]) openLayer2(ct.strand);
+  }
+});
+
+window.addEventListener('mousedown',e=>{drag=true;dragLX=e.clientX;dragLY=e.clientY;dragMoved=0;});
+window.addEventListener('mousemove',e=>{
+  if(!drag)return;
+  dragMoved+=Math.abs(e.movementX)+Math.abs(e.movementY);
+  orbYawTgt=clamp(orbYawTgt+(e.clientX-dragLX)*.0030,-MAX_YAW,MAX_YAW);
+  orbPitTgt=clamp(orbPitTgt+(e.clientY-dragLY)*.0022,-MAX_PITCH,MAX_PITCH);
+  dragLX=e.clientX; dragLY=e.clientY;
+});
+window.addEventListener('mouseup',()=>{drag=false;dragMoved=0;orbYawTgt=0;orbPitTgt=0;});
+window.addEventListener('wheel',e=>{e.preventDefault();scrollV+=e.deltaY*.0026;},{passive:false});
+let tX0=0, tY0=0, tMoved=0;
+window.addEventListener('touchstart',e=>{
+  tX0=e.touches[0].clientX; tY0=e.touches[0].clientY; tMoved=0; dragMoved=0;
+},{passive:true});
+window.addEventListener('touchmove',e=>{
+  e.preventDefault();
+  const dx=e.touches[0].clientX-tX0, dy=e.touches[0].clientY-tY0;
+  tMoved+=Math.abs(dx)+Math.abs(dy);
+  // Horizontal → scroll; tiny vertical → orbit pitch
+  scrollV-=dx*.005;
+  orbPitTgt=clamp(orbPitTgt+dy*.0010,-MAX_PITCH,MAX_PITCH);
+  tX0=e.touches[0].clientX; tY0=e.touches[0].clientY;
+},{passive:false});
+window.addEventListener('touchend',e=>{
+  orbPitTgt=0;
+  // Tap (< 10px movement) → fire a synthetic click for raycasting
+  if(tMoved<10){
+    const t=e.changedTouches[0];
+    const syn=new MouseEvent('click',{clientX:t.clientX,clientY:t.clientY,bubbles:true});
+    dragMoved=0;
+    window.dispatchEvent(syn);
+  }
+  dragMoved=0;
+},{passive:true});
+
+// ══════════════════════════════════════════════════════════
+//  LABEL UPDATER
+// ══════════════════════════════════════════════════════════
+function updateLabels(t){
+  // Root label
+  const rv=ROOT.clone().project(camera);
+  rootLabel.style.left=((rv.x*.5+.5)*window.innerWidth)+'px';
+  rootLabel.style.top=((-rv.y*.5+.5)*window.innerHeight)+'px';
+  rootLabel.classList.toggle('visible',rv.z<1);
+
+  labelMap.forEach((el,strand)=>{
+    if(strand.gone||strand.closing){el.classList.remove('visible');return;}
+    if(!strand.done){el.classList.remove('visible');return;}
+    const v=strand.endPt.clone().project(camera);
+    // Hide label when node is behind camera or outside NDC [-1,1] horizontally
+    if(v.z>1||v.x<-1||v.x>1){el.classList.remove('visible');return;}
+    el.style.left=((v.x*.5+.5)*window.innerWidth)+'px';
+    el.style.top=((-v.y*.5+.5)*window.innerHeight)+'px';
+    el.classList.add('visible');
+  });
+}
+
+// ══════════════════════════════════════════════════════════
+//  THEME SYSTEM
+// ══════════════════════════════════════════════════════════
+function setTheme(isLight){
+  lightMode = isLight;
+  const overlay = document.getElementById('fade-overlay');
+  overlay.style.background = isLight ? 'rgba(244,244,246,0.95)' : 'rgba(0,0,4,0.95)';
+  overlay.style.transition  = 'opacity 0.32s ease';
+  overlay.style.opacity     = '1';
+
+  setTimeout(()=>{
+    const bl = isLight ? THREE.NormalBlending : THREE.AdditiveBlending;
+
+    // Scene background + fog
+    const bgHex = isLight ? 0xf4f4f6 : 0x01000c;
+    scene.background.set(bgHex); scene.fog.color.set(bgHex);
+
+    // Tone mapping —
+    //   Light mode: NoToneMapping so #f4f4f6 renders as exact sRGB (ACES would push
+    //   the near-white background toward white before bloom even touches it).
+    //   Dark mode: restore ACESFilmic.
+    renderer.toneMapping = isLight ? THREE.NoToneMapping : THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = isLight ? 1.0 : 1.45;
+
+    // Bloom —
+    //   Background linear luminance ≈ 0.914 (#f4f4f6 sRGB → linear).
+    //   threshold = 0.94 sits just above the background so it does NOT bloom.
+    //   White strand cores (blended pixel ≈ 0.989) DO exceed threshold → glow halos.
+    //   High strength + wide radius = clearly visible neon halos around every strand.
+    bloom.strength  = isLight ? 1.80  : 2.6;
+    bloom.radius    = isLight ? 1.40  : 0.52;
+    bloom.threshold = isLight ? 0.94  : 0.0;
+
+    // Strands — remap colors, opacities, blending
+    strands.forEach(s=>{
+      if(s.gone)return;
+      s.meshes.forEach((m,i)=>{
+        const col = isLight ? s.lightCols[i] : s.baseCols[i];
+        const op  = isLight ? s.lightOps[i]  : s.baseOps[i];
+        if(col) m.material.color.copy(col);
+        m.material.opacity = s.closing ? op*(s.closingAlpha||0) : op;
+        m.material.blending = bl;
+        m.material.needsUpdate = true;
+      });
+    });
+
+    // Root glow — white core blooms, aura uses ring glow with NormalBlending
+    rootGlowCore.material.color.set(0xffffff);
+    rootGlowCore.material.opacity = isLight ? 0.88 : 0.92;
+    rootGlowCore.material.blending = bl; rootGlowCore.material.needsUpdate = true;
+    rootGlowAura.material.map     = isLight ? glowTexRing   : glowTexCore;
+    rootGlowAura.material.color.setHex(isLight ? 0xcc60e0 : 0xb89aff);
+    rootGlowAura.material.opacity  = isLight ? 0.55 : 0.22;
+    rootGlowAura.material.blending = isLight ? THREE.NormalBlending : THREE.AdditiveBlending;
+    rootGlowAura.material.needsUpdate = true;
+    rootGlowAura.scale.setScalar(isLight ? 2.4 : 1.8);
+
+    // Terminal nodes — white core blooms; halo uses ring glow (NormalBlending = visible pink ring)
+    strands.forEach(s=>{
+      if(!s.termCore)return;
+      s.termCore.material.color.set(0xffffff);
+      s.termCore.material.opacity = isLight ? 0.92 : 0.88;
+      s.termCore.material.blending = bl; s.termCore.material.needsUpdate = true;
+      if(s.termHalo){
+        s.termHalo.material.map     = isLight ? glowTexRing   : glowTexEndpt;
+        s.termHalo.material.color.setHex(isLight ? 0xd060a8 : 0x9b7dff);
+        s.termHalo.material.opacity  = isLight ? 0.60 : 0.28;
+        s.termHalo.material.blending = isLight ? THREE.NormalBlending : THREE.AdditiveBlending;
+        s.termHalo.material.needsUpdate = true;
+        s.termHalo.scale.setScalar(isLight ? 1.10 : 0.75);
+      }
+    });
+
+    // Sparks
+    sparks.forEach(sp=>{
+      sp.mesh.material.color.set(0xffffff);
+      sp.mesh.material.opacity = isLight ? 0.80 : 0.85;
+      sp.mesh.material.blending = bl; sp.mesh.material.needsUpdate = true;
+    });
+
+    // Main strands — Three.js meshes hidden in light mode (canvas draws them instead)
+    strands.forEach(s=>{
+      if(s.kind!=='main'||s.gone)return;
+      s.meshes.forEach(m=>{ m.visible=!isLight; });
+    });
+
+    // Ambient particles — hide in light mode
+    particlesMesh.visible = !isLight;
+
+    // CSS
+    document.body.classList.toggle('light-mode', isLight);
+
+    // Fade back out
+    overlay.style.opacity = '0';
+    setTimeout(()=>{ overlay.style.background=''; overlay.style.transition=''; }, 380);
+  }, 280);
+}
+
+document.getElementById('theme-toggle').addEventListener('click',()=>setTheme(!lightMode));
+
+// ══════════════════════════════════════════════════════════
+//  BOOT + ANIMATION
+// ══════════════════════════════════════════════════════════
+setTimeout(()=>openLayer1(),180);
+const clock=new THREE.Clock();
+
+function animate(){
+  requestAnimationFrame(animate);
+  const dt=clock.getDelta(), t=clock.elapsedTime;
+
+  strands.forEach(s=>growStrand(s,dt));
+  if(depth>=1&&!layerDone[0]&&checkLayerDone(1))layerDone[0]=true;
+  if(depth>=2&&!layerDone[1]&&checkLayerDone(2))layerDone[1]=true;
+  if(depth>=3&&!layerDone[2]&&checkLayerDone(3))layerDone[2]=true;
+
+  strands.forEach(s=>{
+    if(!s.closing||s.gone)return;
+    s.closingAlpha-=dt*1.6;
+    if(s.closingAlpha<=0){s.gone=true;s.meshes.forEach(m=>scene.remove(m));}
+    else s.meshes.forEach((m,i)=>m.material.opacity=(s.closingOps[i]||0)*s.closingAlpha);
+  });
+  for(let i=sparks.length-1;i>=0;i--){if(sparks[i].strand.gone){scene.remove(sparks[i].mesh);sparks.splice(i,1);}}
+
+  // ── Intro (two-phase) ─────────────────────────
+  if(intro.active){
+    intro.timer+=dt;
+    const elapsed=intro.timer-intro.delay;
+    if(elapsed>0){
+      // Phase 1 — camZ pull-back: easeOutExpo (snappy lift that settles into place)
+      const zRaw=clamp(elapsed/intro.zDuration,0,1);
+      camZ=lerp(intro.startZ,intro.endZ,easeOutExpo(zRaw));
+      // Phase 2 — scrollX pan: starts after xDelay, easeInOutCubic (graceful arc)
+      const xElapsed=elapsed-intro.xDelay;
+      if(xElapsed>0){
+        const xRaw=clamp(xElapsed/intro.xDuration,0,1);
+        scrollX=lerp(intro.startX,intro.endX,easeInOutCubic(xRaw));
+      }
+      // Intro ends when both phases are done
+      if(elapsed>=intro.xDelay+intro.xDuration){
+        intro.active=false; camZ=intro.endZ; scrollX=intro.endX;
+      }
+    }
+  }
+  // ── Transition ─────────────────────────────────
+  if(tran&&!tran.done){
+    tran.timer+=dt;
+    const raw=Math.min(1,tran.timer/tran.duration), e=easeInOutQuad(raw);
+    scrollX=lerp(tran.startX,tran.endX,e); lookYTgt=lerp(tran.startY,tran.endY,e);
+    if(!tran.branchFired&&tran.timer>=tran.branchDelay){tran.branchFired=true;tran.branchFn();}
+    if(raw>=1){tran.done=true;scrollX=tran.endX;lookYTgt=tran.endY;}
+  }
+  // ── Scroll ──────────────────────────────────────
+  const frozen=intro.active||(tran&&!tran.done);
+  if(!frozen){
+    scrollX+=scrollV; scrollV*=.832;
+    if(depth>=3&&selBranch[1]&&scrollX<selBranch[1].endPt.x-5)closeLayer(3);
+    if(depth>=2&&selBranch[0]&&scrollX<selBranch[0].endPt.x-7)closeLayer(2);
+    const sMax=depth>=3?BX[3]+5:depth>=2?BX[2]+5:BX[1]+4;
+    scrollX=clamp(scrollX,ROOT.x-2,sMax);
+  } else scrollV=0;
+
+  // ── Camera ──────────────────────────────────────
+  lookY+=(lookYTgt-lookY)*.048;
+  orbYaw+=(orbYawTgt-orbYaw)*.085; orbPit+=(orbPitTgt-orbPit)*.085;
+  const sp=new THREE.Spherical(camZ,Math.PI/2-orbPit,orbYaw);
+  const off=new THREE.Vector3().setFromSpherical(sp);
+  camera.position.set(scrollX+off.x,lookY+off.y+Math.sin(t*.17)*.18,off.z);
+  camera.lookAt(scrollX,lookY,0);
+
+  // ── Terminals pulse ─────────────────────────────
+  clickable.forEach((ct,i)=>{
+    const s=ct.strand, p=.5+.5*Math.sin(t*2.8+i*1.37);
+    if(s.termCore)s.termCore.material.opacity=.55+p*.32;
+    if(s.termHalo){s.termHalo.material.opacity=.12+p*.18;const sc=.62+p*.32;s.termHalo.scale.set(sc,sc,sc);}
+  });
+
+  // ── Shimmer ─────────────────────────────────────
+  strands.forEach((s,i)=>{
+    if(!s.done||s.closing||s.gone||s.kind!=='main')return;
+    s.meshes[0].material.opacity=(.76+.24*Math.sin(t*4+i*.89))*.72;
+  });
+  strands.forEach((s,i)=>{
+    if(!s.done||s.closing||s.gone||s.kind!=='thick')return;
+    s.meshes[0].material.opacity=s.baseOps[0]*(.92+.08*Math.sin(t*1.8+i*.55));
+  });
+
+  // ── Sparks ──────────────────────────────────────
+  sparks.forEach(sp=>{
+    if(sp.strand.gone||sp.strand.closing){sp.mesh.visible=false;return;}
+    sp.mesh.visible=true; sp.t+=sp.speed*dt; if(sp.t>1)sp.t-=1;
+    sp.mesh.position.copy(sp.strand.curve.getPoint(sp.t));
+    sp.mesh.material.opacity=Math.sin(sp.t*Math.PI)*.70;
+  });
+
+  updateLabels(t);
+
+  // ── Neon canvas (light mode main strands) ──────────────
+  if(lightMode){
+    neonCtx.clearRect(0,0,window.innerWidth,window.innerHeight);
+    strands.forEach(s=>{ if(s.kind==='main') drawNeonStrand(s); });
+  }
+
+  composer.render();
+}
+
+animate();
+
+window.addEventListener('resize',()=>{
+  const w=window.innerWidth,h=window.innerHeight;
+  camera.aspect=w/h; camera.updateProjectionMatrix();
+  renderer.setSize(w,h); composer.setSize(w,h); bloom.resolution.set(w,h);
+  resizeNeonCanvas();
+});
+</script>
+</body>
+</html>

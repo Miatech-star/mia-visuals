@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-04-24T01:53:57.371Z",
-  "count": 5,
+  "generatedAt": "2026-04-24T18:01:28.114Z",
+  "count": 19,
   "visuals": [
     {
       "fileName": "thoughts.html",
@@ -36,6 +36,104 @@
       "path": "visuals/semantic.html",
       "preview": "visuals/semantic.html",
       "modified": "2026-04-21T02:41:08.166Z"
+    },
+    {
+      "fileName": "brain_regions.html",
+      "title": "Brain — Region Explorer",
+      "path": "visuals/brain_regions.html",
+      "preview": "visuals/brain_regions.html",
+      "modified": "2026-04-15T03:05:14.358Z"
+    },
+    {
+      "fileName": "inner-world.html",
+      "title": "Your Inner World",
+      "path": "visuals/inner-world.html",
+      "preview": "visuals/inner-world.html",
+      "modified": "2026-04-15T03:05:00.575Z"
+    },
+    {
+      "fileName": "neuronal_blue.html",
+      "title": "Digital Brain",
+      "path": "visuals/neuronal_blue.html",
+      "preview": "visuals/neuronal_blue.html",
+      "modified": "2026-04-15T03:04:43.691Z"
+    },
+    {
+      "fileName": "neural-branching.html",
+      "title": "Neural Branching",
+      "path": "visuals/neural-branching.html",
+      "preview": "visuals/neural-branching.html",
+      "modified": "2026-04-14T23:49:05.203Z"
+    },
+    {
+      "fileName": "inside_orb.html",
+      "title": "Mia Orb",
+      "path": "visuals/inside_orb.html",
+      "preview": "visuals/inside_orb.html",
+      "modified": "2026-04-11T04:23:26.192Z"
+    },
+    {
+      "fileName": "emotional_loom.html",
+      "title": "Emotional Loom — heymia",
+      "path": "visuals/emotional_loom.html",
+      "preview": "visuals/emotional_loom.html",
+      "modified": "2026-04-11T04:23:13.651Z"
+    },
+    {
+      "fileName": "dotss_connection.html",
+      "title": "Relational Field",
+      "path": "visuals/dotss_connection.html",
+      "preview": "visuals/dotss_connection.html",
+      "modified": "2026-04-11T00:14:19.466Z"
+    },
+    {
+      "fileName": "planetary.html",
+      "title": "Marble Orrery",
+      "path": "visuals/planetary.html",
+      "preview": "visuals/planetary.html",
+      "modified": "2026-04-09T22:54:56.703Z"
+    },
+    {
+      "fileName": "galaxy_particles.html",
+      "title": "Relational Map",
+      "path": "visuals/galaxy_particles.html",
+      "preview": "visuals/galaxy_particles.html",
+      "modified": "2026-04-09T02:44:14.057Z"
+    },
+    {
+      "fileName": "relational_world.html",
+      "title": "Relational World",
+      "path": "visuals/relational_world.html",
+      "preview": "visuals/relational_world.html",
+      "modified": "2026-04-08T03:20:04.259Z"
+    },
+    {
+      "fileName": "relational_map.html",
+      "title": "Relational World",
+      "path": "visuals/relational_map.html",
+      "preview": "visuals/relational_map.html",
+      "modified": "2026-04-08T02:55:50.925Z"
+    },
+    {
+      "fileName": "thomas_attractor.html",
+      "title": "Neural Predictive Clone — Light",
+      "path": "visuals/thomas_attractor.html",
+      "preview": "visuals/thomas_attractor.html",
+      "modified": "2026-04-08T00:01:58.311Z"
+    },
+    {
+      "fileName": "orb.html",
+      "title": "Neural Predictive Clone — Light",
+      "path": "visuals/orb.html",
+      "preview": "visuals/orb.html",
+      "modified": "2026-04-07T17:21:30.502Z"
+    },
+    {
+      "fileName": "strings_ball.html",
+      "title": "Neural Predictive Clone — Light",
+      "path": "visuals/strings_ball.html",
+      "preview": "visuals/strings_ball.html",
+      "modified": "2026-04-07T01:47:56.414Z"
     }
   ]
 }
