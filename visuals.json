@@ -1,0 +1,41 @@
+{
+  "generatedAt": "2026-04-24T01:53:57.371Z",
+  "count": 5,
+  "visuals": [
+    {
+      "fileName": "thoughts.html",
+      "title": "Thought Capture",
+      "path": "visuals/thoughts.html",
+      "preview": "visuals/thoughts.html",
+      "modified": "2026-04-23T02:46:45.174Z"
+    },
+    {
+      "fileName": "neural.html",
+      "title": "Digital Brain",
+      "path": "visuals/neural.html",
+      "preview": "visuals/neural.html",
+      "modified": "2026-04-22T03:27:27.311Z"
+    },
+    {
+      "fileName": "graph.html",
+      "title": "Digital Brain",
+      "path": "visuals/graph.html",
+      "preview": "visuals/graph.html",
+      "modified": "2026-04-22T02:24:46.760Z"
+    },
+    {
+      "fileName": "cognitive.html",
+      "title": "Cognitive Field · v0.1",
+      "path": "visuals/cognitive.html",
+      "preview": "visuals/cognitive.html",
+      "modified": "2026-04-21T02:42:28.626Z"
+    },
+    {
+      "fileName": "semantic.html",
+      "title": "Semantic Activation Field · Instance 01",
+      "path": "visuals/semantic.html",
+      "preview": "visuals/semantic.html",
+      "modified": "2026-04-21T02:41:08.166Z"
+    }
+  ]
+}

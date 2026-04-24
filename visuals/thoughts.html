@@ -1,0 +1,4267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Thought Capture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #F4F4F6;
+    --ink: #17171c;
+    --ink-soft: #4a4a55;
+    --muted: #8e8e9a;
+    --line: rgba(20, 20, 40, 0.06);
+    --line-strong: rgba(20, 20, 40, 0.09);
+    --card: rgba(255, 255, 255, 0.72);
+    --card-solid: #ffffff;
+    --accent: #5b4dff;
+    --accent-soft: rgba(91, 77, 255, 0.12);
+    --success: #1f9d55;
+    --amber: #d97706;
+    --rose: #e11d48;
+    --shadow-sm: 0 1px 2px rgba(20, 20, 40, 0.04);
+    --shadow-md: 0 6px 24px rgba(20, 20, 40, 0.06), 0 1px 3px rgba(20, 20, 40, 0.04);
+    --shadow-lg: 0 20px 60px rgba(20, 20, 40, 0.08), 0 2px 6px rgba(20, 20, 40, 0.04);
+    --radius-lg: 22px;
+    --radius-md: 14px;
+    --radius-sm: 10px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    height: 100%;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    letter-spacing: -0.005em;
+  }
+
+  #bg-canvas {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    /* Extra atmospheric softness on top of the texture's radial falloff.
+       Scale compensates so the blurred edges don't reveal canvas borders. */
+    filter: blur(28px) saturate(108%);
+    transform: scale(1.12);
+    transform-origin: center;
+  }
+
+  .shell {
+    position: relative;
+    z-index: 1;
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 20px;
+  }
+
+  /* Wraps the card. The hero is absolutely positioned inside this wrapper
+     so it doesn't affect vertical layout — the card stays centered on the
+     screen regardless of hero height. */
+  .composition {
+    position: relative;
+    width: min(680px, 100%);
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  /* Big poetic hero headline sitting behind the card. Absolutely positioned
+     so its bottom edge hovers just above the card's top, then translated
+     downward slightly so the card overlaps the lower ~10% of the text. */
+  .hero {
+    font-family: 'Utopia Std Subhead', 'Source Serif 4', 'Source Serif Pro', Georgia, 'Times New Roman', serif;
+    font-weight: 400;
+    font-size: clamp(48px, 10vw, 144px);
+    line-height: 1.0;
+    letter-spacing: -0.03em;
+    text-align: center;
+    color: #C3CAD3; /* fallback if background-clip isn't supported */
+    position: absolute;
+    left: 50%;
+    bottom: 100%;                                     /* bottom at card's top */
+    transform: translate(-50%, clamp(14px, 2.2vw, 32px));  /* push down for overlap */
+    width: min(1200px, 92vw);                         /* extend beyond the card */
+    margin: 0;
+    z-index: 1;
+    pointer-events: none;
+    user-select: none;
+    font-variation-settings: 'opsz' 60;
+  }
+  @supports ((background-clip: text) or (-webkit-background-clip: text)) {
+    .hero {
+      background: linear-gradient(
+        to bottom,
+        #C3CAD3 0%,
+        #C3CAD3 52%,
+        rgba(195, 202, 211, 0.55) 78%,
+        rgba(195, 202, 211, 0.08) 100%
+      );
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      color: transparent;
+    }
+  }
+
+  .card {
+    width: 100%;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    padding: 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    backdrop-filter: blur(20px) saturate(140%);
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
+    position: relative;
+    z-index: 2;
+  }
+
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: nowrap;
+  }
+  .header > :first-child {
+    flex: 1 1 auto;
+    min-width: 0;  /* allow subtitle to wrap inside title column */
+  }
+  .status { flex-shrink: 0; }
+
+  .title {
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+  }
+  .subtitle {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  .status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--ink-soft);
+    padding: 6px 12px 6px 10px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.7);
+    border: 1px solid var(--line);
+    transition: color 0.2s ease;
+  }
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 999px;
+    background: #c1c1cc;
+    transition: background 0.25s ease, box-shadow 0.25s ease;
+    position: relative;
+  }
+  .status[data-state="listening"] {
+    color: var(--success);
+    background: rgba(31, 157, 85, 0.06);
+    border-color: rgba(31, 157, 85, 0.18);
+  }
+  .status[data-state="listening"] .status-dot {
+    background: var(--success);
+    animation: pulse 1.6s ease-out infinite;
+  }
+  .status[data-state="processing"] {
+    color: var(--amber);
+    background: rgba(217, 119, 6, 0.06);
+    border-color: rgba(217, 119, 6, 0.18);
+  }
+  .status[data-state="processing"] .status-dot {
+    background: var(--amber);
+    animation: breathe 1.2s ease-in-out infinite;
+  }
+  .status[data-state="unavailable"] {
+    color: var(--rose);
+    background: rgba(225, 29, 72, 0.06);
+    border-color: rgba(225, 29, 72, 0.18);
+  }
+  .status[data-state="unavailable"] .status-dot {
+    background: var(--rose);
+  }
+
+  @keyframes pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(31, 157, 85, 0.5); }
+    70%  { box-shadow: 0 0 0 10px rgba(31, 157, 85, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(31, 157, 85, 0); }
+  }
+  @keyframes breathe {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.4; }
+  }
+
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  button {
+    font-family: inherit;
+    font-weight: 500;
+    font-size: 14px;
+    letter-spacing: -0.005em;
+    border: 1px solid var(--line-strong);
+    background: var(--card-solid);
+    color: var(--ink);
+    padding: 11px 18px;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: transform 0.12s ease, box-shadow 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    box-shadow: var(--shadow-sm);
+    user-select: none;
+  }
+  button:hover:not(:disabled) {
+    box-shadow: var(--shadow-md);
+    border-color: rgba(20, 20, 40, 0.14);
+  }
+  button:active:not(:disabled) { transform: translateY(1px); }
+  button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+
+  .btn-primary {
+    background: var(--ink);
+    color: #fff;
+    border-color: var(--ink);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: #25252c;
+    border-color: #25252c;
+  }
+  .btn-primary.is-listening {
+    background: linear-gradient(135deg, #e11d48 0%, #f43f5e 100%);
+    border-color: transparent;
+    box-shadow: 0 8px 24px rgba(225, 29, 72, 0.25);
+  }
+  .btn-primary.is-listening:hover {
+    background: linear-gradient(135deg, #c81842 0%, #e11d48 100%);
+  }
+
+  /* "Make it clear" CTA — hidden until enough patterns are captured */
+  .btn-cta {
+    background: linear-gradient(135deg, #5b4dff 0%, #7c6cff 100%);
+    color: #fff;
+    border: none;
+    box-shadow: 0 8px 24px rgba(91, 77, 255, 0.28);
+    margin-left: auto;
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+    pointer-events: none;
+    transition: opacity 0.45s ease, transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .btn-cta:hover:not(:disabled) {
+    background: linear-gradient(135deg, #4a3dff 0%, #6b5bff 100%);
+    box-shadow: 0 10px 28px rgba(91, 77, 255, 0.36);
+  }
+  .btn-cta.visible {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    pointer-events: auto;
+  }
+  .cta-arrow {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+    transition: transform 0.3s ease;
+  }
+  .btn-cta:hover .cta-arrow {
+    transform: translateX(3px);
+  }
+
+  .mic-icon {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+  }
+
+  .transcript {
+    position: relative;
+    min-height: 220px;
+    max-height: 42vh;
+    background: rgba(255, 255, 255, 0.55);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 22px 24px;
+    font-size: 16px;
+    line-height: 1.65;
+    color: var(--ink);
+    overflow-y: auto;
+    transition: border-color 0.3s ease, background 0.3s ease, box-shadow 0.3s ease;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0,0,0,0.15) transparent;
+    cursor: text;
+  }
+  .transcript::-webkit-scrollbar { width: 6px; }
+  .transcript::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); border-radius: 999px; }
+  .transcript.active {
+    border-color: rgba(31, 157, 85, 0.25);
+    background: rgba(255, 255, 255, 0.75);
+  }
+  .transcript:focus-within {
+    border-color: rgba(20, 20, 40, 0.18);
+    box-shadow: 0 0 0 4px rgba(20, 20, 40, 0.04);
+  }
+  .transcript.active:focus-within {
+    border-color: rgba(31, 157, 85, 0.35);
+    box-shadow: 0 0 0 4px rgba(31, 157, 85, 0.08);
+  }
+
+  /* The contenteditable final text. Placeholder is shown via the
+     .is-empty class (not :empty) so we can keep an empty text node
+     inside finalWrap as a stable caret anchor — otherwise Chrome ignores
+     keystrokes on a truly empty inline contenteditable. */
+  .final-wrap {
+    outline: none;
+    display: inline;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .final-wrap.is-empty::before {
+    content: attr(data-placeholder);
+    color: var(--muted);
+    font-size: 15px;
+    pointer-events: none;
+  }
+
+  .interim-wrap {
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .placeholder {
+    color: var(--muted);
+    font-size: 15px;
+  }
+  .final-text {
+    color: var(--ink);
+  }
+  .interim-text {
+    color: var(--muted);
+    font-style: italic;
+  }
+  .caret {
+    display: inline-block;
+    width: 2px;
+    height: 1em;
+    vertical-align: text-bottom;
+    background: var(--success);
+    margin-left: 2px;
+    animation: blink 1s steps(2) infinite;
+    opacity: 0;
+  }
+  .transcript.active .caret { opacity: 1; }
+  .transcript:focus-within .caret { opacity: 0; }
+  @keyframes blink {
+    50% { opacity: 0; }
+  }
+
+  .footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    color: var(--muted);
+    gap: 12px;
+  }
+  .footer kbd {
+    font-family: inherit;
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 6px;
+    background: rgba(0,0,0,0.04);
+    border: 1px solid var(--line);
+    color: var(--ink-soft);
+  }
+  .footer a.clear-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    color: var(--muted);
+    cursor: pointer;
+    text-decoration: none;
+    transition: color 0.2s ease;
+  }
+  .footer a.clear-btn:hover { color: var(--ink); }
+
+  /* Pattern highlight pills inside the transcript */
+  .pill {
+    display: inline-block;
+    padding: 1px 9px;
+    margin: 0 1px;
+    border-radius: 999px;
+    font-size: 0.92em;
+    font-weight: 500;
+    line-height: 1.4;
+    border: 1px solid transparent;
+    background: rgba(0,0,0,0.04);
+    color: inherit;
+    transition: transform 0.3s ease;
+    animation: pillIn 0.38s cubic-bezier(0.22, 1, 0.36, 1);
+    white-space: nowrap;
+  }
+  @keyframes pillIn {
+    0%   { transform: scale(0.82); opacity: 0; }
+    60%  { transform: scale(1.04); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  .pill-distress      { color: #b91c3d; background: rgba(225, 29, 72, 0.09);  border-color: rgba(225, 29, 72, 0.20); }
+  .pill-anxiety       { color: #b45309; background: rgba(217, 119, 6, 0.09);  border-color: rgba(217, 119, 6, 0.20); }
+  .pill-sadness       { color: #4f46e5; background: rgba(99, 102, 241, 0.09); border-color: rgba(99, 102, 241, 0.22); }
+  .pill-fatigue       { color: #6d5dff; background: rgba(124, 108, 255, 0.10);border-color: rgba(124, 108, 255, 0.22); }
+  .pill-isolation     { color: #0e7490; background: rgba(8, 145, 178, 0.09);  border-color: rgba(8, 145, 178, 0.22); }
+  .pill-coping        { color: #047857; background: rgba(5, 150, 105, 0.09);  border-color: rgba(5, 150, 105, 0.22); }
+  .pill-relationships { color: #9d174d; background: rgba(190, 24, 93, 0.09);  border-color: rgba(190, 24, 93, 0.22); }
+  .pill-body          { color: #0369a1; background: rgba(2, 132, 199, 0.09);  border-color: rgba(2, 132, 199, 0.22); }
+
+  /* Tentative pills appear inside interim (not-yet-final) text. They update
+     rapidly as recognition refines, so no enter animation — just a subtle
+     opacity cue that they aren't confirmed yet. */
+  .pill-tentative {
+    animation: none;
+    opacity: 0.62;
+    font-style: normal;
+  }
+
+  /* Pattern summary row — appears above the footer when categories are active */
+  .summary {
+    display: none;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 12px 4px 0;
+    border-top: 1px dashed var(--line);
+    margin-top: 2px;
+    animation: fadeIn 0.3s ease-out;
+  }
+  .summary.visible { display: flex; }
+  .summary-label {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    width: 100%;
+    margin-bottom: 2px;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    transition: transform 0.2s ease;
+  }
+  .chip .count {
+    font-weight: 600;
+    opacity: 0.75;
+    font-variant-numeric: tabular-nums;
+  }
+  .chip-distress      { color: #b91c3d; background: rgba(225, 29, 72, 0.08);  border-color: rgba(225, 29, 72, 0.20); }
+  .chip-anxiety       { color: #b45309; background: rgba(217, 119, 6, 0.08);  border-color: rgba(217, 119, 6, 0.20); }
+  .chip-sadness       { color: #4f46e5; background: rgba(99, 102, 241, 0.08); border-color: rgba(99, 102, 241, 0.22); }
+  .chip-fatigue       { color: #6d5dff; background: rgba(124, 108, 255, 0.09);border-color: rgba(124, 108, 255, 0.22); }
+  .chip-isolation     { color: #0e7490; background: rgba(8, 145, 178, 0.08);  border-color: rgba(8, 145, 178, 0.22); }
+  .chip-coping        { color: #047857; background: rgba(5, 150, 105, 0.08);  border-color: rgba(5, 150, 105, 0.22); }
+  .chip-relationships { color: #9d174d; background: rgba(190, 24, 93, 0.08);  border-color: rgba(190, 24, 93, 0.22); }
+  .chip-body          { color: #0369a1; background: rgba(2, 132, 199, 0.08);  border-color: rgba(2, 132, 199, 0.22); }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-2px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .unavailable {
+    display: none;
+    width: min(520px, 100%);
+    background: var(--card-solid);
+    border: 1px solid rgba(225, 29, 72, 0.15);
+    border-radius: var(--radius-lg);
+    padding: 28px;
+    box-shadow: var(--shadow-md);
+    text-align: center;
+  }
+  .unavailable .icon {
+    width: 44px;
+    height: 44px;
+    margin: 0 auto 14px;
+    border-radius: 999px;
+    background: rgba(225, 29, 72, 0.08);
+    color: var(--rose);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .unavailable h3 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .unavailable p {
+    font-size: 14px;
+    color: var(--ink-soft);
+    line-height: 1.55;
+  }
+
+  /* ============================================================
+     BRAIN STAGE — dark state after "Make it clear" transition
+     ============================================================ */
+  #brainStage {
+    position: fixed;
+    inset: 0;
+    background: #000;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 50;
+    transition: opacity 0.8s ease;
+    cursor: grab;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  #brainStage.active {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  #brainStage:active { cursor: grabbing; }
+  #brain-canvas { display: block; width: 100%; height: 100%; }
+
+  #brain-labels {
+    position: fixed; inset: 0;
+    pointer-events: none;
+    z-index: 10;
+  }
+  #brain-cards { position: fixed; inset: 0; pointer-events: none; z-index: 60; }
+
+  /* Dark pills that live on the brain */
+  .bp {
+    position: absolute;
+    top: 0; left: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 12px 6px 10px;
+    background: rgba(22, 22, 30, 0.96);
+    -webkit-backdrop-filter: blur(14px) saturate(1.3);
+    backdrop-filter: blur(14px) saturate(1.3);
+    border: 1px solid rgba(255, 255, 255, 0.38);
+    border-radius: 100px;
+    font-family: 'Inter', sans-serif;
+    font-weight: 500;
+    color: #fff;
+    letter-spacing: 0.005em;
+    white-space: nowrap;
+    pointer-events: auto;
+    cursor: pointer;
+    user-select: none;
+    transform-origin: center center;
+    will-change: transform, opacity;
+    transition:
+      opacity 0.45s ease,
+      color 0.35s ease,
+      background 0.35s ease,
+      border-color 0.35s ease;
+    box-shadow:
+      0 6px 22px rgba(0, 0, 0, 0.7),
+      0 0 0 1px rgba(255,255,255,0.04) inset;
+  }
+  .bp.l1 { font-size: 13px; font-weight: 600; padding: 7px 14px 7px 12px; }
+  .bp.l2 { font-size: 11.5px; }
+  .bp.l3 {
+    font-size: 10.5px;
+    padding: 5px 10px 5px 9px;
+    color: rgba(255,255,255,0.95);
+  }
+  .bp .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 0 9px currentColor;
+  }
+  .bp.l2 .dot, .bp.l3 .dot { width: 6px; height: 6px; }
+  .bp:hover {
+    background: rgba(36, 36, 44, 0.98);
+    border-color: rgba(255,255,255,0.55);
+    color: #fff;
+  }
+  .bp.hidden {
+    opacity: 0 !important;
+    pointer-events: none;
+  }
+  .bp.focused { z-index: 5; }
+
+  /* Brain card — morphs from a pill's rect into full card, back on close */
+  .bcard {
+    position: fixed;
+    pointer-events: auto;
+    box-sizing: border-box;
+    color: #fff;
+    font-family: 'Inter', sans-serif;
+    background: rgba(18, 18, 24, 0.88);
+    -webkit-backdrop-filter: blur(14px) saturate(1.2);
+    backdrop-filter: blur(14px) saturate(1.2);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 100px;
+    overflow: hidden;
+    box-shadow:
+      0 4px 16px rgba(0, 0, 0, 0.55),
+      0 0 0 0.5px rgba(255,255,255,0.03) inset;
+    will-change: transform, width, height, border-radius, left, top;
+    transition:
+      left 0.52s cubic-bezier(0.22, 1, 0.36, 1),
+      top 0.52s cubic-bezier(0.22, 1, 0.36, 1),
+      width 0.52s cubic-bezier(0.22, 1, 0.36, 1),
+      height 0.52s cubic-bezier(0.22, 1, 0.36, 1),
+      border-radius 0.52s cubic-bezier(0.22, 1, 0.36, 1),
+      background 0.35s ease,
+      border-color 0.35s ease,
+      box-shadow 0.35s ease;
+  }
+  .bcard.open {
+    background: rgba(14, 14, 20, 0.94);
+    border-color: rgba(255, 255, 255, 0.14);
+    box-shadow:
+      0 22px 60px rgba(0, 0, 0, 0.6),
+      0 0 0 0.5px rgba(255,255,255,0.04) inset;
+  }
+  .bcard .card-inner { width: 100%; }
+  .bcard .card-header {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 14px 7px 12px;
+    white-space: nowrap;
+    transition: padding 0.52s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .bcard.open .card-header {
+    padding: 18px 16px 10px 18px;
+  }
+  .bcard .card-header .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 0 9px currentColor;
+  }
+  .bcard .card-title {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.005em;
+    color: rgba(255,255,255,0.98);
+    transition:
+      font-size 0.52s cubic-bezier(0.22, 1, 0.36, 1),
+      letter-spacing 0.52s ease;
+  }
+  .bcard.open .card-title {
+    font-size: 16px;
+    letter-spacing: 0.003em;
+  }
+  .bcard .card-close {
+    margin-left: auto;
+    background: transparent;
+    border: 0;
+    color: rgba(255,255,255,0.55);
+    cursor: pointer;
+    width: 24px; height: 24px;
+    padding: 0;
+    font-size: 20px;
+    line-height: 20px;
+    opacity: 0;
+    transition: opacity 0.28s ease, color 0.2s ease;
+    pointer-events: none;
+  }
+  .bcard.open .card-close {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .bcard .card-close:hover { color: rgba(255,255,255,0.95); }
+  .bcard .card-body {
+    padding: 2px 20px 20px 20px;
+    opacity: 0;
+    transform: translateY(6px);
+    transition:
+      opacity 0.3s ease 0.18s,
+      transform 0.32s cubic-bezier(0.22, 1, 0.36, 1) 0.18s;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    max-height: calc(100vh - 120px);
+  }
+  .bcard.open .card-body {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  .bcard .card-category {
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(255,255,255,0.45);
+    font-weight: 500;
+    margin-bottom: 12px;
+  }
+  .bcard .card-insight {
+    font-size: 14px;
+    line-height: 1.55;
+    color: rgba(255,255,255,0.96);
+    font-weight: 400;
+    margin-bottom: 18px;
+  }
+  .bcard .card-section { margin-bottom: 14px; }
+  .bcard .card-section-label {
+    font-size: 9.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: rgba(255,255,255,0.42);
+    font-weight: 500;
+    margin-bottom: 7px;
+  }
+  .bcard .card-section-text {
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: rgba(255,255,255,0.82);
+  }
+  .bcard .card-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+  .bcard .card-tag {
+    display: inline-block;
+    padding: 3px 9px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 100px;
+    font-size: 10.5px;
+    color: rgba(255,255,255,0.86);
+  }
+  .bcard .card-note {
+    margin-top: 4px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    font-size: 11.5px;
+    color: rgba(255,255,255,0.6);
+    font-style: italic;
+    line-height: 1.45;
+  }
+
+  #brain-hint {
+    position: fixed;
+    bottom: 20px; left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255,255,255,0.45);
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: 0.04em;
+    pointer-events: none;
+    z-index: 20;
+    opacity: 0;  /* hidden during brain construction */
+    transition: opacity 0.6s ease;
+  }
+  #brain-hint.ready:not(.hidden) { opacity: 1; }
+  #brain-hint.hidden { opacity: 0; }
+
+  #brainBackBtn {
+    position: fixed;
+    top: 20px; left: 20px;
+    z-index: 30;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 14px 7px 11px;
+    background: rgba(22, 22, 30, 0.9);
+    border: 1px solid rgba(255,255,255,0.16);
+    border-radius: 100px;
+    color: rgba(255,255,255,0.82);
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(-6px);
+    transition: opacity 0.4s ease, transform 0.4s ease, background 0.2s ease, border-color 0.2s ease;
+  }
+  #brainStage.active #brainBackBtn {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(0);
+  }
+  #brainBackBtn:hover {
+    background: rgba(36, 36, 44, 0.95);
+    border-color: rgba(255,255,255,0.3);
+    color: #fff;
+  }
+  #brainBackBtn svg {
+    width: 14px; height: 14px; flex-shrink: 0;
+  }
+
+  /* Subtle brain title — small, letterspaced, premium, top of stage */
+  #brainTitle {
+    position: fixed;
+    top: 24px;
+    left: 50%;
+    transform: translate(-50%, -4px);
+    color: rgba(255, 255, 255, 0.52);
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    z-index: 25;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.7s ease, transform 0.7s ease;
+    white-space: nowrap;
+  }
+  #brainStage.active #brainTitle {
+    opacity: 1;
+    transform: translate(-50%, 0);
+    transition-delay: 0.35s;
+  }
+
+  /* Fixed "Unlock the full experience" CTA — elegant, not ad-like.
+     Centered horizontally; icon + text layout. */
+  #brainUnlockCta {
+    position: fixed;
+    bottom: 22px;
+    left: 50%;
+    transform: translate(-50%, 6px);
+    z-index: 25;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px 10px 10px;
+    background: rgba(22, 22, 30, 0.88);
+    -webkit-backdrop-filter: blur(14px) saturate(1.2);
+    backdrop-filter: blur(14px) saturate(1.2);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 16px;
+    color: #fff;
+    text-decoration: none;
+    font-family: 'Inter', sans-serif;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+    opacity: 0;
+    pointer-events: none;
+    transition:
+      opacity 0.6s ease,
+      transform 0.6s ease,
+      background 0.25s ease,
+      border-color 0.25s ease,
+      box-shadow 0.25s ease;
+  }
+  #brainStage.active #brainUnlockCta {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translate(-50%, 0);
+    transition-delay: 0.35s;
+  }
+  #brainUnlockCta:hover {
+    background: rgba(36, 36, 46, 0.95);
+    border-color: rgba(255, 255, 255, 0.28);
+    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.65);
+  }
+  #brainUnlockCta .unlock-icon {
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    border-radius: 9px;
+    overflow: hidden;
+  }
+  #brainUnlockCta .unlock-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    align-items: flex-start;
+  }
+  #brainUnlockCta .unlock-primary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.003em;
+    line-height: 1.2;
+  }
+  #brainUnlockCta .unlock-arrow {
+    width: 13px;
+    height: 13px;
+    opacity: 0.65;
+    transition: transform 0.3s ease, opacity 0.3s ease;
+    flex-shrink: 0;
+  }
+  #brainUnlockCta:hover .unlock-arrow {
+    transform: translateX(2px);
+    opacity: 1;
+  }
+  #brainUnlockCta .unlock-supporting {
+    font-size: 10.5px;
+    color: rgba(255, 255, 255, 0.56);
+    letter-spacing: 0.01em;
+    font-weight: 400;
+  }
+
+  /* Mobile: keep the CTA centered, slightly smaller, unobtrusive */
+  @media (max-width: 520px) {
+    #brainTitle {
+      font-size: 10px;
+      letter-spacing: 0.18em;
+      top: 18px;
+    }
+    #brainUnlockCta {
+      bottom: 16px;
+      padding: 9px 14px 9px 9px;
+      gap: 10px;
+      max-width: calc(100vw - 32px);
+    }
+    #brainUnlockCta .unlock-icon { width: 36px; height: 36px; }
+    #brainUnlockCta .unlock-primary { font-size: 12px; }
+    #brainUnlockCta .unlock-supporting { font-size: 10px; }
+  }
+
+  /* ========================================================
+     Teaser cards (l2 / l3 drill-in) — the first line reads
+     clearly, remaining body is visibly blurred, footer offers
+     a CTA to the full experience.
+     ======================================================== */
+  .bcard .teaser-veil {
+    position: relative;
+    margin-top: 10px;
+    max-height: 140px;
+    overflow: hidden;
+    filter: blur(5px) saturate(1.05);
+    opacity: 0.78;
+    pointer-events: none;
+    user-select: none;
+    -webkit-mask-image: linear-gradient(to bottom,
+      rgba(0,0,0,1) 0%,
+      rgba(0,0,0,0.82) 50%,
+      rgba(0,0,0,0.35) 85%,
+      rgba(0,0,0,0) 100%);
+    mask-image: linear-gradient(to bottom,
+      rgba(0,0,0,1) 0%,
+      rgba(0,0,0,0.82) 50%,
+      rgba(0,0,0,0.35) 85%,
+      rgba(0,0,0,0) 100%);
+  }
+  .bcard .teaser-footer {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .bcard .teaser-line {
+    font-size: 12px;
+    line-height: 1.5;
+    color: rgba(255, 255, 255, 0.72);
+    font-style: italic;
+    margin: 0 0 12px 0;
+  }
+  .bcard .teaser-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 14px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 999px;
+    color: #fff;
+    text-decoration: none;
+    font-size: 12.5px;
+    font-weight: 500;
+    letter-spacing: 0.005em;
+    transition: background 0.25s ease, border-color 0.25s ease, transform 0.25s ease;
+    cursor: pointer;
+  }
+  .bcard .teaser-cta:hover {
+    background: rgba(255, 255, 255, 0.14);
+    border-color: rgba(255, 255, 255, 0.36);
+  }
+  .bcard .teaser-cta svg {
+    width: 12px;
+    height: 12px;
+    opacity: 0.75;
+    transition: transform 0.3s ease, opacity 0.3s ease;
+  }
+  .bcard .teaser-cta:hover svg {
+    transform: translateX(2px);
+    opacity: 1;
+  }
+
+  /* Transition cover — a dark veil that rises during the cross-fade */
+  #transitionCover {
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(circle at 50% 50%, rgba(10, 10, 14, 0.92) 0%, rgba(0, 0, 0, 0.98) 80%);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 40;
+    transition: opacity 0.9s ease;
+  }
+  #transitionCover.active { opacity: 1; }
+
+  /* Capture stage fade during transition */
+  body.transitioning .shell,
+  body.transitioning #bg-canvas {
+    transition: opacity 0.8s ease, filter 0.8s ease, transform 0.8s ease;
+  }
+  body.transitioning .shell {
+    opacity: 0;
+    transform: scale(0.96) translateY(-12px);
+    filter: blur(6px);
+    pointer-events: none;
+  }
+  body.transitioning #bg-canvas {
+    opacity: 0.15;
+  }
+  /* After transition complete, fully hide capture */
+  body.brain-mode .shell,
+  body.brain-mode #bg-canvas {
+    display: none;
+  }
+  body.brain-mode {
+    background: #000;
+    overflow: hidden;
+  }
+
+  /* Flying pills — summary chips that detach and fly into brain positions */
+  .flying-pill {
+    position: fixed;
+    z-index: 45;
+    pointer-events: none;
+    border-radius: 999px;
+    padding: 4px 12px;
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.3);
+    will-change: transform, opacity, left, top;
+    transition:
+      left 1.0s cubic-bezier(0.34, 1.26, 0.64, 1),
+      top 1.0s cubic-bezier(0.34, 1.26, 0.64, 1),
+      background 0.8s ease,
+      color 0.8s ease,
+      border 0.8s ease,
+      opacity 0.4s ease,
+      transform 0.8s ease;
+  }
+
+  /* Compact the capture UI on 1080p-ish screens (and shorter viewports in
+     general) so it doesn't feel oversized. A 1080p monitor running Chrome
+     with its usual tabs/URL bar + Windows taskbar leaves a viewport of
+     roughly 920–960px tall, so the threshold has to sit safely above that.
+     1440p screens have viewport heights around 1320px+ and are untouched —
+     they stay at full scale. The brain stage and CTAs are position:fixed
+     outside .shell and are not affected by this zoom. `zoom` is now a
+     standard property in all modern browsers (Chrome/Safari/Edge long-time,
+     Firefox 126+); in older Firefox it gracefully no-ops to full scale. */
+  @media (min-width: 521px) and (max-height: 1080px) {
+    .shell { zoom: 0.9; }
+  }
+
+  @media (max-width: 520px) {
+    .shell { padding: 40px 16px; }
+    .card { padding: 22px; }
+    .header { flex-direction: column; align-items: flex-start; }
+    .transcript { font-size: 15px; padding: 18px; }
+    .hero {
+      width: 96vw;
+      letter-spacing: -0.02em;
+    }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="bg-canvas"></canvas>
+
+<div class="shell">
+  <div class="composition">
+    <h1 class="hero">Say it messy<br>to see it clearly.</h1>
+
+    <div class="card" id="card">
+    <div class="header">
+      <div>
+        <div class="title">Thought Capture</div>
+        <div class="subtitle">Speak freely. Mia listens for the patterns taking shape in your mind.</div>
+      </div>
+      <div class="status" id="status" data-state="idle">
+        <span class="status-dot"></span>
+        <span id="status-text">Idle</span>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button class="btn-primary" id="micBtn">
+        <svg class="mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="22"/>
+          <line x1="8" y1="22" x2="16" y2="22"/>
+        </svg>
+        <span id="micBtnText">Start talking</span>
+      </button>
+      <button id="stopBtn" disabled>
+        <svg class="mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="6" y="6" width="12" height="12" rx="2"/>
+        </svg>
+        <span>Stop</span>
+      </button>
+      <button id="ctaBtn" class="btn-cta" type="button">
+        <span>Make it clear</span>
+        <svg class="cta-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="5" y1="12" x2="19" y2="12"/>
+          <polyline points="12 5 19 12 12 19"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="transcript" id="transcript" aria-live="polite"><span class="final-wrap final-text" id="finalWrap" contenteditable="true" spellcheck="true" data-placeholder="Start talking. Your thoughts and patterns will appear here…"></span><span class="interim-wrap interim-text" id="interimWrap" contenteditable="false"></span><span class="caret" contenteditable="false"></span></div>
+
+    <div class="summary" id="summary" aria-live="polite">
+      <span class="summary-label">Patterns detected</span>
+    </div>
+
+    <div class="footer">
+      <span>No audio is saved. Processing happens in your browser.</span>
+      <button class="clear-btn" id="clearBtn" type="button">Clear</button>
+    </div>
+  </div>
+  </div>
+
+  <div class="unavailable" id="unavailable">
+    <div class="icon">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="1" y1="1" x2="23" y2="23"/>
+        <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/>
+        <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/>
+        <line x1="12" y1="19" x2="12" y2="22"/>
+      </svg>
+    </div>
+    <h3>Speech recognition unavailable</h3>
+    <p>Your browser doesn't support the Web Speech API. For the best experience, try the latest Chrome or Edge on desktop.</p>
+  </div>
+</div>
+
+<!-- ================= BRAIN STAGE — hidden until transition ================= -->
+<div id="brainStage" aria-hidden="true">
+  <canvas id="brain-canvas"></canvas>
+  <div id="brain-labels"></div>
+  <div id="brain-cards"></div>
+  <div id="brainTitle">Your Thought Map</div>
+  <div id="brain-hint">Click a region to explore · scroll out to return</div>
+  <button id="brainBackBtn" type="button" aria-label="Back to capture">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="19" y1="12" x2="5" y2="12"/>
+      <polyline points="12 19 5 12 12 5"/>
+    </svg>
+    <span>Back</span>
+  </button>
+  <a id="brainUnlockCta" href="https://apps.apple.com/pe/app/mia-ai-understand-yourself/id6743808070?l=en-GB" target="_blank" rel="noopener noreferrer">
+    <svg class="unlock-icon" xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 197 197" fill="none" aria-hidden="true">
+      <g clip-path="url(#clip0_37973_155)">
+        <rect width="196.831" height="196.831" rx="35" fill="#FEFBFF"/>
+        <g clip-path="url(#paint0_angular_37973_155_clip_path)"><g transform="matrix(-0.0925 -4.83885e-09 -6.79725e-05 -0.0792645 92.5 101)"><foreignObject x="-1299.45" y="-1299.45" width="2598.89" height="2598.89"><div xmlns="http://www.w3.org/1999/xhtml" style="background:conic-gradient(from 90deg,rgba(182, 110, 223, 0) 0deg,rgba(242, 97, 180, 0) 125.179deg,rgba(95, 197, 255, 1) 193.412deg,rgba(255, 172, 136, 1) 216.021deg,rgba(128, 84, 255, 1) 236.071deg,rgba(119, 157, 255, 1) 259.953deg,rgba(158, 115, 240, 0) 311.078deg,rgba(182, 110, 223, 0) 360deg);height:100%;width:100%;opacity:0.2"></div></foreignObject></g></g>
+        <rect width="196.831" height="196.831" rx="35" fill="url(#paint1_radial_37973_155)"/>
+        <rect width="196.831" height="196.831" rx="35" fill="url(#paint2_radial_37973_155)"/>
+        <path d="M-9.22656 110.748C6.65812 91.5501 45.1551 55.8388 72.0656 66.5745C105.704 79.9942 103.461 164.429 148.873 121.933C185.202 87.9368 202.133 68.2546 206.058 62.6631" stroke="white" stroke-width="13.1221"/>
+      </g>
+      <rect x="1" y="1" width="194.831" height="194.831" rx="34" stroke="#919191" stroke-opacity="0.2" stroke-width="2"/>
+      <defs>
+        <clipPath id="paint0_angular_37973_155_clip_path"><rect width="196.831" height="196.831" rx="35"/></clipPath>
+        <radialGradient id="paint1_radial_37973_155" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(98 72) rotate(88.741) scale(91.022)">
+          <stop stop-color="#E3B7F1"/>
+          <stop offset="1" stop-color="#E3B7F1" stop-opacity="0"/>
+        </radialGradient>
+        <radialGradient id="paint2_radial_37973_155" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(95.5 119.5) rotate(86.4237) scale(96.1873)">
+          <stop stop-color="#BDABEB"/>
+          <stop offset="1" stop-color="#BDABEB" stop-opacity="0"/>
+        </radialGradient>
+        <clipPath id="clip0_37973_155">
+          <rect width="196.831" height="196.831" rx="35" fill="white"/>
+        </clipPath>
+      </defs>
+    </svg>
+    <div class="unlock-text">
+      <div class="unlock-primary">
+        <span>Unlock the full experience</span>
+        <svg class="unlock-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="5" y1="12" x2="19" y2="12"/>
+          <polyline points="12 5 19 12 12 19"/>
+        </svg>
+      </div>
+      <div class="unlock-supporting">Open the full experience in Mia</div>
+    </div>
+  </a>
+</div>
+
+<!-- Black cover that cross-fades during the capture → brain transition -->
+<div id="transitionCover" aria-hidden="true"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/* ----------------------------- 3D Background ------------------------------ */
+(function initBackground() {
+  const canvas = document.getElementById('bg-canvas');
+  const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 100);
+  camera.position.z = 12;
+
+  // Build a soft radial gradient texture for each orb color
+  function radialTexture(r, g, b) {
+    const size = 256;
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const ctx = c.getContext('2d');
+    const grad = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+    // Gentler falloff → more diffuse, less defined edges
+    grad.addColorStop(0.0,  `rgba(${r},${g},${b},0.80)`);
+    grad.addColorStop(0.22, `rgba(${r},${g},${b},0.55)`);
+    grad.addColorStop(0.50, `rgba(${r},${g},${b},0.22)`);
+    grad.addColorStop(0.80, `rgba(${r},${g},${b},0.05)`);
+    grad.addColorStop(1.0,  `rgba(${r},${g},${b},0)`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, size, size);
+    const tex = new THREE.CanvasTexture(c);
+    tex.minFilter = THREE.LinearFilter;
+    return tex;
+  }
+
+  // Soft pastel palette — light-mode appropriate
+  const palette = [
+    [198, 190, 255], // lavender
+    [255, 214, 194], // peach
+    [194, 231, 214], // mint
+    [255, 202, 230], // blush
+    [200, 224, 255], // sky
+    [230, 214, 255]  // lilac
+  ];
+
+  const orbs = [];
+
+  // Deterministic zone placement — guarantees even coverage of the viewport
+  // instead of random clusters (with only a handful of orbs, uniform random
+  // frequently dumps most of them into the upper half or one corner). Each
+  // orb gets a small jitter on top so they don't look grid-aligned.
+  const zones = [
+    { x: -8,  y:  3.8 },  // upper-left
+    { x:  0,  y:  4.5 },  // upper-center
+    { x:  8,  y:  3.8 },  // upper-right
+    { x: -9,  y:  0   },  // mid-left
+    { x:  0,  y:  0   },  // true center
+    { x:  9,  y:  0   },  // mid-right
+    { x: -7,  y: -4   },  // lower-left
+    { x:  0,  y: -4.2 },  // lower-center
+    { x:  7,  y: -4   },  // lower-right
+  ];
+  const ORB_COUNT = zones.length;
+
+  for (let i = 0; i < ORB_COUNT; i++) {
+    const zone = zones[i];
+    const c = palette[i % palette.length];
+    const mat = new THREE.SpriteMaterial({
+      map: radialTexture(c[0], c[1], c[2]),
+      transparent: true,
+      depthWrite: false,
+      opacity: 0.55
+    });
+    const sprite = new THREE.Sprite(mat);
+    // Larger orbs → fill more of the viewport → softer, more ambient feel
+    const scale = 9 + Math.random() * 6;
+    sprite.scale.set(scale, scale, 1);
+    const jitterX = (Math.random() - 0.5) * 2.6;
+    const jitterY = (Math.random() - 0.5) * 1.6;
+    sprite.position.set(
+      zone.x + jitterX,
+      zone.y + jitterY,
+      -2 + (Math.random() - 0.5) * 3
+    );
+    sprite.userData = {
+      baseX: sprite.position.x,
+      baseY: sprite.position.y,
+      // Larger amps → orbs drift visibly across each zone
+      ampX: 1.8 + Math.random() * 2.0,
+      ampY: 1.4 + Math.random() * 1.7,
+      // Higher freqs → full oscillation in ~18–40 s: perceptibly alive,
+      // not busy. cos(2π/period) → freq = 2π/period, so 0.16 ≈ 39s,
+      // 0.35 ≈ 18s.
+      freqX: 0.16 + Math.random() * 0.19,
+      freqY: 0.13 + Math.random() * 0.17,
+      phase: Math.random() * Math.PI * 2,
+      baseScale: scale
+    };
+    scene.add(sprite);
+    orbs.push(sprite);
+  }
+
+  // Subtle state tracker — gentle energy boost when listening
+  let energy = 0;       // current eased value
+  let energyTarget = 0; // target 0..1
+  window.__setBgEnergy = (v) => { energyTarget = v; };
+
+  // Accumulated virtual clock — advances at the current speed each frame.
+  // Using this instead of (time * speedBoost) inside cos/sin keeps the
+  // wave phase continuous when the speed eases between 1.0 and 1.8, so
+  // the orbs never "jump" when listening starts or stops.
+  let virtualTime = 0;
+  let lastRealTime = null;
+
+  let raf;
+  function animate(t) {
+    const realTime = t * 0.001;
+    const dt = lastRealTime === null ? 0 : Math.min(realTime - lastRealTime, 0.1); // clamp tab-away jumps
+    lastRealTime = realTime;
+
+    // Ease energy toward target (slow = smoother state transitions)
+    energy += (energyTarget - energy) * 0.025;
+    const speedBoost = 1 + energy * 0.8;
+
+    // Virtual clock accumulates at current speed — no phase discontinuity
+    virtualTime += dt * speedBoost;
+
+    orbs.forEach((o, i) => {
+      const u = o.userData;
+      o.position.x = u.baseX + Math.cos(virtualTime * u.freqX + u.phase) * u.ampX;
+      o.position.y = u.baseY + Math.sin(virtualTime * u.freqY + u.phase * 1.3) * u.ampY;
+      // Soft per-orb breathing — more visible, adds to the felt motion
+      const pulse = 1 + Math.sin(realTime * (0.45 + i * 0.06) + u.phase) * 0.09 + energy * 0.06;
+      o.scale.set(u.baseScale * pulse, u.baseScale * pulse, 1);
+      o.material.opacity = 0.50 + energy * 0.08;
+    });
+
+    // Gentle camera drift — slightly faster so the whole composition feels alive
+    camera.position.x = Math.sin(realTime * 0.08) * 0.55;
+    camera.position.y = Math.cos(realTime * 0.065) * 0.42;
+    camera.lookAt(0, 0, 0);
+
+    renderer.render(scene, camera);
+    raf = requestAnimationFrame(animate);
+  }
+  animate(0);
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+})();
+
+/* --------------------------- Speech Recognition --------------------------- */
+/*
+ * Robustness strategy:
+ *   - `shouldListen` is user intent (true from Start click until Stop click).
+ *   - `isRecognizing` mirrors the actual SpeechRecognition state.
+ *   - onend is frequent & sometimes spurious in Chrome (after final results,
+ *     no-speech, ~60s silence, etc.). We auto-restart while `shouldListen` is
+ *     true and no fatal error has occurred.
+ *   - A thrash guard limits rapid-fire restarts to catch runaway loops.
+ *   - getUserMedia is called once up-front to get a clear permission answer
+ *     and to distinguish "blocked" vs "no mic" cleanly.
+ *   - Language is hard-coded to 'en-US' — the most reliably supported. Using
+ *     navigator.language on a non-English system is a common cause of empty
+ *     transcripts when the user speaks English.
+ */
+(function initSpeech() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  const card          = document.getElementById('card');
+  const unavailable   = document.getElementById('unavailable');
+  const statusEl      = document.getElementById('status');
+  const statusText    = document.getElementById('status-text');
+  const micBtn        = document.getElementById('micBtn');
+  const micBtnText    = document.getElementById('micBtnText');
+  const stopBtn       = document.getElementById('stopBtn');
+  const transcriptEl  = document.getElementById('transcript');
+  const clearBtn      = document.getElementById('clearBtn');
+  const ctaBtn        = document.getElementById('ctaBtn');
+  const summaryEl     = document.getElementById('summary');
+
+  // ---- Language detection (ES / EN) --------------------------------------
+  // A small set of high-frequency words that act as fingerprints for each
+  // language. Combined with a check for Spanish-exclusive characters, this
+  // is enough to disambiguate most natural-sentence-length utterances.
+  const ES_MARKERS = new Set([
+    'el','la','los','las','un','una','unos','unas','de','del','al','y','o','pero','que',
+    'por','para','con','sin','sobre','hasta','desde','es','son','soy','eres','somos',
+    'ser','estar','estoy','estás','está','están','hay','he','has','ha','hemos','han',
+    'fue','fueron','era','eran','tengo','tienes','tiene','tenemos','tienen','tenía',
+    'voy','vas','va','vamos','van','me','te','se','nos','les','mi','tu','su',
+    'este','esta','estos','estas','ese','esa','esos','esas','aquel','aquella',
+    'muy','más','menos','ya','todavía','también','tampoco','siempre','nunca',
+    'hoy','ayer','mañana','ahora','bien','mal','si','sí','no','quiero','quieres','quiere',
+    'puedo','puedes','puede','cuando','donde','porque','mientras','aunque','así',
+    'gracias','hola','adiós','cómo','qué','cuál','cuáles','quién','entonces','pues'
+  ]);
+  const EN_MARKERS = new Set([
+    'the','a','an','and','or','but','of','to','in','on','at','for','with','as','by','from',
+    'is','are','was','were','be','been','being','have','has','had','do','does','did',
+    'will','would','can','could','should','may','might','i','you','he','she','it','we',
+    'they','me','him','her','us','them','my','your','his','hers','its','our','their',
+    'this','that','these','those','here','there','where','when','why','how','what','who',
+    'which','very','really','just','only','also','too','so','than','then','always','never',
+    'sometimes','today','yesterday','tomorrow','now','well','bad','good','yes','no',
+    'want','wants','need','needs','like','love','think','know','feel','feels','felt',
+    'because','about','over','under','into','out','up','down','still','even','though'
+  ]);
+  const SPANISH_EXCLUSIVE_CHARS = /[ñáéíóúü¿¡]/;
+
+  function detectLanguage(text) {
+    if (!text || !text.trim()) return null;
+    const lower = text.toLowerCase();
+    if (SPANISH_EXCLUSIVE_CHARS.test(lower)) return 'es';
+
+    const words = lower.match(/[\p{L}]+/gu) || [];
+    if (words.length < 2) return null;
+
+    let es = 0, en = 0;
+    for (const w of words) {
+      if (ES_MARKERS.has(w)) es++;
+      if (EN_MARKERS.has(w)) en++;
+    }
+    const total = es + en;
+    if (total < 2) return null;
+    // Require a clear margin to avoid flapping on ambiguous phrases
+    if (en >= 2 * Math.max(es, 1)) return 'en';
+    if (es >= 2 * Math.max(en, 1)) return 'es';
+    return null;
+  }
+
+  // Resolve a browser locale to a well-supported SpeechRecognition lang tag
+  function resolveLocale(short) {
+    const nav = (navigator.language || '').toLowerCase();
+    if (short === 'es') return nav.startsWith('es') ? navigator.language : 'es-ES';
+    return nav.startsWith('en') ? navigator.language : 'en-US';
+  }
+
+  // ---- Pattern detection (mental health) ---------------------------------
+  // Word lists are lowercase, accents-preserved. Categories lean clinical
+  // and non-alarming — the goal is gentle awareness, not diagnosis.
+  const CATEGORIES = {
+    distress: {
+      label: 'Distress',
+      words: [
+        'overwhelmed','hopeless','worthless','empty','numb','broken','lost','stuck','trapped','drowning','suffocating','unbearable','helpless','defeated',
+        'abrumado','abrumada','desesperanzado','desesperanzada','inútil','vacío','vacía','roto','rota','perdido','perdida','atrapado','atrapada','ahogado','ahogada','insoportable'
+      ]
+    },
+    anxiety: {
+      label: 'Anxiety',
+      words: [
+        'anxious','anxiety','worried','worrying','panic','panicking','nervous','stressed','stress','scared','afraid','fear','restless','on edge',
+        'ansioso','ansiosa','ansiedad','preocupado','preocupada','preocupación','pánico','nervioso','nerviosa','estresado','estresada','estrés','miedo','asustado','asustada','inquieto','inquieta'
+      ]
+    },
+    sadness: {
+      label: 'Sadness',
+      words: [
+        'sad','depressed','depression','down','crying','cry','tears','unhappy','miserable','grief','grieving','hurt','heartbroken','blue',
+        'triste','tristeza','deprimido','deprimida','depresión','decaído','decaída','llorar','llorando','lágrimas','infeliz','duelo','dolor','herido','herida'
+      ]
+    },
+    fatigue: {
+      label: 'Fatigue',
+      words: [
+        'tired','exhausted','drained','fatigue','fatigued','sleepy','insomnia','burnout','burned','worn','weary',
+        'cansado','cansada','agotado','agotada','fatiga','fatigado','fatigada','insomnio','quemado','quemada','desgastado','desgastada'
+      ]
+    },
+    isolation: {
+      label: 'Isolation',
+      words: [
+        'alone','lonely','loneliness','isolated','isolation','nobody','withdrawn','disconnected',
+        'solo','sola','solitario','solitaria','aislado','aislada','nadie','soledad','apartado','apartada','desconectado','desconectada'
+      ]
+    },
+    coping: {
+      label: 'Coping',
+      words: [
+        'grateful','thankful','hopeful','hope','better','progress','support','therapy','therapist','breathing','meditation','meditate','mindful','mindfulness','journal','journaling','exercise','walk','rest','healing','calm',
+        'agradecido','agradecida','gratitud','esperanza','esperanzado','esperanzada','mejor','progreso','apoyo','terapia','terapeuta','respiración','respirar','meditación','meditar','atento','atenta','diario','ejercicio','caminar','descanso','sanando','tranquilo','tranquila'
+      ]
+    },
+    relationships: {
+      label: 'Relationships',
+      words: [
+        'family','friend','friends','partner','mom','dad','mother','father','sister','brother','wife','husband','girlfriend','boyfriend','love','relationship',
+        'familia','amigo','amiga','amigos','amigas','pareja','mamá','papá','madre','padre','hermana','hermano','esposa','esposo','novia','novio','amor','relación'
+      ]
+    },
+    body: {
+      label: 'Body',
+      words: [
+        'sleep','sleeping','appetite','eating','hungry','headache','tension','tense','tight','heart','chest','breath','breathing','stomach','nausea','dizzy',
+        'dormir','sueño','apetito','comer','hambre','tensión','tenso','tensa','corazón','pecho','respiración','estómago','náusea','mareado','mareada'
+      ]
+    }
+  };
+
+  // Pre-compile one regex per category. Unicode-aware word boundaries via
+  // lookarounds so accented Spanish words match cleanly (\b doesn't handle
+  // ñ/á reliably in JS).
+  function escapeRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+  const CATEGORY_PATTERNS = {};
+  for (const [key, cat] of Object.entries(CATEGORIES)) {
+    const alts = cat.words
+      .slice()
+      .sort((a, b) => b.length - a.length)   // longest-first for multi-word entries
+      .map(escapeRegex)
+      .join('|');
+    CATEGORY_PATTERNS[key] = new RegExp(
+      `(?<![\\p{L}\\p{N}])(${alts})(?![\\p{L}\\p{N}])`,
+      'giu'
+    );
+  }
+
+  // Live counters of how many times each category has been triggered
+  const patternCounts = {};
+  for (const key of Object.keys(CATEGORIES)) patternCounts[key] = 0;
+
+  // Per-word capture data — the bridge from Thought Capture to the brain.
+  // Map keyed by lowercase word, value: { text, label, category, count, source }
+  const capturedPills = new Map();
+
+  function setStatus(state, label) {
+    statusEl.dataset.state = state;
+    statusText.textContent = label;
+  }
+
+  // Feature detect ----------------------------------------------------------
+  if (!SR) {
+    card.style.display = 'none';
+    unavailable.style.display = 'block';
+    setStatus('unavailable', 'Unavailable');
+    return;
+  }
+
+  // State -------------------------------------------------------------------
+  // Two-recognizer model: we maintain a separate SpeechRecognition instance
+  // per supported language, each with a FIXED `.lang` that never changes.
+  // Switching languages becomes "stop A, start B" — neither instance ever
+  // sees a lang change, so Chrome doesn't reinitialize its speech service
+  // connection and doesn't re-validate mic permission mid-session.
+  const recognizers     = Object.create(null);  // { en: SR, es: SR }
+  const primedLangs     = new Set();            // langs that have been start()/stop() at least once
+  let   activeRecognition = null;               // currently "chosen" recognizer; event handlers check identity
+  let   shouldListen      = false;              // user intent — true between Start and Stop
+  let   isRecognizing     = false;              // true between onstart and onend on the ACTIVE recognizer
+  let   fatalError        = null;               // 'blocked' | 'no-mic' | null
+  let   persistentStream  = null;               // kept alive so the browser never re-prompts
+  let   audioCtx          = null;               // keeps the persistent stream actively consumed
+  let   keepAliveSource   = null;               // MediaStreamAudioSourceNode for the keep-alive
+  let   finalText         = '';
+  let   currentInterim    = '';                 // latest interim result (for live pattern counts)
+  let   restartTimer      = null;
+  let   recentRestarts    = [];                 // timestamps of recent restart attempts
+
+  // Language: start in the browser's preferred locale if it's ES or EN,
+  // otherwise default to en-US. Auto-switches based on what the user speaks.
+  const initialShort = (navigator.language || '').toLowerCase().startsWith('es') ? 'es' : 'en';
+  let currentShort   = initialShort;      // 'en' | 'es'
+  let currentLang    = resolveLocale(currentShort);
+  let langSwitchCooldown = 0;             // timestamp — don't switch more than once every N ms
+
+  const RESTART_DELAY_MS    = 250;
+  const THRASH_WINDOW_MS    = 3000;
+  const THRASH_MAX_RESTARTS = 6;
+
+  // file:// origin detection — Chrome refuses to persist mic permission for
+  // file:// URLs, so every internal recognizer restart (which happens after
+  // any pause in speech) re-prompts. We can't fix this in JS — the only real
+  // fix is to serve the page over http://localhost. But we can restart less
+  // aggressively so small pauses don't fire prompts, giving the user a
+  // chance to resume speaking before we fully tear down and restart.
+  const isFileOrigin = location.protocol === 'file:';
+  // On file://, use a much longer restart delay so brief conversational
+  // pauses don't immediately trigger a prompt. The user effectively gets
+  // ~1 second to resume speaking on the same session before we restart.
+  const RESTART_DELAY_FILE_MS = 1000;
+  function effectiveRestartDelay() {
+    return isFileOrigin ? RESTART_DELAY_FILE_MS : RESTART_DELAY_MS;
+  }
+
+  // UI helpers --------------------------------------------------------------
+  function escapeHtml(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  // Highlight pattern words in a block of text. Operates on already-escaped
+  // HTML (safe because HTML entities can't match a word-character context).
+  // `tentative=true` marks pills as not-yet-confirmed (no animation, faded).
+  function highlightPatterns(escapedHtml, tentative) {
+    const extra = tentative ? ' pill-tentative' : '';
+    let out = escapedHtml;
+    for (const [key, pattern] of Object.entries(CATEGORY_PATTERNS)) {
+      out = out.replace(pattern, (m) => `<span class="pill pill-${key}${extra}">${m}</span>`);
+    }
+    return out;
+  }
+
+  // DOM references for transcript pieces — these are pre-mounted in the HTML
+  // so the contenteditable element is never re-created (which would break
+  // focus, selection, and input event continuity).
+  const finalWrap   = document.getElementById('finalWrap');
+  const interimWrap = document.getElementById('interimWrap');
+
+  // Seed finalWrap with an empty text node + placeholder class so the
+  // element can host a caret and accept keystrokes from the very first
+  // click (before any voice input has filled it with real content).
+  if (!finalWrap.firstChild) {
+    finalWrap.appendChild(document.createTextNode(''));
+  }
+  finalWrap.classList.add('is-empty');
+
+  // Rendering strategy:
+  //   - finalWrap: contenteditable. Source of truth is `finalText`. On each
+  //     render we fully rebuild its innerHTML to apply pill highlighting,
+  //     preserving the user's caret via character-offset save/restore.
+  //   - interimWrap: non-editable. SR's interim text lives here with
+  //     "tentative" pill styling for real-time pattern feedback.
+  //   - The user can type/paste directly in finalWrap. An input handler
+  //     syncs `finalText` back from the DOM and re-renders with a short
+  //     debounce so typing feels smooth while pills still appear quickly.
+
+  // --- Caret preservation (char-offset based) -----------------------------
+  function getCaretCharOffset(el) {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return null;
+    const range = sel.getRangeAt(0);
+    if (!el.contains(range.startContainer)) return null;
+    const preRange = range.cloneRange();
+    preRange.selectNodeContents(el);
+    preRange.setEnd(range.endContainer, range.endOffset);
+    return preRange.toString().length;
+  }
+
+  function setCaretCharOffset(el, offset) {
+    const sel = window.getSelection();
+    const range = document.createRange();
+    let charCount = 0;
+    let found = false;
+    (function walk(node) {
+      if (found) return;
+      if (node.nodeType === Node.TEXT_NODE) {
+        const next = charCount + node.textContent.length;
+        if (offset <= next) {
+          range.setStart(node, Math.max(0, offset - charCount));
+          range.collapse(true);
+          found = true;
+          return;
+        }
+        charCount = next;
+      } else {
+        for (const child of node.childNodes) {
+          walk(child);
+          if (found) return;
+        }
+      }
+    })(el);
+    if (!found) {
+      range.selectNodeContents(el);
+      range.collapse(false);
+    }
+    try {
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } catch (_) {}
+  }
+
+  // Build the HTML for final text with pill highlighting, handling newlines
+  // (user may press Enter when typing; SR text never has them).
+  function renderFinalHtml(text) {
+    if (!text) return '';
+    const escaped = escapeHtml(text).replace(/\n/g, '<br>');
+    return highlightPatterns(escaped, false);
+  }
+
+  // Full render of finalWrap from `finalText`. Applies pill highlighting.
+  // We DO NOT touch innerHTML while finalWrap has focus — doing so
+  // mid-edit creates racy, caret-dropping behavior. While the user is
+  // typing, the DOM is the source of truth; this function is a no-op on
+  // the content (we only keep the placeholder class in sync). When the
+  // user blurs (or SR fires while they're not focused) we do the full
+  // re-render and apply highlighting.
+  function renderFinalWrap() {
+    const hasFocus = document.activeElement === finalWrap;
+    const isEmpty = !finalText || !finalText.trim();
+
+    if (hasFocus) {
+      // Respect the active caret — just keep the placeholder class in sync
+      finalWrap.classList.toggle('is-empty', isEmpty);
+      return;
+    }
+
+    finalWrap.innerHTML = renderFinalHtml(finalText);
+
+    // Guarantee a text node exists (acts as the caret anchor for the next
+    // click) and toggle the placeholder-visible class
+    if (!finalWrap.firstChild) {
+      finalWrap.appendChild(document.createTextNode(''));
+    }
+    finalWrap.classList.toggle('is-empty', isEmpty);
+  }
+
+  function renderInterimWrap(interim) {
+    if (!interim) {
+      interimWrap.innerHTML = '';
+      return;
+    }
+    // A leading space separates interim from whatever finalText ends with
+    const prefix = finalText && !/\s$/.test(finalText) ? ' ' : '';
+    interimWrap.innerHTML = prefix + highlightPatterns(escapeHtml(interim), true);
+  }
+
+  // Top-level render entry point. `interim` defaults to the module-level
+  // `currentInterim` value if not provided, which matters for post-input
+  // re-renders where SR state hasn't changed.
+  function renderTranscript(interim) {
+    const interimText = (interim === undefined) ? currentInterim : interim;
+    renderFinalWrap();
+    renderInterimWrap(interimText);
+    // Keep the view scrolled to the latest content unless the user is
+    // actively editing higher up in the transcript
+    if (document.activeElement !== finalWrap) {
+      transcriptEl.scrollTop = transcriptEl.scrollHeight;
+    }
+  }
+
+  // Recompute category counts AND per-word capture data. Called on every
+  // result event so the summary chips update live as the user speaks, and
+  // also populates `capturedPills` — the data we'll feed into the brain.
+  function recomputeCounts() {
+    const combined = finalText + (currentInterim ? ' ' + currentInterim : '');
+    let changed = false;
+
+    // Per-category counts (drives the summary chips)
+    for (const [key, pattern] of Object.entries(CATEGORY_PATTERNS)) {
+      pattern.lastIndex = 0;
+      const matches = combined.match(pattern);
+      const next = matches ? matches.length : 0;
+      if (patternCounts[key] !== next) {
+        patternCounts[key] = next;
+        changed = true;
+      }
+    }
+
+    // Per-word capture — only from FINAL text (don't store interim flicker).
+    // Rebuilt each call for correctness: if user deletes typed text, captured
+    // pills disappear too.
+    const nextPills = new Map();
+    for (const [key, pattern] of Object.entries(CATEGORY_PATTERNS)) {
+      pattern.lastIndex = 0;
+      let m;
+      while ((m = pattern.exec(finalText)) !== null) {
+        const word = m[0].toLowerCase();
+        const norm = word.replace(/\s+/g, ' ').trim();
+        const existing = nextPills.get(norm);
+        if (existing) {
+          existing.count++;
+        } else {
+          // Extract source phrase: the sentence containing this match
+          const source = extractSentence(finalText, m.index);
+          nextPills.set(norm, {
+            text: norm,
+            label: capitalizeFirst(norm),
+            category: key,
+            count: 1,
+            source
+          });
+        }
+      }
+    }
+    // Replace capturedPills contents (preserve the Map identity)
+    capturedPills.clear();
+    for (const [k, v] of nextPills) capturedPills.set(k, v);
+
+    if (changed) renderSummary();
+    maybeRevealCta();
+  }
+
+  function extractSentence(text, charIndex) {
+    // Walk backward from charIndex to find sentence start, forward to find end
+    let start = charIndex;
+    while (start > 0 && !/[.!?\n]/.test(text[start - 1])) start--;
+    let end = charIndex;
+    while (end < text.length && !/[.!?\n]/.test(text[end])) end++;
+    return text.slice(start, end).trim();
+  }
+
+  function capitalizeFirst(s) {
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+
+  // CTA visibility — appears once the user has captured enough distinct
+  // patterns to make the brain view meaningful. We want: at least 3 unique
+  // pills across at least 2 different categories.
+  function maybeRevealCta() {
+    if (!ctaBtn) return;
+    const uniquePills = capturedPills.size;
+    const activeCategories = new Set();
+    for (const p of capturedPills.values()) activeCategories.add(p.category);
+    const shouldShow = uniquePills >= 3 && activeCategories.size >= 2;
+    if (shouldShow && !ctaBtn.classList.contains('visible')) {
+      ctaBtn.classList.add('visible');
+    }
+  }
+
+  function renderSummary() {
+    const active = Object.entries(patternCounts).filter(([, n]) => n > 0);
+    if (active.length === 0) {
+      summaryEl.classList.remove('visible');
+      summaryEl.innerHTML = '<span class="summary-label">Patterns detected</span>';
+      return;
+    }
+    const chips = active
+      .sort((a, b) => b[1] - a[1])
+      .map(([key, n]) => {
+        const label = CATEGORIES[key].label;
+        return `<span class="chip chip-${key}">${label}<span class="count">${n}</span></span>`;
+      })
+      .join('');
+    summaryEl.innerHTML = '<span class="summary-label">Patterns detected</span>' + chips;
+    summaryEl.classList.add('visible');
+  }
+
+  // ---- Language auto-switch logic ----------------------------------------
+  function maybeSwitchLanguage(latestChunk) {
+    const now = Date.now();
+    if (now < langSwitchCooldown) return;
+
+    // Run detection on the latest chunk AND on a tail window of finalText,
+    // so short utterances don't flip languages prematurely.
+    const tail = finalText.slice(-240);
+    const detected = detectLanguage(latestChunk) || detectLanguage(tail);
+    if (!detected || detected === currentShort) return;
+    if (!recognizers[detected]) return;  // target recognizer disabled (e.g. unsupported)
+
+    currentShort = detected;
+    currentLang  = resolveLocale(currentShort);
+    langSwitchCooldown = now + 3000;   // no more than one switch per ~3s
+    switchActiveRecognizer(detected);
+  }
+
+  // Swap the active recognizer. Old instance keeps its fixed `.lang`, new
+  // instance keeps its fixed `.lang`. Chrome never sees a lang change on a
+  // single instance, so it doesn't reinitialize its speech backend and
+  // doesn't re-validate microphone permission.
+  function switchActiveRecognizer(newShort) {
+    const newRec = recognizers[newShort];
+    const oldRec = activeRecognition;
+    if (!newRec || newRec === oldRec) return;
+
+    // Pointing activeRecognition at newRec BEFORE stopping oldRec means
+    // oldRec's onend will see it's no longer active and skip auto-restart.
+    activeRecognition = newRec;
+
+    // CRITICAL: reset isRecognizing here. oldRec's upcoming onend will
+    // exit early due to the active-recognizer guard and NEVER reset this
+    // flag. If we leave it true, tryStart below bails on `if (isRecognizing)`
+    // and the new recognizer never starts — the session stays frozen on the
+    // previous language. From the app's perspective, no recognizer is
+    // running until newRec.onstart fires.
+    isRecognizing = false;
+
+    if (oldRec) {
+      try { oldRec.stop(); } catch (_) {}
+    }
+
+    // Retry with backoff — the old recognizer may still be in a transitional
+    // state when we first try to start the new one, causing InvalidStateError.
+    const tryStart = async (attempt) => {
+      if (activeRecognition !== newRec || !shouldListen || fatalError) return;
+      if (isRecognizing) return;  // newRec.onstart already fired — nothing to do
+
+      // Defensive: same safety net as the onend auto-restart path. If the
+      // persistent stream died (device change, OS suspend), re-acquire
+      // before starting so the browser doesn't see it as a fresh session.
+      if (!hasLiveStream()) {
+        const { ok } = await ensureMicPermission();
+        if (!ok || activeRecognition !== newRec || !shouldListen) return;
+      }
+
+      try {
+        newRec.start();
+        primedLangs.add(newShort);
+      } catch (e) {
+        console.warn('[SR] switch start threw:', e.name, e.message);
+        if (attempt < 6) {
+          setTimeout(() => tryStart(attempt + 1), 160);
+        }
+      }
+    };
+    tryStart(0);
+  }
+
+  function enterActiveUI() {
+    micBtn.classList.add('is-listening');
+    micBtnText.textContent = 'Listening…';
+    stopBtn.disabled = false;
+    transcriptEl.classList.add('active');
+    if (window.__setBgEnergy) window.__setBgEnergy(1);
+  }
+
+  function leaveActiveUI() {
+    micBtn.classList.remove('is-listening');
+    micBtnText.textContent = 'Start talking';
+    stopBtn.disabled = true;
+    transcriptEl.classList.remove('active');
+    if (window.__setBgEnergy) window.__setBgEnergy(0);
+  }
+
+  // Build a SpeechRecognition instance for a SPECIFIC language. Each instance
+  // gets a fixed `.lang` that never changes — that's what lets us hot-swap
+  // between ES and EN without Chrome reinitializing its speech backend.
+  // Event handlers guard on `r !== activeRecognition` so that a stale
+  // recognizer (the one we just swapped away from) never drives UI or
+  // re-enters the auto-restart loop.
+  function buildRecognitionForLang(lang) {
+    const r = new SR();
+    r.continuous      = true;
+    r.interimResults  = true;
+    r.maxAlternatives = 1;
+    r.lang            = lang;
+
+    r.onstart = () => {
+      if (r !== activeRecognition) return;
+      isRecognizing = true;
+      setStatus('listening', 'Listening');
+      enterActiveUI();
+      renderTranscript('');
+    };
+
+    r.onaudiostart  = () => { /* mic is live */ };
+    r.onspeechstart = () => {
+      if (r !== activeRecognition) return;
+      setStatus('listening', 'Listening');
+    };
+
+    r.onresult = (event) => {
+      if (r !== activeRecognition) return;
+      let interim = '';
+      let newFinalChunk = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        const transcript = result[0].transcript;
+        if (result.isFinal) {
+          const trimmed = transcript.trim();
+          const needsSpace = finalText && !/\s$/.test(finalText);
+          finalText += (needsSpace ? ' ' : '') + trimmed;
+          newFinalChunk += (newFinalChunk ? ' ' : '') + trimmed;
+        } else {
+          interim += transcript;
+        }
+      }
+      currentInterim = interim.trim();
+      renderTranscript(currentInterim);
+      recomputeCounts();
+      if (newFinalChunk) {
+        maybeSwitchLanguage(newFinalChunk);
+      }
+    };
+
+    r.onerror = (event) => {
+      const err = event.error;
+      console.warn('[SR][' + lang + '] error:', err, event.message || '');
+
+      // Inactive recognizers usually just produce 'aborted' during swap — ignore
+      if (r !== activeRecognition && err !== 'not-allowed' && err !== 'service-not-allowed') {
+        return;
+      }
+
+      if (err === 'not-allowed' || err === 'service-not-allowed') {
+        fatalError = 'blocked';
+        shouldListen = false;
+        releasePersistentStream();
+        setStatus('unavailable', 'Microphone blocked');
+      } else if (err === 'audio-capture') {
+        fatalError = 'no-mic';
+        shouldListen = false;
+        setStatus('unavailable', 'No microphone');
+      } else if (err === 'no-speech') {
+        setStatus('listening', 'Listening — waiting for speech');
+      } else if (err === 'network') {
+        setStatus('processing', 'Network hiccup — retrying');
+      } else if (err === 'aborted') {
+        // Normal on manual stop or language swap
+      } else if (err === 'language-not-supported') {
+        // Disable this recognizer permanently and fall back to the other
+        console.warn('[SR]', lang, 'not supported — disabling');
+        const key = Object.keys(recognizers).find(k => recognizers[k] === r);
+        if (key) delete recognizers[key];
+        if (r === activeRecognition) {
+          const fallbackKey = Object.keys(recognizers)[0];
+          if (fallbackKey) {
+            currentShort = fallbackKey;
+            currentLang  = resolveLocale(fallbackKey);
+            switchActiveRecognizer(fallbackKey);
+          } else {
+            fatalError = 'blocked';
+            setStatus('unavailable', 'Language not supported');
+          }
+        }
+      } else {
+        setStatus('processing', 'Recovering…');
+      }
+    };
+
+    r.onend = () => {
+      // Only the active recognizer participates in the restart loop.
+      // An inactive recognizer's onend fires as a no-op after a language swap.
+      if (r !== activeRecognition) return;
+
+      isRecognizing = false;
+
+      if (fatalError) {
+        leaveActiveUI();
+        renderTranscript('');
+        return;
+      }
+      if (!shouldListen) {
+        leaveActiveUI();
+        setStatus('idle', 'Idle');
+        renderTranscript('');
+        return;
+      }
+
+      // Thrash guard
+      const now = Date.now();
+      recentRestarts = recentRestarts.filter(t => now - t < THRASH_WINDOW_MS);
+      recentRestarts.push(now);
+      if (recentRestarts.length > THRASH_MAX_RESTARTS) {
+        shouldListen = false;
+        fatalError = 'thrash';
+        leaveActiveUI();
+        setStatus('unavailable', 'Recognition unstable — try again');
+        renderTranscript('');
+        recentRestarts = [];
+        return;
+      }
+
+      clearTimeout(restartTimer);
+      restartTimer = setTimeout(async () => {
+        if (!shouldListen || isRecognizing || fatalError) return;
+        if (r !== activeRecognition) return;   // got swapped while waiting
+
+        // Safety net for stream death (device change / OS suspend)
+        if (!hasLiveStream()) {
+          console.warn('[mic] persistent stream not live, re-acquiring');
+          const { ok } = await ensureMicPermission();
+          if (!ok || !shouldListen || isRecognizing) return;
+        }
+
+        try {
+          r.start();
+        } catch (e) {
+          // InvalidStateError → stop cleanly and give next onend a chance
+          console.warn('[SR] restart threw:', e.name, e.message);
+          try { r.abort(); } catch (_) {}
+        }
+      }, effectiveRestartDelay());
+    };
+
+    return r;
+  }
+
+  // Primes a recognizer by briefly starting and immediately stopping it.
+  // Any one-time setup cost Chrome needs to pay (speech-service handshake,
+  // language-model load, sandbox permission negotiation) happens here,
+  // inside the user gesture that also drove the initial getUserMedia. After
+  // priming, subsequent start() calls on that instance are silent.
+  function primeRecognizer(key) {
+    const r = recognizers[key];
+    if (!r || primedLangs.has(key)) return Promise.resolve();
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = () => { if (!done) { done = true; primedLangs.add(key); resolve(); } };
+      const origOnStart = r.onstart;
+      const origOnEnd   = r.onend;
+      const origOnError = r.onerror;
+
+      r.onstart = () => {
+        // Swallow this onstart — priming, not real
+        try { r.stop(); } catch (_) {}
+      };
+      r.onend = () => {
+        r.onstart = origOnStart;
+        r.onend   = origOnEnd;
+        r.onerror = origOnError;
+        finish();
+      };
+      r.onerror = (event) => {
+        // If priming fails, restore handlers and move on — we'll just pay
+        // the init cost later if/when the user switches to this language
+        if (event.error !== 'aborted') {
+          console.warn('[SR] prime failed for', key, event.error);
+        }
+      };
+      try {
+        r.start();
+      } catch (_) {
+        r.onstart = origOnStart;
+        r.onend   = origOnEnd;
+        r.onerror = origOnError;
+        finish();
+      }
+      // Fail-safe timeout in case onend never fires
+      setTimeout(finish, 2500);
+    });
+  }
+
+  // Keep a microphone stream alive for the page's lifetime ------------------
+  // In sandboxed iframe contexts, SpeechRecognition.start() re-prompts for
+  // permission on every call unless there's an ACTIVE mic stream open. We
+  // open one with getUserMedia on the very first Start click and never stop
+  // it. While it's alive, the browser treats the permission as "in use" and
+  // no further prompts fire — not from getUserMedia, not from SR.
+  //
+  // Simply holding the stream handle isn't always enough: browsers can treat
+  // an unused stream as "idle" and release the permission hold after a while,
+  // which is what caused the mid-session re-prompt. To prevent that, we pipe
+  // the stream through a Web Audio graph with a silent gain node — the track
+  // is now actively being consumed at the audio layer, so the browser keeps
+  // the permission firmly attached.
+  function hasLiveStream() {
+    return !!(persistentStream && persistentStream.getAudioTracks().some(t => t.readyState === 'live'));
+  }
+
+  function keepStreamActive(stream) {
+    try {
+      if (!audioCtx) {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return;  // very old browser — fall back to plain stream
+        audioCtx = new Ctx();
+      }
+      // Resume if the autoplay policy suspended it — we're inside a user gesture
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume().catch(() => {});
+      }
+      // Tear down any previous keep-alive source (e.g. on stream re-acquire)
+      if (keepAliveSource) {
+        try { keepAliveSource.disconnect(); } catch (_) {}
+        keepAliveSource = null;
+      }
+      const src = audioCtx.createMediaStreamSource(stream);
+      const silent = audioCtx.createGain();
+      silent.gain.value = 0;  // inaudible — we're not playing anything
+      src.connect(silent);
+      silent.connect(audioCtx.destination);
+      keepAliveSource = src;
+    } catch (e) {
+      console.warn('[mic] keep-alive setup failed:', e);
+    }
+  }
+
+  async function ensureMicPermission() {
+    if (hasLiveStream()) return { ok: true };
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      return { ok: true };
+    }
+    try {
+      persistentStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      keepStreamActive(persistentStream);
+      return { ok: true };
+    } catch (e) {
+      if (e.name === 'NotAllowedError' || e.name === 'SecurityError' || e.name === 'PermissionDeniedError') {
+        fatalError = 'blocked';
+        setStatus('unavailable', 'Microphone blocked');
+      } else if (e.name === 'NotFoundError' || e.name === 'DevicesNotFoundError' || e.name === 'OverconstrainedError') {
+        fatalError = 'no-mic';
+        setStatus('unavailable', 'No microphone');
+      } else {
+        fatalError = 'blocked';
+        setStatus('unavailable', 'Microphone error');
+      }
+      return { ok: false };
+    }
+  }
+
+  function releasePersistentStream() {
+    if (keepAliveSource) {
+      try { keepAliveSource.disconnect(); } catch (_) {}
+      keepAliveSource = null;
+    }
+    if (persistentStream) {
+      try { persistentStream.getTracks().forEach(t => t.stop()); } catch (_) {}
+      persistentStream = null;
+    }
+    if (audioCtx) {
+      try { audioCtx.close(); } catch (_) {}
+      audioCtx = null;
+    }
+  }
+
+  // Build both recognizers up-front with fixed languages
+  recognizers.en = buildRecognitionForLang(resolveLocale('en'));
+  recognizers.es = buildRecognitionForLang(resolveLocale('es'));
+  activeRecognition = recognizers[currentShort];
+
+  // Button handlers ---------------------------------------------------------
+  micBtn.addEventListener('click', async () => {
+    if (shouldListen || isRecognizing) return;
+
+    fatalError = null;
+    recentRestarts = [];
+    setStatus('processing', 'Requesting microphone…');
+
+    const { ok } = await ensureMicPermission();
+    if (!ok) return;
+
+    shouldListen = true;
+    setStatus('processing', 'Starting…');
+
+    // Prime the OTHER language's recognizer first. This briefly starts and
+    // stops the inactive instance inside the same user gesture + mic
+    // authorization window that's driving the real session — so when the
+    // user later switches language mid-conversation, that instance's
+    // speech-backend handshake is already done and Chrome doesn't ask
+    // for the mic again.
+    const otherKey = currentShort === 'en' ? 'es' : 'en';
+    if (recognizers[otherKey] && !primedLangs.has(otherKey)) {
+      primeRecognizer(otherKey).catch(() => {});
+    }
+
+    // Start the active recognizer. If priming is still mid-flight, Chrome
+    // may throw InvalidStateError — retry briefly.
+    const startActive = (attempt) => {
+      if (!shouldListen || isRecognizing || fatalError) return;
+      try {
+        activeRecognition.start();
+        primedLangs.add(currentShort);
+      } catch (e) {
+        console.warn('[SR] start threw:', e.name, e.message);
+        if (attempt < 5) {
+          setTimeout(() => startActive(attempt + 1), 160);
+        } else {
+          shouldListen = false;
+          setStatus('idle', 'Idle');
+          leaveActiveUI();
+        }
+      }
+    };
+    // Small delay gives priming a head-start so the active start succeeds first try
+    setTimeout(() => startActive(0), 60);
+  });
+
+  stopBtn.addEventListener('click', () => {
+    if (!shouldListen && !isRecognizing) return;
+    shouldListen = false;
+    clearTimeout(restartTimer);
+    setStatus('processing', 'Stopping…');
+    if (isRecognizing && activeRecognition) {
+      try {
+        activeRecognition.stop();
+      } catch (_) {
+        try { activeRecognition.abort(); } catch (_) {}
+      }
+    } else {
+      // Nothing to stop — just reset UI
+      leaveActiveUI();
+      setStatus('idle', 'Idle');
+      renderTranscript('');
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    finalText = '';
+    currentInterim = '';
+    capturedPills.clear();
+    for (const key of Object.keys(patternCounts)) patternCounts[key] = 0;
+    renderSummary();
+    renderTranscript('');
+    if (ctaBtn) ctaBtn.classList.remove('visible');
+  });
+
+  // --- Editable transcript: typing + paste -------------------------------
+  // The user can type or paste directly into the transcript. The DOM the
+  // user is typing into is the source of truth WHILE they're editing — we
+  // do NOT re-render innerHTML on every keystroke, because swapping the
+  // element's contents out from under an active caret is the source of
+  // every "sometimes typing breaks" regression we've hit. On each input
+  // we just sync `finalText` from the DOM (so SR + counts + transition
+  // all see the latest text) and let the browser handle the caret
+  // natively. Pill highlighting is applied once on blur.
+  finalWrap.addEventListener('input', () => {
+    finalText = finalWrap.innerText;
+    const isEmpty = !finalText || !finalText.trim();
+    finalWrap.classList.toggle('is-empty', isEmpty);
+    recomputeCounts();
+  });
+
+  // Paste → force plain text (rich HTML paste from Word/websites would
+  // otherwise inject arbitrary markup). We do everything explicitly:
+  // ensure focus + a valid caret anchor, insert the text, then sync
+  // finalText and counts ourselves instead of relying on execCommand's
+  // input event (which isn't guaranteed to fire in every engine).
+  finalWrap.addEventListener('paste', (e) => {
+    e.preventDefault();
+    const cd = e.clipboardData || window.clipboardData;
+    if (!cd) return;
+    const text = cd.getData('text/plain') || '';
+    if (!text) return;
+
+    // Make absolutely sure finalWrap is the focused editable
+    if (document.activeElement !== finalWrap) finalWrap.focus();
+
+    // Make absolutely sure there's a caret anchor inside finalWrap.
+    // (If the user pastes before ever clicking in, the selection may be
+    // stale or outside the element.)
+    const sel = window.getSelection();
+    const hasValidSelection = sel && sel.rangeCount > 0 &&
+      finalWrap.contains(sel.getRangeAt(0).startContainer);
+    if (!hasValidSelection) {
+      let anchor = null;
+      (function walk(node) {
+        if (node.nodeType === Node.TEXT_NODE) { anchor = node; return; }
+        for (let i = node.childNodes.length - 1; i >= 0; i--) {
+          walk(node.childNodes[i]);
+          if (anchor) return;
+        }
+      })(finalWrap);
+      if (!anchor) {
+        anchor = document.createTextNode('');
+        finalWrap.appendChild(anchor);
+      }
+      const r = document.createRange();
+      r.setStart(anchor, anchor.textContent.length);
+      r.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(r);
+    }
+
+    // Try execCommand first (handles newlines + caret placement correctly
+    // in Chrome / Safari). Manual Range fallback for anything else.
+    let inserted = false;
+    try {
+      inserted = document.execCommand('insertText', false, text);
+    } catch (_) { inserted = false; }
+
+    if (!inserted) {
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      const textNode = document.createTextNode(text);
+      range.insertNode(textNode);
+      range.setStartAfter(textNode);
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+
+    // Sync state ourselves — don't depend on the input event firing.
+    finalText = finalWrap.innerText;
+    const isEmpty = !finalText || !finalText.trim();
+    finalWrap.classList.toggle('is-empty', isEmpty);
+    recomputeCounts();
+  });
+
+  // Blur → apply pill highlighting (we suppressed innerHTML swaps during
+  // focus to protect the caret; now it's safe to re-render).
+  finalWrap.addEventListener('blur', () => {
+    finalText = finalWrap.innerText;
+    recomputeCounts();
+    renderFinalWrap();
+  });
+
+  // Clicking anywhere in the transcript area (including padding or the
+  // interim/caret spans) should focus the final-wrap so the user can just
+  // click and start typing, without having to target the text precisely.
+  //
+  // IMPORTANT: the caret must be placed *inside a text node*, not at an
+  // element offset. Chrome will not accept keystrokes when the selection is
+  // anchored at an element offset of a visually-empty inline contenteditable
+  // — which is why typing before voice used to silently drop. We walk to the
+  // last text node (or create one) and set the range directly inside it.
+  transcriptEl.addEventListener('mousedown', (e) => {
+    // If user clicks inside already-populated finalWrap content, let the
+    // browser place the caret where they actually clicked.
+    if (finalText && (e.target === finalWrap || finalWrap.contains(e.target))) return;
+    // If finalWrap is focused and has content, same — let the browser be.
+    if (document.activeElement === finalWrap && finalText) return;
+
+    e.preventDefault();
+    finalWrap.focus();
+
+    // Walk to find the last text node so the caret lands inside it.
+    let lastTextNode = null;
+    (function walk(node) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        lastTextNode = node;
+        return;
+      }
+      for (let i = node.childNodes.length - 1; i >= 0; i--) {
+        walk(node.childNodes[i]);
+        if (lastTextNode) return;
+      }
+    })(finalWrap);
+    if (!lastTextNode) {
+      lastTextNode = document.createTextNode('');
+      finalWrap.appendChild(lastTextNode);
+    }
+
+    const range = document.createRange();
+    range.setStart(lastTextNode, lastTextNode.textContent.length);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  });
+
+  // Keyboard shortcut: space bar toggles when not focused in an input / transcript
+  document.addEventListener('keydown', (e) => {
+    const tag = (document.activeElement && document.activeElement.tagName) || '';
+    const isEditable = document.activeElement && document.activeElement.isContentEditable;
+    if (e.code === 'Space' && tag !== 'INPUT' && tag !== 'TEXTAREA' && !isEditable) {
+      e.preventDefault();
+      if (shouldListen || isRecognizing) stopBtn.click();
+      else micBtn.click();
+    }
+  });
+
+  function abortAllRecognizers() {
+    for (const key of Object.keys(recognizers)) {
+      try { recognizers[key].abort(); } catch (_) {}
+    }
+  }
+
+  // Permissions API — reflect external permission changes (e.g. user revokes
+  // mic access via the browser UI while the app is open)
+  if (navigator.permissions && navigator.permissions.query) {
+    navigator.permissions.query({ name: 'microphone' }).then(status => {
+      if (status.state === 'denied') {
+        fatalError = 'blocked';
+        setStatus('unavailable', 'Microphone blocked');
+      }
+      status.onchange = () => {
+        if (status.state === 'denied') {
+          fatalError = 'blocked';
+          shouldListen = false;
+          clearTimeout(restartTimer);
+          abortAllRecognizers();
+          releasePersistentStream();
+          setStatus('unavailable', 'Microphone blocked');
+          leaveActiveUI();
+        } else if (status.state === 'granted' && fatalError === 'blocked') {
+          fatalError = null;
+          setStatus('idle', 'Idle');
+        }
+      };
+    }).catch(() => { /* Safari etc. may not support 'microphone' here */ });
+  }
+
+  // Clean up on unload
+  window.addEventListener('beforeunload', () => {
+    shouldListen = false;
+    clearTimeout(restartTimer);
+    abortAllRecognizers();
+    releasePersistentStream();
+  });
+
+  // ============================================================
+  // CAPTURE → BRAIN TRANSITION
+  // ============================================================
+  // The brain used to have 6 hardcoded hubs (Identity/Emotions/etc.). That
+  // buried the user's captured words as secondary content. This version
+  // flips the relationship: each captured pill BECOMES a principal (l1
+  // node) distributed around the brain. The brain is a blank canvas for
+  // the user's own patterns.
+
+  // Tone (color) for each pattern category — drives each pill's dot color.
+  const CATEGORY_TO_BRAIN_TONE = {
+    anxiety:       'difficult',
+    sadness:       'difficult',
+    distress:      'difficult',
+    fatigue:       'difficult',
+    isolation:     'mixed',
+    relationships: 'mixed',
+    body:          'mixed',
+    coping:        'positive'
+  };
+
+  // Sub-themes that open up UNDER each captured pill. Tailored per category
+  // so clicking "anxious" reveals anxiety-shaped questions, clicking "tired"
+  // reveals fatigue-shaped ones, etc. These are the l2 drill-in nodes.
+  // Each entry's `insight` may use {pill} which is replaced with the
+  // user's actual word.
+  const SUBTHEME_TEMPLATES = {
+    anxiety: [
+      { n: 'Triggers',      t: 'difficult', insight: 'What tends to invite {pill} into the room — the conditions, the moments, the cues.' },
+      { n: 'Body signals',  t: 'mixed',     insight: 'Where the body speaks before the mind catches up. The signal often arrives here first.' },
+      { n: 'The thought loop', t: 'difficult', insight: 'The spiral the mind runs when {pill} is on. Noticing the loop is already the exit.' },
+      { n: 'What steadies', t: 'positive',  insight: 'Small returns to the ground — breath, place, a familiar voice — when this is loud.' }
+    ],
+    sadness: [
+      { n: 'Source',        t: 'difficult', insight: 'Where this is coming from. {pill} is usually love or loss pointing somewhere.' },
+      { n: 'Underneath',    t: 'mixed',     insight: 'The thing {pill} is covering or protecting. Sadness is rarely the whole story.' },
+      { n: 'How it moves',  t: 'mixed',     insight: 'The rhythm of this feeling — when it rises, when it softens, how long it stays.' },
+      { n: 'Gentleness',    t: 'positive',  insight: 'The care this asks for. Not fixing — just being with it.' }
+    ],
+    distress: [
+      { n: 'Peak moments',  t: 'difficult', insight: 'When {pill} is loudest. The shape of the hardest moments.' },
+      { n: 'The signal',    t: 'mixed',     insight: 'What this intensity is trying to tell you. Distress always points somewhere.' },
+      { n: 'Who steadies',  t: 'positive',  insight: 'People, places, or practices that hold you when this arrives.' },
+      { n: 'Next small step', t: 'positive', insight: 'The smallest move that makes the room a little bigger.' }
+    ],
+    fatigue: [
+      { n: 'Energy drains', t: 'difficult', insight: 'What\'s pulling on your reserves — visible and invisible.' },
+      { n: 'When it shows up', t: 'mixed',  insight: 'The times of day, the contexts, the triggers where {pill} arrives.' },
+      { n: 'What rest looks like', t: 'positive', insight: 'Not just sleep — the specific kinds of rest your body and mind are asking for.' },
+      { n: 'Listen or push', t: 'neutral',  insight: 'The ongoing question: when to lean in, when to yield. {pill} is information.' }
+    ],
+    isolation: [
+      { n: 'When you pull away', t: 'difficult', insight: 'The moments you choose distance. What {pill} is protecting.' },
+      { n: 'What feels safer',   t: 'mixed',     insight: 'Solitude is not the enemy. Knowing what feels safer and why is useful data.' },
+      { n: 'What you miss',      t: 'mixed',     insight: 'What connection, at its best, would give you. The ache pointing at something.' },
+      { n: 'Small openings',     t: 'positive',  insight: 'Tiny, low-stakes ways back toward people. Not a leap — a lean.' }
+    ],
+    coping: [
+      { n: 'How it helps',  t: 'positive',  insight: 'What {pill} gives you. The specific relief or steadiness it provides.' },
+      { n: 'When you reach for it', t: 'mixed', insight: 'The contexts where this shows up — by intention or by reflex.' },
+      { n: 'What it\'s teaching', t: 'positive', insight: 'The learning inside this practice. What it\'s showing you about yourself.' },
+      { n: 'Deeper practice', t: 'positive', insight: 'Where this could go — what fuller, more intentional use might look like.' }
+    ],
+    relationships: [
+      { n: 'Closeness',     t: 'mixed',     insight: 'How {pill} figures in your circle — the role it plays, the space it takes.' },
+      { n: 'Your role',     t: 'neutral',   insight: 'How you tend to show up here. The patterns, the default positions.' },
+      { n: 'Tensions',      t: 'difficult', insight: 'Where the friction or tenderness lives — what\'s unsaid, what\'s asked for.' },
+      { n: 'Nourishment',   t: 'positive',  insight: 'What feeds you in this relationship. What you receive, what you give.' }
+    ],
+    body: [
+      { n: 'Sensations',    t: 'mixed',     insight: 'Where {pill} registers physically — tightness, heat, hollowness, hum.' },
+      { n: 'When it speaks', t: 'neutral',  insight: 'The moments your body gets louder. It often knows before you do.' },
+      { n: 'What it asks',   t: 'positive', insight: 'The request under the sensation — rest, movement, water, breath, stillness.' },
+      { n: 'Tuning in',      t: 'positive', insight: 'The practice of listening without forcing an answer. Presence as information.' }
+    ]
+  };
+
+  // Generic fallback subthemes for any category we don't have a template for.
+  const GENERIC_SUBTHEMES = [
+    { n: 'When it shows up', t: 'mixed',     insight: 'The moments {pill} tends to appear. Noticing the pattern is half the work.' },
+    { n: 'What it wants',    t: 'positive',  insight: 'Every feeling carries a wish. What is {pill} asking for?' },
+    { n: 'What triggers it', t: 'difficult', insight: 'The conditions that invite {pill} into the room.' },
+    { n: 'What helps',       t: 'positive',  insight: 'Small moves that soften {pill} when it gets loud.' }
+  ];
+
+  // Distribute N principals around the brain in a roughly oval ring,
+  // matching the brain's wider-than-tall envelope. A bit of vertical jitter
+  // so pills don't sit on a perfect horizon line.
+  function generatePillZones(n) {
+    const zones = [];
+    // Brain envelope is roughly 1.7 wide, 1.1 tall. Use slightly inset
+    // radii so the nearest-hub search finds good anchor positions.
+    const rx = 1.05, ry = 0.60;
+    const startOffset = -Math.PI / 2 + (Math.PI / n); // nudge so no pill sits
+                                                      // directly at top center
+    for (let i = 0; i < n; i++) {
+      const angle = startOffset + (i / n) * Math.PI * 2;
+      const jitterY = (Math.sin(i * 1.37) * 0.12);
+      const jitterZ = (Math.sin(i * 0.97) * 0.25);
+      zones.push([
+        Math.cos(angle) * rx,
+        Math.sin(angle) * ry + jitterY,
+        jitterZ
+      ]);
+    }
+    return zones;
+  }
+
+  function truncate(s, max) {
+    if (!s) return '';
+    return s.length <= max ? s : s.slice(0, max - 1) + '…';
+  }
+  function humanCategory(catKey) {
+    // Title-cased category name for display in cards
+    return catKey.charAt(0).toUpperCase() + catKey.slice(1);
+  }
+
+  // Build the brain's CATEGORIES — one entry per captured pill. Each captured
+  // pill is a principal (l1 node) with sub-themes (l2 nodes) drawn from the
+  // template bank for its pattern category. The brain becomes a map of
+  // what the user actually said.
+  function buildBrainCategories() {
+    const pills = Array.from(capturedPills.values());
+    // Sort by count desc so most-mentioned pills get the prime positions,
+    // and cap to 8 so the brain doesn't get overcrowded.
+    pills.sort((a, b) => b.count - a.count || a.text.localeCompare(b.text));
+    const MAX_PRINCIPALS = 8;
+    const visible = pills.slice(0, MAX_PRINCIPALS);
+
+    const zones = generatePillZones(visible.length);
+
+    return visible.map((pill, i) => {
+      const subthemes = SUBTHEME_TEMPLATES[pill.category] || GENERIC_SUBTHEMES;
+      const tone = CATEGORY_TO_BRAIN_TONE[pill.category] || 'neutral';
+
+      // l2: one per subtheme, with insight personalized to this pill
+      const l2 = subthemes.map((sub, si) => ({
+        n: sub.n,
+        t: sub.t,
+        card: {
+          insight: sub.insight.replace(/\{pill\}/g, pill.text),
+          triggers: [],
+          origin: pill.source ? `From when you said: "${truncate(pill.source, 140)}"` : '',
+          // Related = the parent pill + the other subthemes under it
+          related: [pill.label].concat(
+            subthemes
+              .filter((_, sj) => sj !== si)
+              .map(s => s.n)
+          )
+        },
+        l3: []
+      }));
+
+      // Related: other captured pills (for the card's "Related themes" section)
+      const related = pills
+        .filter(p => p !== pill)
+        .slice(0, 4)
+        .map(p => p.label);
+
+      return {
+        name: pill.label,
+        zone: zones[i],
+        tone,
+        card: {
+          insight: pill.count === 1
+            ? `You mentioned "${pill.text}" once in this session.`
+            : `You mentioned "${pill.text}" ${pill.count} times in this session.`,
+          triggers: [],
+          origin: pill.source ? `You said: "${truncate(pill.source, 160)}"` : '',
+          related,
+          note: pill.category ? `Category · ${humanCategory(pill.category)}` : ''
+        },
+        l2
+      };
+    });
+  }
+
+  // Orchestrates the transition: fade capture, cover, init brain, reveal.
+  function transitionToBrain() {
+    if (document.body.classList.contains('transitioning')) return;
+    if (document.body.classList.contains('brain-mode')) return;
+
+    // 1. Stop listening so the mic is free
+    shouldListen = false;
+    clearTimeout(restartTimer);
+    try { abortAllRecognizers(); } catch (_) {}
+
+    // 2. Snapshot summary chips for the "flying pills" animation
+    const chipEls = Array.from(summaryEl.querySelectorAll('.chip'));
+    const flyingPills = chipEls.map(ch => {
+      const rect = ch.getBoundingClientRect();
+      const clone = document.createElement('div');
+      clone.className = 'flying-pill';
+      const cs = getComputedStyle(ch);
+      clone.style.left = rect.left + 'px';
+      clone.style.top  = rect.top + 'px';
+      clone.style.background = cs.backgroundColor;
+      clone.style.color      = cs.color;
+      clone.style.border     = cs.border;
+      clone.style.padding    = cs.padding;
+      clone.style.fontSize   = cs.fontSize;
+      clone.style.fontWeight = cs.fontWeight;
+      clone.innerHTML = ch.innerHTML;
+      document.body.appendChild(clone);
+      return clone;
+    });
+
+    // 3. Start the capture-side fade
+    document.body.classList.add('transitioning');
+    transitionCover.classList.add('active');
+
+    // 4. Initialize the brain behind the cover
+    const brainCategories = buildBrainCategories();
+
+    // Let the cover fade in a bit before booting the brain so there's no flash
+    setTimeout(() => {
+      if (typeof window.__initBrain === 'function') {
+        window.__initBrain(brainCategories);
+      }
+    }, 300);
+
+    // 5. Reveal the brain stage and settle the flying pills
+    setTimeout(() => {
+      brainStage.classList.add('active');
+      brainStage.setAttribute('aria-hidden', 'false');
+
+      // Flying pills converge toward screen center — the spot where the
+      // seed node (and the clustered brain pills) will be waiting just
+      // behind the cover. This preserves visual continuity: your
+      // captured patterns don't scatter away, they gather toward the
+      // origin of the brain they're about to seed.
+      const cx = window.innerWidth / 2;
+      const cy = window.innerHeight / 2;
+      flyingPills.forEach((el, i) => {
+        // Tiny per-pill offset around center so they don't stack to a
+        // single invisible pixel — form a tight bouquet instead
+        const angle = (i / Math.max(1, flyingPills.length)) * Math.PI * 2;
+        const r = 14;  // very tight cluster
+        el.style.left = (cx + Math.cos(angle) * r - 40) + 'px';
+        el.style.top  = (cy + Math.sin(angle) * r - 14) + 'px';
+        el.style.background = 'rgba(22, 22, 30, 0.9)';
+        el.style.color = '#fff';
+        el.style.border = '1px solid rgba(255,255,255,0.3)';
+        el.style.transform = 'scale(0.78)';
+        // Fade them out right as the brain's own pills emerge at that spot
+        setTimeout(() => {
+          el.style.opacity = '0';
+        }, 600);
+        setTimeout(() => el.remove(), 1200);
+      });
+
+      // Fade the dark cover back out so brain is visible
+      setTimeout(() => {
+        transitionCover.classList.remove('active');
+        document.body.classList.remove('transitioning');
+        document.body.classList.add('brain-mode');
+        // Kick off the brain's construction animation now that it's visible
+        if (typeof window.__startBrainGrowth === 'function') {
+          window.__startBrainGrowth();
+        }
+      }, 900);
+    }, 600);
+  }
+
+  const brainStage     = document.getElementById('brainStage');
+  const transitionCover = document.getElementById('transitionCover');
+  const brainBackBtn    = document.getElementById('brainBackBtn');
+
+  if (ctaBtn) {
+    ctaBtn.addEventListener('click', transitionToBrain);
+  }
+
+  // Back button: return to capture state (brain stays initialized for reuse)
+  if (brainBackBtn) {
+    brainBackBtn.addEventListener('click', () => {
+      document.body.classList.remove('brain-mode');
+      brainStage.classList.remove('active');
+      brainStage.setAttribute('aria-hidden', 'true');
+    });
+  }
+})();
+</script>
+
+<script>
+// ============================================================
+// BRAIN EXPERIENCE — lazy-initialized on 'Make it clear'
+// ============================================================
+(function () {
+  'use strict';
+  let brainStarted = false;
+
+  window.__initBrain = function (categories) {
+    if (brainStarted) return;
+    brainStarted = true;
+    initBrainExperience(categories);
+  };
+
+function initBrainExperience(CATEGORIES) {
+  'use strict';
+  // ============================================================
+  // SEMANTIC CONTENT + CARD DATA
+  // ============================================================
+  const TONE_COLOR = {
+    positive:  '#5EE6A0',
+    neutral:   '#8AB0FF',
+    mixed:     '#C9A4FF',
+    difficult: '#FF9B87'
+  };
+
+
+  // ============================================================
+  // Renderer / Scene / Camera
+  // ============================================================
+  const brainCanvas = document.getElementById('brain-canvas');
+  const renderer = new THREE.WebGLRenderer({
+    canvas: brainCanvas,
+    antialias: true, powerPreference: 'high-performance'
+  });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setClearColor(0x000000, 0);  // transparent so container bg shows
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(
+    34, window.innerWidth / window.innerHeight, 0.1, 100
+  );
+  camera.position.set(0, 0, 6.2);
+  camera.lookAt(0, 0, 0);
+
+  const LEVELS = {
+    0: { min: 3.0,  max: 14.0, home: 6.2, popThreshold: 999 },
+    1: { min: 2.0,  max: 4.2,  home: 3.1, popThreshold: 4.2 },
+    2: { min: 1.1,  max: 2.6,  home: 1.7, popThreshold: 2.6 }
+  };
+  let cameraZ = 6.2;
+  let targetCameraZ = 6.2;
+
+  // ============================================================
+  // Brain envelope + helpers
+  // ============================================================
+  const brainBlobs = [
+    { cx:  0.00, cy:  0.20, cz: 0, rx: 1.18, ry: 0.72, rz: 1.08, w: 1.0 },
+    { cx: -0.95, cy:  0.15, cz: 0, rx: 0.55, ry: 0.62, rz: 0.92, w: 1.0 },
+    { cx: -0.55, cy:  0.62, cz: 0, rx: 0.50, ry: 0.32, rz: 0.85, w: 0.9 },
+    { cx:  0.00, cy:  0.78, cz: 0, rx: 0.55, ry: 0.25, rz: 0.85, w: 0.9 },
+    { cx:  0.50, cy:  0.65, cz: 0, rx: 0.45, ry: 0.30, rz: 0.85, w: 0.9 },
+    { cx:  1.00, cy:  0.10, cz: 0, rx: 0.50, ry: 0.55, rz: 0.92, w: 1.0 },
+    { cx: -0.55, cy: -0.42, cz: 0, rx: 0.50, ry: 0.40, rz: 0.92, w: 0.95 },
+    { cx:  0.05, cy: -0.50, cz: 0, rx: 0.55, ry: 0.30, rz: 0.82, w: 0.9 },
+    { cx:  0.85, cy: -0.55, cz: 0, rx: 0.42, ry: 0.35, rz: 0.72, w: 1.0 },
+    { cx:  0.60, cy: -0.60, cz: 0, rx: 0.28, ry: 0.25, rz: 0.58, w: 0.9 },
+    { cx:  0.48, cy: -0.85, cz: 0, rx: 0.17, ry: 0.20, rz: 0.22, w: 1.2 },
+    { cx:  0.48, cy: -1.05, cz: 0, rx: 0.13, ry: 0.18, rz: 0.18, w: 1.2 }
+  ];
+  function inBrain(x, y, z) {
+    for (let i=0;i<brainBlobs.length;i++){const b=brainBlobs[i];
+      const dx=(x-b.cx)/b.rx, dy=(y-b.cy)/b.ry, dz=(z-b.cz)/b.rz;
+      if (dx*dx+dy*dy+dz*dz<1) return true;
+    } return false;
+  }
+  function brainDepth(x, y, z) {
+    let d=0; for (let i=0;i<brainBlobs.length;i++){const b=brainBlobs[i];
+      const dx=(x-b.cx)/b.rx, dy=(y-b.cy)/b.ry, dz=(z-b.cz)/b.rz;
+      const r2=dx*dx+dy*dy+dz*dz;
+      if (r2<1) d+=(1-r2)*b.w;
+    } return d;
+  }
+  const colorZones = [
+    { p: [-1.00,  0.10, 0], c: [1.00, 0.45, 0.30] },
+    { p: [-0.55,  0.65, 0], c: [0.78, 0.32, 0.95] },
+    { p: [ 0.00,  0.78, 0], c: [0.32, 0.50, 1.00] },
+    { p: [ 0.55,  0.62, 0], c: [0.32, 0.78, 1.00] },
+    { p: [ 1.05,  0.05, 0], c: [0.32, 0.95, 1.00] },
+    { p: [-0.55, -0.30, 0], c: [1.00, 0.30, 0.55] },
+    { p: [ 0.10, -0.40, 0], c: [0.85, 0.45, 1.00] },
+    { p: [ 0.55, -0.30, 0], c: [1.00, 0.55, 0.30] },
+    { p: [ 0.90, -0.55, 0], c: [0.78, 0.45, 1.00] },
+    { p: [ 0.48, -0.95, 0], c: [1.00, 0.55, 0.30] }
+  ];
+  function colorAt(x, y, z) {
+    let r=0,g=0,b=0,total=0;
+    for (let i=0;i<colorZones.length;i++){const zn=colorZones[i];
+      const dx=x-zn.p[0], dy=y-zn.p[1], dz=z-zn.p[2];
+      const d2=dx*dx+dy*dy+dz*dz;
+      const w=1.0/(d2*d2+0.02);
+      r+=zn.c[0]*w; g+=zn.c[1]*w; b+=zn.c[2]*w; total+=w;
+    }
+    return [r/total, g/total, b/total];
+  }
+
+  // ============================================================
+  // Sample particles
+  // ============================================================
+  const TARGET = 7500;
+  const positions = [], cols = [], sizes = [], seeds = [];
+  let attempts = 0;
+  while (positions.length < TARGET && attempts < TARGET * 80) {
+    attempts++;
+    const x = (Math.random()*2-1) * 1.7;
+    const y = (Math.random()*2-1) * 1.4;
+    const z = (Math.random()*2-1) * 1.35;
+    if (!inBrain(x, y, z)) continue;
+    positions.push([x, y, z]);
+    const c = colorAt(x, y, z);
+    const j = 0.85 + Math.random() * 0.3;
+    cols.push([Math.min(1,c[0]*j), Math.min(1,c[1]*j), Math.min(1,c[2]*j)]);
+    sizes.push(0.022 + Math.random() * 0.026);
+    seeds.push(Math.random() * 1000);
+  }
+  const N = positions.length;
+
+  // ============================================================
+  // Pick 32 hubs
+  // ============================================================
+  const NUM_HUBS = 32;
+  const allDepths = positions.map(p => brainDepth(p[0], p[1], p[2]));
+  const sortedByDepth = allDepths.map((d, i) => ({ d, i })).sort((a,b) => b.d - a.d);
+  const hubIdx = [];
+  const minHubDist2 = 0.34 * 0.34;
+  for (const o of sortedByDepth) {
+    if (hubIdx.length >= NUM_HUBS) break;
+    const p = positions[o.i];
+    let ok = true;
+    for (const hi of hubIdx) {
+      const q = positions[hi];
+      const dx=p[0]-q[0], dy=p[1]-q[1], dz=p[2]-q[2];
+      if (dx*dx+dy*dy+dz*dz < minHubDist2) { ok = false; break; }
+    }
+    if (ok) hubIdx.push(o.i);
+  }
+  const HUB_COUNT = hubIdx.length;
+  const isHub = new Uint8Array(N);
+  const hubSlot = new Int16Array(N).fill(-1);
+  for (let h=0; h<HUB_COUNT; h++) {
+    isHub[hubIdx[h]] = 1;
+    hubSlot[hubIdx[h]] = h;
+    sizes[hubIdx[h]] = 0.14 + Math.random() * 0.05;
+    cols[hubIdx[h]] = [
+      Math.min(1, cols[hubIdx[h]][0]*1.4 + 0.18),
+      Math.min(1, cols[hubIdx[h]][1]*1.4 + 0.18),
+      Math.min(1, cols[hubIdx[h]][2]*1.4 + 0.18)
+    ];
+  }
+
+  // ============================================================
+  // Cluster assignment
+  // ============================================================
+  const clusterId   = new Float32Array(N);
+  const clusterCore = new Float32Array(N);
+  const INNER_R = 0.20, OUTER_R = 0.40;
+  for (let i=0; i<N; i++) {
+    if (isHub[i]) { clusterId[i]=hubSlot[i]; clusterCore[i]=2; continue; }
+    let nearH=-1, nearD2=Infinity;
+    const px=positions[i][0], py=positions[i][1], pz=positions[i][2];
+    for (let h=0; h<HUB_COUNT; h++) {
+      const hp=positions[hubIdx[h]];
+      const dx=px-hp[0], dy=py-hp[1], dz=pz-hp[2];
+      const d2=dx*dx+dy*dy+dz*dz;
+      if (d2<nearD2){nearD2=d2;nearH=h;}
+    }
+    const d=Math.sqrt(nearD2);
+    if (d < OUTER_R) {
+      clusterId[i]=nearH; clusterCore[i]=1;
+      if (d<INNER_R) {
+        sizes[i] *= 1.55;
+        cols[i]=[Math.min(1,cols[i][0]*1.2+0.05), Math.min(1,cols[i][1]*1.2+0.05), Math.min(1,cols[i][2]*1.2+0.05)];
+      } else {
+        sizes[i] *= 1.12;
+        cols[i]=[Math.min(1,cols[i][0]*1.06), Math.min(1,cols[i][1]*1.06), Math.min(1,cols[i][2]*1.06)];
+      }
+    } else {
+      clusterId[i]=-1; clusterCore[i]=0;
+      sizes[i] *= 0.82;
+      cols[i]=[cols[i][0]*0.74, cols[i][1]*0.74, cols[i][2]*0.74];
+    }
+  }
+
+  // ============================================================
+  // Assign categories to hubs
+  // ============================================================
+  const usedHubs = new Set();
+  const principals = CATEGORIES.map((cat, ci) => {
+    let bestH = -1, bestD = Infinity;
+    for (let h=0; h<HUB_COUNT; h++) {
+      if (usedHubs.has(h)) continue;
+      const p = positions[hubIdx[h]];
+      const dx=p[0]-cat.zone[0], dy=p[1]-cat.zone[1], dz=p[2]-cat.zone[2];
+      const d=dx*dx+dy*dy+dz*dz;
+      if (d<bestD) { bestD=d; bestH=h; }
+    }
+    usedHubs.add(bestH);
+    return { categoryIndex: ci, hubSlot: bestH, particleIndex: hubIdx[bestH], l2List: [] };
+  });
+
+  // Visually boost principal hubs — larger in the 6-region version
+  // so the pillars read as load-bearing.
+  const PRINCIPAL_SIZE = 0.30;
+  const isPrincipal = new Uint8Array(N);
+  for (const pr of principals) {
+    isPrincipal[pr.particleIndex] = 1;
+    sizes[pr.particleIndex] = PRINCIPAL_SIZE + Math.random() * 0.03;
+    const c = cols[pr.particleIndex];
+    cols[pr.particleIndex] = [
+      Math.min(1, c[0]*1.15 + 0.08),
+      Math.min(1, c[1]*1.15 + 0.08),
+      Math.min(1, c[2]*1.15 + 0.08)
+    ];
+  }
+
+  // L2: remaining hubs assigned to nearest principal
+  const promoted = new Set();
+  for (let h=0; h<HUB_COUNT; h++) {
+    if (usedHubs.has(h)) continue;
+    const p = positions[hubIdx[h]];
+    let bestPi=-1, bestD=Infinity;
+    for (let pi=0; pi<principals.length; pi++) {
+      const pp = positions[principals[pi].particleIndex];
+      const dx=p[0]-pp[0], dy=p[1]-pp[1], dz=p[2]-pp[2];
+      const d=dx*dx+dy*dy+dz*dz;
+      if (d<bestD){bestD=d; bestPi=pi;}
+    }
+    const principal = principals[bestPi];
+    const cat = CATEGORIES[principal.categoryIndex];
+    if (principal.l2List.length < cat.l2.length) {
+      const l2DefIdx = principal.l2List.length;
+      principal.l2List.push({ particleIndex: hubIdx[h], defIdx: l2DefIdx, l3List: [] });
+    }
+  }
+
+  // Fill any remaining L2 slots by promoting cluster particles
+  for (let pi=0; pi<principals.length; pi++) {
+    const principal = principals[pi];
+    const cat = CATEGORIES[principal.categoryIndex];
+    const need = cat.l2.length - principal.l2List.length;
+    if (need <= 0) continue;
+    const pp = positions[principal.particleIndex];
+    const cands = [];
+    for (let i=0; i<N; i++) {
+      if (isHub[i]) continue;
+      if (promoted.has(i)) continue;
+      if (clusterId[i] !== principal.hubSlot) continue;
+      if (clusterCore[i] < 1) continue;
+      const dx=positions[i][0]-pp[0], dy=positions[i][1]-pp[1], dz=positions[i][2]-pp[2];
+      cands.push({ i, d: dx*dx+dy*dy+dz*dz });
+    }
+    cands.sort((a,b) => a.d - b.d);
+    const filtered = cands.filter(c => c.d > 0.015);
+    const pool = filtered.length >= need ? filtered : cands;
+    for (let k=0; k<need && k<pool.length; k++) {
+      const pIdx = pool[k].i;
+      promoted.add(pIdx);
+      sizes[pIdx] = 0.09 + Math.random() * 0.025;
+      const c = cols[pIdx];
+      cols[pIdx] = [
+        Math.min(1, c[0]*1.15 + 0.04),
+        Math.min(1, c[1]*1.15 + 0.04),
+        Math.min(1, c[2]*1.15 + 0.04)
+      ];
+      const l2DefIdx = principal.l2List.length;
+      principal.l2List.push({ particleIndex: pIdx, defIdx: l2DefIdx, l3List: [] });
+    }
+  }
+
+  // L3: for each L2, assign nearest inner-ring cluster particles
+  const l3Used = new Set();
+  for (let pi=0; pi<principals.length; pi++) {
+    const principal = principals[pi];
+    const cat = CATEGORIES[principal.categoryIndex];
+    for (let li=0; li<principal.l2List.length; li++) {
+      const l2 = principal.l2List[li];
+      const l2Def = cat.l2[l2.defIdx];
+      const need = l2Def.l3 ? l2Def.l3.length : 0;
+      if (need === 0) continue;
+      const lp = positions[l2.particleIndex];
+      const cands = [];
+      for (let i=0; i<N; i++) {
+        if (isHub[i]) continue;
+        if (promoted.has(i)) continue;
+        if (l3Used.has(i)) continue;
+        if (clusterCore[i] < 1) continue;
+        const dx=positions[i][0]-lp[0], dy=positions[i][1]-lp[1], dz=positions[i][2]-lp[2];
+        const d=dx*dx+dy*dy+dz*dz;
+        if (d > 0.14) continue;
+        cands.push({ i, d });
+      }
+      cands.sort((a,b) => a.d - b.d);
+      for (let k=0; k<need && k<cands.length; k++) {
+        const pIdx = cands[k].i;
+        l3Used.add(pIdx);
+        sizes[pIdx] *= 1.25;
+        l2.l3List.push({ particleIndex: pIdx, defIdx: k });
+      }
+    }
+  }
+
+  // ============================================================
+  // Growth animation: compute reveal order per particle.
+  //
+  // Single-seed genesis: ONE principal (the most-mentioned captured
+  // pattern) is the origin of the whole brain. It has revealOrder=0 and
+  // appears alone for the first beat. Every other particle — including
+  // the other principals — gets a reveal value based on its distance
+  // from that seed, plus a small jitter so the wavefront has texture
+  // (chain-reaction feel rather than a uniform expanding shell).
+  //
+  // A floor (MIN_NONSEED_REVEAL) keeps the seed visually alone during
+  // the earliest frames — no particle within a tiny radius can sneak
+  // into visibility before the chain reaction has a moment to begin.
+  // ============================================================
+  const seedPrincipalIndex = principals[0].particleIndex;
+  const seedPrincipalPos = positions[seedPrincipalIndex];
+
+  const revealOrder = new Float32Array(N);
+  let maxDist = 0.0001;
+  for (let i = 0; i < N; i++) {
+    const dx = positions[i][0] - seedPrincipalPos[0];
+    const dy = positions[i][1] - seedPrincipalPos[1];
+    const dz = positions[i][2] - seedPrincipalPos[2];
+    const d = Math.sqrt(dx*dx + dy*dy + dz*dz);
+    revealOrder[i] = d;
+    if (d > maxDist) maxDist = d;
+  }
+  const MIN_NONSEED_REVEAL = 0.14;  // seed alone before any other particle
+  for (let i = 0; i < N; i++) {
+    let r = revealOrder[i] / maxDist;
+    // gentle curve that pulls the mid-reveal band wider so the middle of
+    // the construction feels populous rather than racing through
+    r = Math.pow(r, 0.90);
+    // per-particle jitter — breaks up the uniform expanding shell and
+    // gives the chain-reaction a more organic, irregular cadence
+    r += (Math.random() - 0.5) * 0.08;
+    revealOrder[i] = Math.max(MIN_NONSEED_REVEAL, Math.min(1, r));
+  }
+  // THE seed — guaranteed to appear alone first
+  revealOrder[seedPrincipalIndex] = 0;
+
+  // ============================================================
+  // Particle geometry + shader (unchanged from last version)
+  // ============================================================
+  const posArr = new Float32Array(N * 3);
+  const colArr = new Float32Array(N * 3);
+  const sizeArr = new Float32Array(N);
+  const seedArr = new Float32Array(N);
+  const clusterArr = new Float32Array(N);
+  const coreArr = new Float32Array(N);
+  for (let i=0; i<N; i++) {
+    posArr[i*3]=positions[i][0]; posArr[i*3+1]=positions[i][1]; posArr[i*3+2]=positions[i][2];
+    colArr[i*3]=cols[i][0]; colArr[i*3+1]=cols[i][1]; colArr[i*3+2]=cols[i][2];
+    sizeArr[i]=sizes[i]; seedArr[i]=seeds[i];
+    clusterArr[i]=clusterId[i]; coreArr[i]=clusterCore[i];
+  }
+  const ptGeo = new THREE.BufferGeometry();
+  ptGeo.setAttribute('position',     new THREE.BufferAttribute(posArr, 3));
+  ptGeo.setAttribute('aColor',       new THREE.BufferAttribute(colArr, 3));
+  ptGeo.setAttribute('aSize',        new THREE.BufferAttribute(sizeArr, 1));
+  ptGeo.setAttribute('aSeed',        new THREE.BufferAttribute(seedArr, 1));
+  ptGeo.setAttribute('aClusterId',   new THREE.BufferAttribute(clusterArr, 1));
+  ptGeo.setAttribute('aClusterCore', new THREE.BufferAttribute(coreArr, 1));
+  ptGeo.setAttribute('aRevealOrder', new THREE.BufferAttribute(revealOrder, 1));
+
+  function makeParticleTex() {
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const ctx = c.getContext('2d');
+    const g = ctx.createRadialGradient(64,64,0, 64,64,64);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.10, 'rgba(255,255,255,0.95)');
+    g.addColorStop(0.25, 'rgba(255,255,255,0.55)');
+    g.addColorStop(0.50, 'rgba(255,255,255,0.18)');
+    g.addColorStop(0.80, 'rgba(255,255,255,0.04)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g; ctx.fillRect(0,0,128,128);
+    return new THREE.CanvasTexture(c);
+  }
+  const partTex = makeParticleTex();
+
+  const breathingGLSL = `
+    vec3 breathingDisp(vec3 p, float seed, float t) {
+      float r1 = fract(seed * 0.1379);
+      float r2 = fract(seed * 0.2417);
+      float r3 = fract(seed * 0.3891);
+      float rA = fract(seed * 0.5171);
+      float f1 = 0.30 + 0.22 * r1;
+      float f2 = 0.36 + 0.22 * r2;
+      float f3 = 0.26 + 0.22 * r3;
+      float amp = 0.022 + 0.030 * rA;
+      vec3 disp = vec3(
+        sin(t * f1 + seed * 1.00),
+        sin(t * f2 + seed * 1.31),
+        sin(t * f3 + seed * 0.71)
+      ) * amp;
+      return p + disp;
+    }
+  `;
+  function fract(x){return x - Math.floor(x);}
+  const _brOut = {x:0,y:0,z:0};
+  function jsBreathing(seed, t) {
+    const r1=fract(seed*0.1379), r2=fract(seed*0.2417), r3=fract(seed*0.3891), rA=fract(seed*0.5171);
+    const f1=0.30+0.22*r1, f2=0.36+0.22*r2, f3=0.26+0.22*r3;
+    const amp=0.022+0.030*rA;
+    _brOut.x=Math.sin(t*f1+seed*1.00)*amp;
+    _brOut.y=Math.sin(t*f2+seed*1.31)*amp;
+    _brOut.z=Math.sin(t*f3+seed*0.71)*amp;
+    return _brOut;
+  }
+
+  const ptMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uMap: { value: partTex },
+      uPxR: { value: renderer.getPixelRatio() },
+      uTime: { value: 0 },
+      uHoverCluster: { value: -1.0 },
+      uHoverStrength: { value: 0.0 },
+      uFocusCluster: { value: -1.0 },
+      uFocusStrength: { value: 0.0 },
+      uGrowth: { value: 0.0 }
+    },
+    vertexShader: `
+      attribute vec3 aColor;
+      attribute float aSize, aSeed, aClusterId, aClusterCore, aRevealOrder;
+      varying vec3 vColor;
+      uniform float uPxR, uTime, uHoverCluster, uHoverStrength, uFocusCluster, uFocusStrength, uGrowth;
+      ${breathingGLSL}
+      void main() {
+        float bgPulse = 0.92 + 0.08 * sin(uTime * 1.4 + aSeed);
+        float cPhase = aClusterId * 2.3994;
+        float cBeat = 0.50 + 0.50 * sin(uTime * 0.55 + cPhase);
+        float cEnv  = 0.50 + 0.50 * sin(uTime * 0.17 + cPhase * 0.41 + 1.7);
+        float clusterAct = 0.70 + 0.18 * cBeat + 0.12 * cEnv;
+        float isCluster = step(0.5, aClusterCore);
+        float pulse = mix(bgPulse, clusterAct, isCluster);
+        float hoverMatch = 1.0 - step(0.5, abs(aClusterId - uHoverCluster));
+        float hover = uHoverStrength * hoverMatch * isCluster;
+        float hoverBoost = 1.0 + 0.55 * hover;
+        float focusMatch = 1.0 - step(0.5, abs(aClusterId - uFocusCluster));
+        float focusedBoost = 1.0 + 0.35 * uFocusStrength * focusMatch * isCluster;
+        float dimOther = 1.0 - 0.62 * uFocusStrength * (1.0 - focusMatch);
+        // Growth alpha: narrow window so each particle has a clear moment
+        // of arrival. Each particle's fade-in is ~0.08 growth units wide
+        // (roughly 360ms at a 4.5s duration).
+        float growthAlpha = smoothstep(aRevealOrder - 0.03, aRevealOrder + 0.05, uGrowth);
+
+        // Drift-in motion: particles settle into their final position during
+        // the reveal window. Hubs don't drift (their labels attach at fixed
+        // JS positions, so any drift would desync the label from the node).
+        // Non-hub particles drift ±0.12 units in a random direction.
+        float hubFlag = step(1.5, aClusterCore);  // 1 for hubs, 0 otherwise
+        vec3 driftVec = vec3(
+          sin(aSeed * 2.13),
+          cos(aSeed * 1.71),
+          sin(aSeed * 3.31) * 0.6
+        ) * 0.14;
+        float driftFactor = (1.0 - smoothstep(aRevealOrder - 0.02, aRevealOrder + 0.18, uGrowth)) * (1.0 - hubFlag);
+        vec3 settled = position + driftVec * driftFactor;
+
+        vColor = aColor * pulse * hoverBoost * focusedBoost * dimOther * growthAlpha;
+        vec3 breathed = breathingDisp(settled, aSeed, uTime);
+        vec4 mv = modelViewMatrix * vec4(breathed, 1.0);
+        float sizeMult = 0.94 + 0.10 * pulse + 0.18 * hover;
+        gl_PointSize = aSize * 920.0 * uPxR * sizeMult / -mv.z;
+        gl_Position = projectionMatrix * mv;
+      }
+    `,
+    fragmentShader: `
+      uniform sampler2D uMap; varying vec3 vColor;
+      void main() {
+        vec4 t = texture2D(uMap, gl_PointCoord);
+        if (t.a < 0.005) discard;
+        gl_FragColor = vec4(vColor, 1.0) * t;
+      }
+    `,
+    transparent: true, blending: THREE.AdditiveBlending,
+    depthWrite: false, depthTest: false
+  });
+  const points = new THREE.Points(ptGeo, ptMat);
+
+  // Hub halos
+  const HN = HUB_COUNT;
+  const hPos = new Float32Array(HN*3), hCol = new Float32Array(HN*3),
+        hSz = new Float32Array(HN), hSeed = new Float32Array(HN),
+        hCluster = new Float32Array(HN), hCore = new Float32Array(HN),
+        hRev = new Float32Array(HN);
+  for (let i=0; i<HN; i++) {
+    const idx = hubIdx[i];
+    const principal = isPrincipal[idx]===1;
+    hPos[i*3]=positions[idx][0]; hPos[i*3+1]=positions[idx][1]; hPos[i*3+2]=positions[idx][2];
+    const haloBright = principal ? 0.65 : 0.45;
+    hCol[i*3]=cols[idx][0]*haloBright; hCol[i*3+1]=cols[idx][1]*haloBright; hCol[i*3+2]=cols[idx][2]*haloBright;
+    hSz[i]=(principal?1.20:0.55) + Math.random()*0.30;
+    hSeed[i]=seeds[idx]; hCluster[i]=i; hCore[i]=2;
+    hRev[i]=revealOrder[idx];  // inherit reveal timing from the parent particle
+  }
+  const hGeo = new THREE.BufferGeometry();
+  hGeo.setAttribute('position', new THREE.BufferAttribute(hPos, 3));
+  hGeo.setAttribute('aColor', new THREE.BufferAttribute(hCol, 3));
+  hGeo.setAttribute('aSize', new THREE.BufferAttribute(hSz, 1));
+  hGeo.setAttribute('aSeed', new THREE.BufferAttribute(hSeed, 1));
+  hGeo.setAttribute('aClusterId', new THREE.BufferAttribute(hCluster, 1));
+  hGeo.setAttribute('aClusterCore', new THREE.BufferAttribute(hCore, 1));
+  hGeo.setAttribute('aRevealOrder', new THREE.BufferAttribute(hRev, 1));
+  const hubGlow = new THREE.Points(hGeo, ptMat);
+
+  // Lines
+  const cellSize = 0.15;
+  const grid = new Map();
+  function cellKey(x,y,z){return Math.floor(x/cellSize)+'|'+Math.floor(y/cellSize)+'|'+Math.floor(z/cellSize);}
+  for (let i=0;i<N;i++){const k=cellKey(positions[i][0],positions[i][1],positions[i][2]);
+    let arr=grid.get(k); if(!arr){arr=[];grid.set(k,arr);} arr.push(i);}
+  function neighbors(x,y,z,range){
+    const r=Math.ceil(range/cellSize);
+    const ix=Math.floor(x/cellSize), iy=Math.floor(y/cellSize), iz=Math.floor(z/cellSize);
+    const out=[];
+    for (let dx=-r;dx<=r;dx++) for (let dy=-r;dy<=r;dy++) for (let dz=-r;dz<=r;dz++){
+      const k=(ix+dx)+'|'+(iy+dy)+'|'+(iz+dz);
+      const arr=grid.get(k);
+      if (arr) for (let j=0;j<arr.length;j++) out.push(arr[j]);
+    } return out;
+  }
+  const lineV=[], lineC=[], lineCl=[], lineCo=[], lineSd=[], lineRev=[];
+  const seen=new Set();
+  for (let i=0;i<N;i++){
+    const p1=positions[i];
+    const isH=isHub[i]===1;
+    const range=isH?0.42:0.165; const maxConn=isH?24:4;
+    const cands=neighbors(p1[0],p1[1],p1[2],range);
+    const dists=[];
+    for (let k=0;k<cands.length;k++){
+      const j=cands[k]; if (j===i) continue;
+      const p2=positions[j];
+      const dx=p1[0]-p2[0], dy=p1[1]-p2[1], dz=p1[2]-p2[2];
+      const d=Math.sqrt(dx*dx+dy*dy+dz*dz);
+      if (d<range) dists.push({j,d});
+    }
+    dists.sort((a,b)=>a.d-b.d);
+    const n=Math.min(dists.length, maxConn);
+    for (let k=0;k<n;k++){
+      const j=dists[k].j;
+      const ek=i<j?(i+','+j):(j+','+i);
+      if (seen.has(ek)) continue;
+      seen.add(ek);
+      const p2=positions[j];
+      const dr=dists[k].d/range;
+      let opa;
+      if (isH || isHub[j]===1) opa = 0.60*(1-dr*dr);
+      else if (clusterCore[i]>0 && clusterCore[j]>0 && clusterId[i]===clusterId[j]) opa = 0.45*(1-dr);
+      else if (clusterCore[i]>0 || clusterCore[j]>0) opa = 0.22*(1-dr);
+      else opa = 0.14*(1-dr);
+      const c1=cols[i], c2=cols[j];
+      lineV.push(p1[0],p1[1],p1[2], p2[0],p2[1],p2[2]);
+      lineC.push(c1[0]*opa,c1[1]*opa,c1[2]*opa, c2[0]*opa,c2[1]*opa,c2[2]*opa);
+      lineCl.push(clusterId[i], clusterId[j]);
+      lineCo.push(clusterCore[i], clusterCore[j]);
+      lineSd.push(seeds[i], seeds[j]);
+      // Line reveal = later of the two endpoints, plus a small delay so
+      // connections appear after their anchors (reads like "draw the node,
+      // then draw its threads")
+      const lineReveal = Math.min(1, Math.max(revealOrder[i], revealOrder[j]) + 0.04);
+      lineRev.push(lineReveal, lineReveal);
+    }
+  }
+  const lineGeo = new THREE.BufferGeometry();
+  lineGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(lineV), 3));
+  lineGeo.setAttribute('aColor', new THREE.BufferAttribute(new Float32Array(lineC), 3));
+  lineGeo.setAttribute('aClusterId', new THREE.BufferAttribute(new Float32Array(lineCl), 1));
+  lineGeo.setAttribute('aClusterCore', new THREE.BufferAttribute(new Float32Array(lineCo), 1));
+  lineGeo.setAttribute('aSeed', new THREE.BufferAttribute(new Float32Array(lineSd), 1));
+  lineGeo.setAttribute('aRevealOrder', new THREE.BufferAttribute(new Float32Array(lineRev), 1));
+
+  const lineMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uHoverCluster: { value: -1.0 }, uHoverStrength: { value: 0.0 },
+      uFocusCluster: { value: -1.0 }, uFocusStrength: { value: 0.0 },
+      uGrowth: { value: 0.0 }
+    },
+    vertexShader: `
+      attribute vec3 aColor;
+      attribute float aClusterId, aClusterCore, aSeed, aRevealOrder;
+      varying vec3 vColor;
+      uniform float uTime, uHoverCluster, uHoverStrength, uFocusCluster, uFocusStrength, uGrowth;
+      ${breathingGLSL}
+      void main() {
+        float cPhase = aClusterId * 2.3994;
+        float cBeat = 0.50 + 0.50 * sin(uTime * 0.55 + cPhase);
+        float cEnv  = 0.50 + 0.50 * sin(uTime * 0.17 + cPhase * 0.41 + 1.7);
+        float clusterAct = 0.78 + 0.14 * cBeat + 0.08 * cEnv;
+        float isCluster = step(0.5, aClusterCore);
+        float pulse = mix(0.95, clusterAct, isCluster);
+        float hoverMatch = 1.0 - step(0.5, abs(aClusterId - uHoverCluster));
+        float hover = uHoverStrength * hoverMatch * isCluster;
+        float hoverBoost = 1.0 + 0.70 * hover;
+        float focusMatch = 1.0 - step(0.5, abs(aClusterId - uFocusCluster));
+        float focusedBoost = 1.0 + 0.40 * uFocusStrength * focusMatch * isCluster;
+        float dimOther = 1.0 - 0.72 * uFocusStrength * (1.0 - focusMatch);
+        float growthAlpha = smoothstep(aRevealOrder - 0.04, aRevealOrder + 0.08, uGrowth);
+        vColor = aColor * pulse * hoverBoost * focusedBoost * dimOther * growthAlpha;
+        vec3 breathed = breathingDisp(position, aSeed, uTime);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(breathed, 1.0);
+      }
+    `,
+    fragmentShader: `varying vec3 vColor; void main(){gl_FragColor=vec4(vColor,1.0);}`,
+    transparent: true, blending: THREE.AdditiveBlending,
+    depthWrite: false, depthTest: false
+  });
+  const lines = new THREE.LineSegments(lineGeo, lineMat);
+
+  const root = new THREE.Group();
+  root.add(lines); root.add(hubGlow); root.add(points);
+  scene.add(root);
+
+  // ============================================================
+  // LABEL PILLS
+  // ============================================================
+  const labelsEl = document.getElementById('brain-labels');
+  const hintEl = document.getElementById('brain-hint');
+  const cardsEl = document.getElementById('brain-cards');
+
+  const labelNodes = [];
+
+  function makePill(level, text, tone) {
+    const el = document.createElement('div');
+    el.className = 'bp ' + level;
+    const dot = document.createElement('span');
+    dot.className = 'dot';
+    dot.style.background = TONE_COLOR[tone];
+    dot.style.color = TONE_COLOR[tone];
+    el.appendChild(dot);
+    const txt = document.createElement('span');
+    txt.textContent = text;
+    el.appendChild(txt);
+    labelsEl.appendChild(el);
+    return el;
+  }
+
+  for (let pi=0; pi<principals.length; pi++) {
+    const principal = principals[pi];
+    const cat = CATEGORIES[principal.categoryIndex];
+    const el = makePill('l1', cat.name, cat.tone);
+    const node = {
+      level: 'l1', el,
+      text: cat.name, tone: cat.tone,
+      particleIndex: principal.particleIndex,
+      seed: seeds[principal.particleIndex],
+      principalIdx: pi,
+      screenX: 0, screenY: 0, opacity: 0, scale: 1
+    };
+    labelNodes.push(node);
+    principal._l1Node = node;
+
+    el.addEventListener('click', e => { e.stopPropagation(); handlePillClick(node); });
+    el.addEventListener('pointerenter', () => setHoverPrincipal(pi));
+    el.addEventListener('pointerleave', () => setHoverPrincipal(-1));
+
+    for (let li=0; li<principal.l2List.length; li++) {
+      const l2 = principal.l2List[li];
+      const l2Def = cat.l2[l2.defIdx];
+      const el2 = makePill('l2', l2Def.n, l2Def.t);
+      const n2 = {
+        level: 'l2', el: el2,
+        text: l2Def.n, tone: l2Def.t,
+        particleIndex: l2.particleIndex,
+        seed: seeds[l2.particleIndex],
+        principalIdx: pi, l2Idx: li,
+        screenX: 0, screenY: 0, opacity: 0, scale: 1
+      };
+      labelNodes.push(n2);
+      l2._l2Node = n2;
+      el2.addEventListener('click', e => { e.stopPropagation(); handlePillClick(n2); });
+      el2.addEventListener('pointerenter', () => setHoverPrincipal(pi));
+      el2.addEventListener('pointerleave', () => setHoverPrincipal(-1));
+
+      for (let l3i=0; l3i<l2.l3List.length; l3i++) {
+        const l3 = l2.l3List[l3i];
+        const l3Def = l2Def.l3[l3.defIdx];
+        if (!l3Def) continue;
+        const el3 = makePill('l3', l3Def.n, l2Def.t);
+        const n3 = {
+          level: 'l3', el: el3,
+          text: l3Def.n, tone: l2Def.t,
+          particleIndex: l3.particleIndex,
+          seed: seeds[l3.particleIndex],
+          principalIdx: pi, l2Idx: li, l3Idx: l3i,
+          screenX: 0, screenY: 0, opacity: 0, scale: 1
+        };
+        labelNodes.push(n3);
+        l3._l3Node = n3;
+        el3.addEventListener('click', e => { e.stopPropagation(); handlePillClick(n3); });
+      }
+    }
+  }
+
+  // ============================================================
+  // FOCUS STATE
+  // ============================================================
+  let focus = { level: 0 };
+  let hoveredPrincipal = -1;
+  let interacted = false;
+
+  let focalTargetX=0, focalTargetY=0, focalTargetZ=0;
+  let focalCurrentX=0, focalCurrentY=0, focalCurrentZ=0;
+
+  function setFocus(newFocus) {
+    focus = newFocus;
+    if (focus.level === 0) {
+      focalTargetX=0; focalTargetY=0; focalTargetZ=0;
+      targetCameraZ = LEVELS[0].home;
+    } else if (focus.level === 1) {
+      const pr = principals[focus.principalIdx];
+      const p = positions[pr.particleIndex];
+      focalTargetX=p[0]; focalTargetY=p[1]; focalTargetZ=p[2];
+      targetCameraZ = LEVELS[1].home;
+    } else if (focus.level === 2) {
+      const pr = principals[focus.principalIdx];
+      const l2 = pr.l2List[focus.l2Idx];
+      const p = positions[l2.particleIndex];
+      focalTargetX=p[0]; focalTargetY=p[1]; focalTargetZ=p[2];
+      targetCameraZ = LEVELS[2].home;
+    }
+    if (!interacted) { interacted = true; hintEl.classList.add('hidden'); }
+  }
+
+  function focusPrincipal(pi) { setFocus({ level: 1, principalIdx: pi }); }
+  function focusL2(pi, li)   { setFocus({ level: 2, principalIdx: pi, l2Idx: li }); }
+  function popFocus() {
+    if (focus.level === 2) setFocus({ level: 1, principalIdx: focus.principalIdx });
+    else if (focus.level === 1) setFocus({ level: 0 });
+  }
+  function setHoverPrincipal(pi) { hoveredPrincipal = pi; }
+
+  let focusStrength = 0;
+  let focusClusterSlot = -1;
+
+  // ============================================================
+  // CARD MORPH SYSTEM
+  //
+  // A card element starts at the clicked pill's rect, styled as a
+  // pill, then animates (via CSS transitions) to full card size &
+  // position. The pill fades while the card is open. On close,
+  // the card collapses back to the pill's *current* rect (pills
+  // breathe, so we re-measure at close time). Clicks outside and
+  // ESC close.
+  // ============================================================
+  let currentCard = null;   // { node, el }
+  let pendingOpen = null;   // { node, token } when waiting for focus anim
+  let openToken = 0;
+
+  function isMobile() { return window.innerWidth < 640; }
+
+  function buildCardInner(node) {
+    const pr = principals[node.principalIdx];
+    const cat = CATEGORIES[pr.categoryIndex];
+
+    let title, category, insight, triggers, origin, related, note;
+    if (node.level === 'l1') {
+      title = cat.name;
+      category = 'Region · Inner world';
+      insight  = cat.card.insight;
+      triggers = cat.card.triggers || [];
+      origin   = cat.card.origin;
+      related  = cat.card.related || [];
+      note     = cat.card.note;
+    } else if (node.level === 'l2') {
+      const l2Def = cat.l2[pr.l2List[node.l2Idx].defIdx];
+      title = l2Def.n;
+      category = cat.name + ' · Theme';
+      insight  = l2Def.card.insight;
+      triggers = l2Def.card.triggers || [];
+      origin   = l2Def.card.origin;
+      related  = l2Def.card.related || [];
+      note     = l2Def.card.note;
+    } else {
+      const l2Entry = pr.l2List[node.l2Idx];
+      const l2Def = cat.l2[l2Entry.defIdx];
+      const l3Def = l2Def.l3[l2Entry.l3List[node.l3Idx].defIdx];
+      title = l3Def.n;
+      category = cat.name + ' · ' + l2Def.n;
+      insight  = l3Def.insight;
+      triggers = l2Def.card.triggers || [];
+      origin   = l2Def.card.origin;
+      related  = l2Def.card.related || [];
+    }
+
+    const dotColor = TONE_COLOR[node.tone];
+    const esc = s => s == null ? '' : String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const tagsHTML = arr => arr.map(t => `<span class="card-tag">${esc(t)}</span>`).join('');
+
+    // Teaser logic — only for l2 / l3 cards. The first-level (l1) pills
+    // are the user's own captured patterns and show the full card so the
+    // personalized layer feels real. Deeper levels get a preview wall
+    // that invites the user to continue in the Mia app.
+    const UNLOCK_HREF = 'https://apps.apple.com/pe/app/mia-ai-understand-yourself/id6743808070?l=en-GB';
+    const isTeaser = node.level === 'l2' || node.level === 'l3';
+
+    // First sentence of the insight (for the clear visible line)
+    const insightStr = String(insight || '');
+    let firstLine = insightStr;
+    let restInsight = '';
+    if (isTeaser && insightStr) {
+      const m = insightStr.match(/^([^.!?]+[.!?])\s*(.*)$/s);
+      if (m) {
+        firstLine = m[1];
+        restInsight = m[2] || '';
+      }
+    }
+
+    const triggersBlock = triggers.length ? `
+      <div class="card-section">
+        <div class="card-section-label">Triggers</div>
+        <div class="card-tags">${tagsHTML(triggers)}</div>
+      </div>` : '';
+    const originBlock = origin ? `
+      <div class="card-section">
+        <div class="card-section-label">Origin &amp; Predictions</div>
+        <div class="card-section-text">${esc(origin)}</div>
+      </div>` : '';
+    const relatedBlock = (related && related.length) ? `
+      <div class="card-section">
+        <div class="card-section-label">Related themes</div>
+        <div class="card-tags">${tagsHTML(related)}</div>
+      </div>` : '';
+    const noteBlock = note ? `<div class="card-note">${esc(note)}</div>` : '';
+
+    if (isTeaser) {
+      // Teaser layout: first sentence of insight visible, rest blurred,
+      // teaser footer with unlock CTA.
+      const veilContent = `
+        ${restInsight ? `<div class="card-section-text" style="margin-bottom:14px;">${esc(restInsight)}</div>` : ''}
+        ${triggersBlock}
+        ${originBlock}
+        ${relatedBlock}
+        ${noteBlock}
+      `;
+      return `
+        <div class="card-inner">
+          <div class="card-header">
+            <span class="dot" style="background:${dotColor};color:${dotColor}"></span>
+            <span class="card-title">${esc(title)}</span>
+            <button class="card-close" aria-label="Close">×</button>
+          </div>
+          <div class="card-body">
+            <div class="card-category">${esc(category)}</div>
+            <div class="card-insight">${esc(firstLine)}</div>
+            <div class="teaser-veil" aria-hidden="true">
+              ${veilContent}
+            </div>
+            <div class="teaser-footer">
+              <p class="teaser-line">This is only the beginning. The full map goes deeper.</p>
+              <a class="teaser-cta" href="${UNLOCK_HREF}" target="_blank" rel="noopener noreferrer">
+                <span>Unlock the full picture</span>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="5" y1="12" x2="19" y2="12"/>
+                  <polyline points="12 5 19 12 12 19"/>
+                </svg>
+              </a>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // L1 — full personalized card, no teaser.
+    return `
+      <div class="card-inner">
+        <div class="card-header">
+          <span class="dot" style="background:${dotColor};color:${dotColor}"></span>
+          <span class="card-title">${esc(title)}</span>
+          <button class="card-close" aria-label="Close">×</button>
+        </div>
+        <div class="card-body">
+          <div class="card-category">${esc(category)}</div>
+          <div class="card-insight">${esc(insight)}</div>
+          ${triggersBlock}
+          ${originBlock}
+          ${relatedBlock}
+          ${noteBlock}
+        </div>
+      </div>
+    `;
+  }
+
+  function handlePillClick(node) {
+    // Clicking the pill whose card is open → close
+    if (currentCard && currentCard.node === node) {
+      closeCard();
+      return;
+    }
+
+    // Compute desired focus
+    let target = null;
+    if (node.level === 'l1') {
+      target = { level: 1, principalIdx: node.principalIdx };
+    } else if (node.level === 'l2') {
+      target = { level: 2, principalIdx: node.principalIdx, l2Idx: node.l2Idx };
+    } else if (node.level === 'l3') {
+      target = { level: 2, principalIdx: node.principalIdx, l2Idx: node.l2Idx };
+    }
+
+    const needsChange =
+      focus.level !== target.level ||
+      focus.principalIdx !== target.principalIdx ||
+      (target.level === 2 && focus.l2Idx !== target.l2Idx);
+
+    // Close any existing card before drilling
+    if (currentCard) closeCard();
+
+    openToken++;
+    const myToken = openToken;
+
+    if (needsChange) {
+      setFocus(target);
+      setTimeout(() => {
+        if (openToken !== myToken) return;
+        openCard(node);
+      }, 440);
+    } else {
+      // Small delay so the pill's rect is stable
+      setTimeout(() => {
+        if (openToken !== myToken) return;
+        openCard(node);
+      }, 20);
+    }
+  }
+
+  function openCard(node) {
+    if (currentCard) closeCard(true);
+
+    // The pill needs to be visible to measure it. If its current
+    // opacity is low, briefly show it at full opacity for measure.
+    const pillEl = node.el;
+    const prevOpacity = pillEl.style.opacity;
+    pillEl.style.opacity = '1';
+    pillEl.getBoundingClientRect(); // force reflow
+
+    const rect = pillEl.getBoundingClientRect();
+
+    // Create card element
+    const card = document.createElement('div');
+    card.className = 'bcard';
+    card.innerHTML = buildCardInner(node);
+    cardsEl.appendChild(card);
+
+    // Start at pill rect
+    card.style.left   = rect.left + 'px';
+    card.style.top    = rect.top  + 'px';
+    card.style.width  = rect.width + 'px';
+    card.style.height = rect.height + 'px';
+    card.style.borderRadius = '100px';
+
+    // Hide the original pill — the card has inherited it
+    node._suppressOpacity = true;
+    pillEl.style.opacity = '0';
+
+    // Measure target dimensions
+    const mobile = isMobile();
+    let targetW, targetH, targetX, targetY;
+
+    if (mobile) {
+      targetW = window.innerWidth - 24;
+    } else {
+      targetW = 320;
+    }
+
+    // Temporarily set to target width to read scrollHeight
+    card.style.width = targetW + 'px';
+    card.style.height = 'auto';
+    const cardInner = card.firstElementChild;
+    const naturalH = Math.min(cardInner.offsetHeight, window.innerHeight - 40);
+    targetH = naturalH;
+
+    // Reset to pill dimensions before animation
+    card.style.width = rect.width + 'px';
+    card.style.height = rect.height + 'px';
+    // Force reflow so the browser registers the starting state
+    card.offsetHeight;
+
+    // Position target
+    if (mobile) {
+      targetX = 12;
+      targetY = window.innerHeight - targetH - 16;
+    } else {
+      // Prefer right of pill; fallback left; fallback below
+      const gap = 14;
+      targetX = rect.right + gap;
+      targetY = rect.top - 6;
+      if (targetX + targetW > window.innerWidth - 12) {
+        targetX = rect.left - targetW - gap;
+      }
+      if (targetX < 12) {
+        // fallback below pill
+        targetX = Math.min(rect.left, window.innerWidth - targetW - 12);
+        targetY = rect.bottom + gap;
+      }
+      if (targetY + targetH > window.innerHeight - 12) {
+        targetY = window.innerHeight - targetH - 12;
+      }
+      if (targetY < 12) targetY = 12;
+      if (targetX < 12) targetX = 12;
+      if (targetX + targetW > window.innerWidth - 12) {
+        targetX = window.innerWidth - targetW - 12;
+      }
+    }
+
+    // Animate to card form on next frame
+    requestAnimationFrame(() => {
+      card.classList.add('open');
+      card.style.left   = targetX + 'px';
+      card.style.top    = targetY + 'px';
+      card.style.width  = targetW + 'px';
+      card.style.height = targetH + 'px';
+      card.style.borderRadius = '20px';
+    });
+
+    // Wire up close button
+    const closeBtn = card.querySelector('.card-close');
+    if (closeBtn) closeBtn.addEventListener('click', () => closeCard());
+
+    currentCard = { node, el: card };
+  }
+
+  function closeCard(immediate) {
+    if (!currentCard) return;
+    const { node, el: card } = currentCard;
+    currentCard = null;
+
+    // Re-measure pill's current rect (it has drifted via breathing)
+    const pillEl = node.el;
+    // Temporarily show it to measure
+    pillEl.style.opacity = '1';
+    pillEl.getBoundingClientRect();
+    const rect = pillEl.getBoundingClientRect();
+    // Hide again until animation is done
+    pillEl.style.opacity = '0';
+
+    // Animate back to pill
+    card.classList.remove('open');
+    card.style.left   = rect.left + 'px';
+    card.style.top    = rect.top  + 'px';
+    card.style.width  = rect.width + 'px';
+    card.style.height = rect.height + 'px';
+    card.style.borderRadius = '100px';
+
+    const dur = immediate ? 0 : 540;
+    setTimeout(() => {
+      if (card.parentNode) card.parentNode.removeChild(card);
+      node._suppressOpacity = false;
+      pillEl.style.opacity = ''; // let the render loop control it again
+    }, dur);
+  }
+
+  // Click outside closes card
+  document.addEventListener('pointerdown', e => {
+    if (!currentCard) return;
+    if (currentCard.el.contains(e.target)) return;
+    if (e.target.closest && e.target.closest('.bp')) return; // pill handler runs
+    closeCard();
+  }, true);
+
+  // ESC closes card
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && currentCard) closeCard();
+  });
+
+  // ============================================================
+  // Interactions (drag, wheel, hover)
+  // ============================================================
+  let down=false, mx=0, my=0;
+  let tRotY=0, tRotX=0, rotY=0, rotX=0;
+  let lastClientX=0, lastClientY=0;
+  let mouseInside=false;
+  let pendingHover=-1, visibleHover=-1, visibleStrength=0;
+  const tmpV = new THREE.Vector3();
+
+  function recomputePendingHover() {
+    if (!mouseInside || focus.level > 0) { pendingHover = -1; return; }
+    const ndcX = (lastClientX / window.innerWidth) * 2 - 1;
+    const ndcY = -(lastClientY / window.innerHeight) * 2 + 1;
+    let closest=-1, closestSq=Infinity;
+    for (let pi=0; pi<principals.length; pi++) {
+      const idx = principals[pi].particleIndex;
+      const br = jsBreathing(seeds[idx], clock.getElapsedTime());
+      tmpV.set(positions[idx][0]+br.x, positions[idx][1]+br.y, positions[idx][2]+br.z);
+      tmpV.applyMatrix4(root.matrixWorld);
+      tmpV.project(camera);
+      const dx=tmpV.x-ndcX, dy=tmpV.y-ndcY;
+      const sd=dx*dx+dy*dy;
+      if (sd<closestSq){closestSq=sd; closest=pi;}
+    }
+    pendingHover = (Math.sqrt(closestSq) < 0.09) ? closest : -1;
+    hoveredPrincipal = pendingHover;
+  }
+
+  const dom = renderer.domElement;
+  dom.addEventListener('pointerdown', e => {
+    down = true; mx = e.clientX; my = e.clientY;
+    if (dom.setPointerCapture) dom.setPointerCapture(e.pointerId);
+  });
+  dom.addEventListener('pointerup', e => {
+    down = false;
+    if (dom.releasePointerCapture) dom.releasePointerCapture(e.pointerId);
+  });
+  dom.addEventListener('pointercancel', () => { down = false; });
+  dom.addEventListener('pointerleave',  () => { mouseInside = false; });
+  dom.addEventListener('pointerenter',  () => { mouseInside = true; });
+  dom.addEventListener('pointermove', e => {
+    lastClientX = e.clientX; lastClientY = e.clientY;
+    mouseInside = true;
+    if (down) {
+      tRotY += (e.clientX - mx) * 0.005;
+      tRotX += (e.clientY - my) * 0.005;
+      tRotX = Math.max(-1.2, Math.min(1.2, tRotX));
+      mx = e.clientX; my = e.clientY;
+    }
+  });
+
+  // Click on canvas (no drag): in overview, near a principal → drill
+  let downX=0, downY=0, isDrag=false;
+  dom.addEventListener('pointerdown', e => { downX=e.clientX; downY=e.clientY; isDrag=false; });
+  dom.addEventListener('pointermove', e => {
+    if (down) {
+      const dx=e.clientX-downX, dy=e.clientY-downY;
+      if (dx*dx+dy*dy > 16) isDrag = true;
+    }
+  });
+  dom.addEventListener('click', e => {
+    if (isDrag) return;
+    if (currentCard) { closeCard(); return; }
+    if (focus.level === 0 && pendingHover >= 0) {
+      handlePillClick(principals[pendingHover]._l1Node);
+    }
+  });
+
+  // Wheel: zoom + pop focus. Attached to window so scrolling works
+  // regardless of whether the cursor is over the canvas, a pill, or
+  // anything else. If the cursor is inside an open card, let the card
+  // handle its own scroll.
+  window.addEventListener('wheel', e => {
+    if (currentCard && currentCard.el && currentCard.el.contains(e.target)) {
+      return; // card scrolls internally
+    }
+    e.preventDefault();
+    const factor = Math.exp(e.deltaY * 0.0014);
+    const level = focus.level;
+    const range = LEVELS[level];
+    targetCameraZ *= factor;
+    if (level > 0 && targetCameraZ > range.popThreshold) {
+      popFocus();
+      targetCameraZ = LEVELS[focus.level].home * 1.05;
+    } else {
+      targetCameraZ = Math.max(range.min, Math.min(range.max, targetCameraZ));
+    }
+    if (!interacted) { interacted = true; hintEl.classList.add('hidden'); }
+  }, { passive: false });
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  // ============================================================
+  // Label visibility rules (slightly firmer)
+  // ============================================================
+  function desiredOpacityFor(node) {
+    const f = focus;
+    const p = node.principalIdx;
+    const lvl = node.level;
+    if (f.level === 0) {
+      if (lvl === 'l1') return hoveredPrincipal === -1 ? 1 : (p === hoveredPrincipal ? 1 : 0.62);
+      if (lvl === 'l2') {
+        // Only show L2s when their principal is hovered.
+        return p === hoveredPrincipal ? 1 : 0;
+      }
+      return 0; // L3 hidden in overview
+    }
+    if (f.level === 1) {
+      if (p !== f.principalIdx) {
+        if (lvl === 'l1') return 0.52;
+        return 0;
+      }
+      if (lvl === 'l1') return 0.95;
+      if (lvl === 'l2') return 1;
+      if (lvl === 'l3') return 0.68;
+    }
+    if (f.level === 2) {
+      if (p !== f.principalIdx) {
+        if (lvl === 'l1') return 0.42;
+        return 0;
+      }
+      if (lvl === 'l1') return 0.6;
+      if (lvl === 'l2') return node.l2Idx === f.l2Idx ? 1 : 0.58;
+      if (lvl === 'l3') return node.l2Idx === f.l2Idx ? 1 : 0;
+    }
+    return 0;
+  }
+  function desiredScaleFor(node) {
+    const f = focus;
+    if (f.level === 0) {
+      if (node.level === 'l1' && hoveredPrincipal >= 0 && node.principalIdx === hoveredPrincipal) return 1.08;
+      if (node.level === 'l2' && hoveredPrincipal >= 0 && node.principalIdx === hoveredPrincipal) return 1.06;
+      return 1;
+    }
+    if (f.level === 1 && node.principalIdx === f.principalIdx) {
+      if (node.level === 'l2') return 1.05;
+    }
+    if (f.level === 2 && node.principalIdx === f.principalIdx) {
+      if (node.level === 'l2' && node.l2Idx === f.l2Idx) return 1.10;
+      if (node.level === 'l3' && node.l2Idx === f.l2Idx) return 1.04;
+    }
+    return 1;
+  }
+  function spreadPushFor(node, hoverActiveForThisPrincipal) {
+    if (!hoverActiveForThisPrincipal) return { x: 0, y: 0 };
+    if (node.level === 'l1') return { x: 0, y: -4 };
+    const prNode = principals[node.principalIdx]._l1Node;
+    const dx = node.screenX - prNode.screenX;
+    const dy = node.screenY - prNode.screenY;
+    const len = Math.hypot(dx, dy) || 1;
+    const push = 10;
+    return { x: (dx/len)*push, y: (dy/len)*push };
+  }
+
+  // ============================================================
+  // Animate
+  // ============================================================
+  const clock = new THREE.Clock();
+  const halfW = () => window.innerWidth * 0.5;
+  const halfH = () => window.innerHeight * 0.5;
+
+  // Growth animation — brain constructs over ~4.5s after startGrowth() is
+  // called. startGrowth is exposed via window.__startBrainGrowth so the
+  // capture-side transition can trigger it at the moment the brain becomes
+  // visible (right when the cover lifts).
+  const GROWTH_DURATION_S = 4.5;
+  let growthStartT = null;  // null until started
+  let currentGrowth = 0;    // eased value used in shaders
+  let growthJustEnded = false;
+
+  // easeInOutCubic: slow start, accelerating middle, gentle arrival.
+  // Crucial for this effect — the seed gets a moment to breathe alone
+  // before the chain reaction kicks in.
+  function easeInOutCubic(x) {
+    return x < 0.5 ? 4*x*x*x : 1 - Math.pow(-2*x + 2, 3) / 2;
+  }
+
+  window.__startBrainGrowth = function () {
+    if (growthStartT !== null) return;
+    growthStartT = clock.getElapsedTime();
+    // Snap camera close to the seed. Without this snap, the camera would
+    // lerp from origin → seed over the first ~500ms due to damping, which
+    // steals the "starting close to the seed" effect. We skip damping for
+    // one frame and put the camera exactly where construction should begin.
+    focalTargetX = focalCurrentX = seedPrincipalPos[0];
+    focalTargetY = focalCurrentY = seedPrincipalPos[1];
+    focalTargetZ = focalCurrentZ = seedPrincipalPos[2];
+    targetCameraZ = cameraZ = 2.0;
+  };
+
+  // Fallback in case the transition code doesn't call startGrowth
+  setTimeout(() => {
+    if (growthStartT === null && typeof window.__startBrainGrowth === 'function') {
+      window.__startBrainGrowth();
+    }
+  }, 1800);
+
+  function tick() {
+    const t = clock.getElapsedTime();
+
+    // --- Growth progress ---
+    let rawGrowth = 0;
+    if (growthStartT !== null) {
+      rawGrowth = Math.min(1, (t - growthStartT) / GROWTH_DURATION_S);
+      currentGrowth = easeInOutCubic(rawGrowth);
+    }
+    ptMat.uniforms.uGrowth.value = currentGrowth;
+    lineMat.uniforms.uGrowth.value = currentGrowth;
+
+    // --- Camera override during (or before) construction ---
+    // Start close to the seed, zoom out to the overview as the brain
+    // assembles. We lock the camera near the seed from the moment the
+    // brain inits (even before growth formally starts) so the pill cluster
+    // is consistently centered under the cover. We write directly to both
+    // the current and target values so the damping updates below don't
+    // fight this directly-computed path.
+    if (growthStartT === null || rawGrowth < 1) {
+      const pullBack = currentGrowth;  // 0 before/at start → 1 at end
+      focalCurrentX = seedPrincipalPos[0] * (1 - pullBack);
+      focalCurrentY = seedPrincipalPos[1] * (1 - pullBack);
+      focalCurrentZ = seedPrincipalPos[2] * (1 - pullBack);
+      focalTargetX = focalCurrentX;
+      focalTargetY = focalCurrentY;
+      focalTargetZ = focalCurrentZ;
+      cameraZ = 2.0 + (LEVELS[0].home - 2.0) * pullBack;
+      targetCameraZ = cameraZ;
+    } else if (growthStartT !== null && !growthJustEnded) {
+      // One-time handoff when growth completes: make sure both tracks are
+      // synced on the overview home so the normal damping system takes
+      // over seamlessly. Skip if user already interacted (clicked a pill,
+      // scrolled, etc) during the last beats of growth — their focus wins.
+      growthJustEnded = true;
+      if (!interacted && focus.level === 0) {
+        focalTargetX = 0; focalTargetY = 0; focalTargetZ = 0;
+        focalCurrentX = 0; focalCurrentY = 0; focalCurrentZ = 0;
+        targetCameraZ = LEVELS[0].home;
+        cameraZ = LEVELS[0].home;
+      }
+    }
+
+    // Reveal the hint once the brain has finished building
+    if (currentGrowth >= 0.98 && !hintEl.classList.contains('ready') && !interacted) {
+      hintEl.classList.add('ready');
+    }
+    rotY += (tRotY - rotY) * 0.08;
+    rotX += (tRotX - rotX) * 0.08;
+    root.rotation.y = rotY + Math.sin(t * 0.13) * 0.04;
+    root.rotation.x = rotX + Math.sin(t * 0.17) * 0.02;
+
+    focalCurrentX += (focalTargetX - focalCurrentX) * 0.08;
+    focalCurrentY += (focalTargetY - focalCurrentY) * 0.08;
+    focalCurrentZ += (focalTargetZ - focalCurrentZ) * 0.08;
+
+    const fv = tmpV.set(focalCurrentX, focalCurrentY, focalCurrentZ)
+      .applyQuaternion(root.quaternion);
+    root.position.set(-fv.x, -fv.y, -fv.z);
+
+    cameraZ += (targetCameraZ - cameraZ) * 0.10;
+    camera.position.z = cameraZ;
+
+    root.updateMatrixWorld();
+    recomputePendingHover();
+
+    if (pendingHover === visibleHover) {
+      const target = pendingHover >= 0 ? 1 : 0;
+      visibleStrength += (target - visibleStrength) * 0.10;
+    } else {
+      visibleStrength += (0 - visibleStrength) * 0.18;
+      if (visibleStrength < 0.04) visibleHover = pendingHover;
+    }
+
+    const targetFocusStrength = focus.level > 0 ? 1 : 0;
+    focusStrength += (targetFocusStrength - focusStrength) * 0.07;
+    const desiredFocusSlot = focus.level > 0 ? principals[focus.principalIdx].hubSlot : -1;
+    if (focusStrength < 0.05) focusClusterSlot = desiredFocusSlot;
+    if (focus.level > 0) focusClusterSlot = desiredFocusSlot;
+
+    ptMat.uniforms.uTime.value = t;
+    ptMat.uniforms.uHoverCluster.value = visibleHover >= 0 ? principals[visibleHover].hubSlot : -1;
+    ptMat.uniforms.uHoverStrength.value = visibleStrength;
+    ptMat.uniforms.uFocusCluster.value = focusClusterSlot;
+    ptMat.uniforms.uFocusStrength.value = focusStrength;
+    lineMat.uniforms.uTime.value = t;
+    lineMat.uniforms.uHoverCluster.value = visibleHover >= 0 ? principals[visibleHover].hubSlot : -1;
+    lineMat.uniforms.uHoverStrength.value = visibleStrength;
+    lineMat.uniforms.uFocusCluster.value = focusClusterSlot;
+    lineMat.uniforms.uFocusStrength.value = focusStrength;
+
+    const hW = halfW(), hH = halfH();
+
+    // Project all labels.
+    //
+    // During brain construction OR pre-growth (brain exists behind cover
+    // but startGrowth hasn't fired yet), L1 pills should be at cluster.
+    // Only when growth fully completes (rawGrowth >= 1) do they settle
+    // into their final positions and stop interpolating.
+    const constructing = growthStartT === null || rawGrowth < 1;
+
+    for (let i=0; i<labelNodes.length; i++) {
+      const n = labelNodes[i];
+      const idx = n.particleIndex;
+      const br = jsBreathing(n.seed, t);
+
+      // Effective 3D position of this label
+      let px = positions[idx][0];
+      let py = positions[idx][1];
+      let pz = positions[idx][2];
+
+      if (constructing && n.level === 'l1') {
+        // Fraction of this pill's journey from seed → final.
+        // progress = 1 when growth has reached this hub's reveal value,
+        // then pill stays at final. easeOutQuad gives a confident outward
+        // burst that settles gently.
+        const hubReveal = revealOrder[idx];
+        let progress;
+        if (hubReveal < 0.001) {
+          progress = 1;  // the seed itself — stays at origin
+        } else {
+          progress = Math.min(1, currentGrowth / hubReveal);
+        }
+        const eased = 1 - (1 - progress) * (1 - progress);
+
+        // Direction from seed to this hub's final position
+        const dx = positions[idx][0] - seedPrincipalPos[0];
+        const dy = positions[idx][1] - seedPrincipalPos[1];
+        const dz = positions[idx][2] - seedPrincipalPos[2];
+        const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+
+        if (dist < 0.001) {
+          // This IS the seed — stays put
+          px = positions[idx][0];
+          py = positions[idx][1];
+          pz = positions[idx][2];
+        } else {
+          // At progress=0, pill sits at a small offset from seed along
+          // its own final direction. This forms a tight starburst cluster
+          // around the seed (all pills close but each pointing toward
+          // where it's going), preventing the stack-to-one-pixel problem.
+          const CLUSTER_RADIUS = 0.16;
+          const sx = seedPrincipalPos[0] + (dx / dist) * CLUSTER_RADIUS;
+          const sy = seedPrincipalPos[1] + (dy / dist) * CLUSTER_RADIUS;
+          const sz = seedPrincipalPos[2] + (dz / dist) * CLUSTER_RADIUS;
+          px = sx + (positions[idx][0] - sx) * eased;
+          py = sy + (positions[idx][1] - sy) * eased;
+          pz = sz + (positions[idx][2] - sz) * eased;
+        }
+      }
+
+      tmpV.set(px + br.x, py + br.y, pz + br.z);
+      tmpV.applyMatrix4(root.matrixWorld);
+      const worldToCam = tmpV.z - camera.position.z;
+      const inFront = worldToCam < 0;
+      tmpV.project(camera);
+      n.screenX = tmpV.x * hW + hW;
+      n.screenY = -tmpV.y * hH + hH;
+      n.inFront = inFront;
+      const depth = Math.min(1, Math.max(0, (tmpV.z + 1) * 0.5));
+      n._depthFade = Math.max(0.62, 1 - depth * 0.38);
+    }
+
+    // Apply opacity/scale/position
+    //
+    // L1 pills: fully visible from growth=0 (they ride the construction).
+    // L2/L3 pills: fade in only at the end so sub-themes don't clutter
+    //   the build. Their base opacity is gated by hover/focus anyway, so
+    //   this mainly prevents any flicker if opacity logic would otherwise
+    //   light them up briefly during the growth phase.
+    const l2l3GrowthFade = Math.max(0, Math.min(1, (currentGrowth - 0.80) / 0.20));
+
+    for (let i=0; i<labelNodes.length; i++) {
+      const n = labelNodes[i];
+
+      // If card for this pill is open, pill stays hidden at 0
+      if (n._suppressOpacity) {
+        n.opacity += (0 - n.opacity) * 0.2;
+      } else {
+        let op = desiredOpacityFor(n);
+        if (!n.inFront) op = 0;
+        op *= n._depthFade;
+        // Only gate non-l1 pills by growth — l1 rides along
+        if (n.level !== 'l1') op *= l2l3GrowthFade;
+        n.opacity += (op - n.opacity) * 0.18;
+      }
+
+      const scale = desiredScaleFor(n);
+      n.scale += (scale - n.scale) * 0.18;
+
+      const hoverActive = (focus.level === 0 && hoveredPrincipal === n.principalIdx);
+      const push = spreadPushFor(n, hoverActive);
+      const yOffsetByLevel = n.level === 'l1' ? -22 : n.level === 'l2' ? -16 : -12;
+
+      const el = n.el;
+      el.style.transform =
+        `translate3d(${n.screenX + push.x}px, ${n.screenY + push.y + yOffsetByLevel}px, 0) ` +
+        `translate(-50%, -50%) scale(${n.scale.toFixed(3)})`;
+      // Don't overwrite pill opacity while a card is bound to it
+      if (!n._suppressOpacity) {
+        el.style.opacity = n.opacity.toFixed(3);
+      }
+      el.style.pointerEvents = (n.opacity > 0.15 && !n._suppressOpacity) ? 'auto' : 'none';
+    }
+
+    renderer.render(scene, camera);
+    requestAnimationFrame(tick);
+  }
+  tick();
+}
+
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,2354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Digital Brain</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+    html, body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background: #060709;
+        height: 100%;
+        width: 100%;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+    }
+    canvas {
+        display: block;
+        cursor: grab;
+        touch-action: none;
+    }
+    canvas.grabbing { cursor: grabbing; }
+    canvas.hovering { cursor: pointer; }
+
+    #vignette {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        background: radial-gradient(ellipse at center,
+            transparent 30%,
+            rgba(6, 7, 9, 0.55) 75%,
+            rgba(6, 7, 9, 0.95) 100%);
+        z-index: 10;
+    }
+
+    /* ---------- Label layer ---------- */
+    #labels {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 15;
+    }
+    .label {
+        position: absolute;
+        left: 0; top: 0;
+        /* Position is set via transform (translate3d) from JS every frame.
+           Using transform instead of left/top keeps updates on the compositor
+           only — no layout, no paint — which eliminates the backdrop-filter
+           flicker that happens when blurred elements reflow rapidly. */
+        transform: translate3d(0, 0, 0) translate(-50%, -50%);
+        pointer-events: auto;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        padding: 5px 11px 5px 9px;
+        background: rgba(16, 18, 24, 0.72);
+        border: 1px solid rgba(255, 255, 255, 0.10);
+        border-radius: 999px;
+        color: rgba(240, 242, 248, 0.88);
+        font-size: 11px;
+        font-weight: 500;
+        letter-spacing: 0.01em;
+        white-space: nowrap;
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+        /* Only non-positional properties transition. `transform` is driven
+           by JS every frame, so it must not be transitioned. */
+        transition:
+            opacity 260ms ease,
+            background 260ms ease,
+            border-color 260ms ease;
+        will-change: transform, opacity;
+        user-select: none;
+    }
+    /* During drag, disable opacity transitions (we freeze state anyway,
+       but this is belt-and-suspenders against any stray class churn) */
+    body.dragging .label {
+        transition: none;
+        pointer-events: none;
+    }
+    .label .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        flex-shrink: 0;
+        box-shadow: 0 0 0 1px rgba(0,0,0,0.25);
+    }
+    .label.principal {
+        font-size: 12px;
+        padding: 6px 13px 6px 11px;
+        background: rgba(18, 20, 28, 0.82);
+        border-color: rgba(255, 255, 255, 0.14);
+        color: rgba(245, 247, 252, 0.96);
+        font-weight: 600;
+    }
+    .label.principal .dot {
+        width: 8px;
+        height: 8px;
+    }
+    .label.secondary {
+        font-size: 10.5px;
+    }
+    .label.tertiary {
+        font-size: 10px;
+        padding: 4px 10px 4px 8px;
+        background: rgba(14, 16, 22, 0.65);
+        color: rgba(230, 232, 240, 0.78);
+    }
+    .label.hovered {
+        background: rgba(28, 30, 40, 0.94);
+        border-color: rgba(255, 255, 255, 0.28);
+        color: rgba(255, 255, 255, 1);
+        /* No transform here — it's driven entirely by JS */
+    }
+    .label.cluster-active {
+        background: rgba(24, 26, 34, 0.92);
+        border-color: rgba(255, 255, 255, 0.22);
+        color: rgba(252, 253, 255, 0.98);
+    }
+    .label.dimmed {
+        opacity: 0.22;
+    }
+    .label.hidden {
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    /* ---------- UI chrome ---------- */
+    #hint {
+        position: fixed;
+        bottom: 22px;
+        left: 50%;
+        transform: translateX(-50%);
+        color: rgba(255, 255, 255, 0.28);
+        font-size: 10.5px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        z-index: 20;
+        pointer-events: none;
+        transition: opacity 800ms ease;
+        font-weight: 400;
+    }
+    #hint.hidden { opacity: 0; }
+
+    #breadcrumbs {
+        position: fixed;
+        top: 22px;
+        left: 50%;
+        transform: translateX(-50%);
+        color: rgba(255, 255, 255, 0.55);
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        z-index: 20;
+        pointer-events: auto;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        opacity: 0;
+        transition: opacity 500ms ease;
+        font-weight: 500;
+    }
+    #breadcrumbs.visible { opacity: 1; }
+    #breadcrumbs .crumb {
+        padding: 5px 11px;
+        background: rgba(16, 18, 24, 0.72);
+        border: 1px solid rgba(255, 255, 255, 0.10);
+        border-radius: 999px;
+        cursor: pointer;
+        transition: all 200ms ease;
+    }
+    #breadcrumbs .crumb:hover {
+        background: rgba(28, 30, 40, 0.92);
+        border-color: rgba(255, 255, 255, 0.22);
+        color: rgba(255, 255, 255, 1);
+    }
+    #breadcrumbs .sep {
+        color: rgba(255, 255, 255, 0.22);
+        font-size: 9px;
+    }
+
+    /* ---------- Card (pill-morph) ---------- */
+    /* The card is a DOM element that starts as a clone of the clicked pill,
+       positioned exactly over it, then morphs (FLIP) to its expanded shape.
+       The original pill becomes invisible while the card is open so the
+       illusion of "the pill has become the card" holds. */
+    .card {
+        position: fixed;
+        left: 0;
+        top: 0;
+        z-index: 30;
+        background: rgba(14, 16, 22, 0.78);
+        backdrop-filter: blur(16px) saturate(140%);
+        -webkit-backdrop-filter: blur(16px) saturate(140%);
+        border: 1px solid rgba(255, 255, 255, 0.10);
+        border-radius: 18px;
+        color: rgba(240, 242, 248, 0.92);
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        box-shadow:
+            0 14px 48px rgba(0, 0, 0, 0.55),
+            0 2px 10px rgba(0, 0, 0, 0.35);
+        overflow: hidden;
+        transform-origin: top left;
+        will-change: width, height, left, top, border-radius, opacity;
+        transition:
+            width  420ms cubic-bezier(.2,.75,.2,1),
+            height 420ms cubic-bezier(.2,.75,.2,1),
+            left   420ms cubic-bezier(.2,.75,.2,1),
+            top    420ms cubic-bezier(.2,.75,.2,1),
+            border-radius 420ms cubic-bezier(.2,.75,.2,1),
+            background 420ms ease,
+            opacity 260ms ease;
+        pointer-events: auto;
+    }
+    .card.closing {
+        pointer-events: none;
+    }
+    /* Starting state: mimics a pill (before we flip to card rect) */
+    .card.as-pill {
+        background: rgba(18, 20, 28, 0.82);
+        border-radius: 999px;
+        border-color: rgba(255, 255, 255, 0.14);
+        box-shadow: none;
+    }
+
+    .card-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 16px 20px 12px;
+        transition: padding 420ms cubic-bezier(.2,.75,.2,1);
+    }
+    .card.as-pill .card-header {
+        padding: 6px 13px 6px 11px;
+    }
+    .card-header .dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        flex-shrink: 0;
+        box-shadow: 0 0 0 1px rgba(0,0,0,0.25);
+        transition: width 420ms cubic-bezier(.2,.75,.2,1),
+                    height 420ms cubic-bezier(.2,.75,.2,1);
+    }
+    .card.as-pill .card-header .dot {
+        width: 8px;
+        height: 8px;
+    }
+    .card-header .title {
+        font-size: 16px;
+        font-weight: 600;
+        color: rgba(252, 253, 255, 0.98);
+        letter-spacing: -0.005em;
+        line-height: 1.2;
+        transition: font-size 420ms cubic-bezier(.2,.75,.2,1);
+        flex: 1;
+        min-width: 0;
+    }
+    .card.as-pill .card-header .title {
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .card-header .close {
+        width: 26px;
+        height: 26px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        cursor: pointer;
+        color: rgba(255, 255, 255, 0.48);
+        font-size: 16px;
+        line-height: 1;
+        background: transparent;
+        border: none;
+        padding: 0;
+        transition: background 180ms ease, color 180ms ease, opacity 260ms ease;
+        opacity: 1;
+        flex-shrink: 0;
+    }
+    .card-header .close:hover {
+        background: rgba(255, 255, 255, 0.08);
+        color: rgba(255, 255, 255, 0.85);
+    }
+    .card.as-pill .card-header .close {
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    .card-kind {
+        font-size: 10px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: rgba(255, 255, 255, 0.42);
+        padding: 0 20px 14px;
+        font-weight: 500;
+        opacity: 1;
+        transition: opacity 260ms ease 120ms;
+    }
+    .card.as-pill .card-kind { opacity: 0; transition-delay: 0ms; }
+
+    .card-body {
+        padding: 0 20px 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        opacity: 1;
+        transition: opacity 300ms ease 140ms;
+    }
+    .card.as-pill .card-body { opacity: 0; transition-delay: 0ms; }
+
+    .card-insight {
+        font-size: 13.5px;
+        line-height: 1.55;
+        color: rgba(242, 244, 250, 0.92);
+        font-weight: 400;
+        letter-spacing: 0;
+        padding: 12px 14px;
+        background: rgba(255, 255, 255, 0.035);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        border-radius: 12px;
+    }
+
+    .card-section .label-caption {
+        font-size: 9.5px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: rgba(255, 255, 255, 0.38);
+        font-weight: 500;
+        margin-bottom: 6px;
+    }
+    .card-section .content {
+        font-size: 12.5px;
+        line-height: 1.5;
+        color: rgba(232, 234, 242, 0.82);
+    }
+    .card-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+    .card-chip {
+        font-size: 10.5px;
+        padding: 3px 9px;
+        background: rgba(255, 255, 255, 0.045);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 999px;
+        color: rgba(235, 237, 244, 0.82);
+        font-weight: 500;
+        white-space: nowrap;
+    }
+
+    .card-note {
+        padding: 10px 14px;
+        background: rgba(255, 255, 255, 0.025);
+        border-left: 2px solid rgba(255, 255, 255, 0.18);
+        font-size: 12px;
+        line-height: 1.55;
+        color: rgba(220, 222, 230, 0.78);
+        font-style: italic;
+        border-radius: 0 8px 8px 0;
+    }
+
+    /* Backdrop for mobile sheet and desktop click-outside */
+    #card-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(4, 5, 8, 0);
+        z-index: 25;
+        pointer-events: none;
+        transition: background 260ms ease;
+    }
+    #card-backdrop.visible {
+        pointer-events: auto;
+        background: rgba(4, 5, 8, 0.35);
+    }
+
+    /* Mobile bottom-sheet variant — activated at narrow widths */
+    @media (max-width: 640px) {
+        .card.mobile {
+            left: 0 !important;
+            right: 0;
+            top: auto !important;
+            bottom: 0;
+            width: 100% !important;
+            max-height: 72vh;
+            border-radius: 18px 18px 0 0;
+            transform-origin: bottom center;
+            transition:
+                transform 380ms cubic-bezier(.2,.75,.2,1),
+                opacity 260ms ease;
+        }
+        .card.mobile.sheet-closed {
+            transform: translateY(100%);
+        }
+        .card.mobile .card-header {
+            padding-top: 20px;
+        }
+        .card.mobile::before {
+            content: '';
+            position: absolute;
+            top: 7px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 36px;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.18);
+            border-radius: 2px;
+        }
+    }
+</style>
+</head>
+<body>
+<div id="vignette"></div>
+<div id="card-backdrop"></div>
+<div id="labels"></div>
+<div id="breadcrumbs"></div>
+<div id="hint">Drag to rotate &nbsp;·&nbsp; Click a label to explore &nbsp;·&nbsp; Scroll out to go back</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+'use strict';
+
+/* =========================================================================
+   SCENE
+   ========================================================================= */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x060709);
+
+const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 200);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+document.body.appendChild(renderer.domElement);
+
+/* =========================================================================
+   BRAIN SDF
+   ========================================================================= */
+function sdSphere(px, py, pz, cx, cy, cz, r) {
+    const dx = px - cx, dy = py - cy, dz = pz - cz;
+    return Math.sqrt(dx * dx + dy * dy + dz * dz) - r;
+}
+function sdEllipsoid(px, py, pz, cx, cy, cz, rx, ry, rz) {
+    const dx = px - cx, dy = py - cy, dz = pz - cz;
+    const k0 = Math.sqrt((dx / rx) * (dx / rx) + (dy / ry) * (dy / ry) + (dz / rz) * (dz / rz));
+    const k1 = Math.sqrt(
+        (dx / (rx * rx)) * (dx / (rx * rx)) +
+        (dy / (ry * ry)) * (dy / (ry * ry)) +
+        (dz / (rz * rz)) * (dz / (rz * rz))
+    );
+    if (k1 < 1e-6) return -Math.min(rx, ry, rz);
+    return k0 * (k0 - 1) / k1;
+}
+function sdCapsule(px, py, pz, ax, ay, az, bx, by, bz, r) {
+    const pax = px - ax, pay = py - ay, paz = pz - az;
+    const bax = bx - ax, bay = by - ay, baz = bz - az;
+    const baba = bax * bax + bay * bay + baz * baz;
+    const h = Math.max(0, Math.min(1, (pax * bax + pay * bay + paz * baz) / baba));
+    const dx = pax - bax * h, dy = pay - bay * h, dz = paz - baz * h;
+    return Math.sqrt(dx * dx + dy * dy + dz * dz) - r;
+}
+function smin(a, b, k) {
+    const h = Math.max(k - Math.abs(a - b), 0) / k;
+    return Math.min(a, b) - h * h * h * k * (1 / 6);
+}
+function brainSDF(px, py, pz) {
+    let d = sdEllipsoid(px, py, pz, 0, 1.2, 0, 6.6, 3.8, 5.4);
+    d = smin(d, sdSphere(px, py, pz, -0.5, 3.7, 0, 3.0), 1.6);
+    d = smin(d, sdSphere(px, py, pz, -5.3, 1.4, 0, 3.3), 1.8);
+    d = smin(d, sdSphere(px, py, pz,  5.4, 0.7, 0, 3.0), 1.7);
+    d = smin(d, sdEllipsoid(px, py, pz, -2.0, -2.3, 0, 3.2, 1.7, 4.3), 1.3);
+    d = smin(d, sdEllipsoid(px, py, pz,  4.5, -2.9, 0, 2.5, 1.7, 3.3), 0.6);
+    d = smin(d, sdCapsule(px, py, pz, 3.2, -3.5, 0, 2.0, -7.2, 0, 0.9), 0.5);
+    return d;
+}
+
+/* =========================================================================
+   SEMANTIC TAXONOMY — the meaning layer of the digital brain
+   8 principal categories + sub-themes + specific instances.
+   Tone colors: positive / difficult / neutral / mixed
+   ========================================================================= */
+const TONE = {
+    positive:  '#6ea8ff',
+    difficult: '#ff8b7a',
+    neutral:   '#c9c9d1',
+    mixed:     '#c69cff'
+};
+
+// Principal hubs — the 8 pillars of an inner world
+const TAXONOMY = [
+    {
+        id: 'memories', name: 'Memories', tone: 'neutral',
+        sub: [
+            { name: 'Childhood', tone: 'mixed', children: ['The old house', 'Summer afternoons', 'Grandmother\'s kitchen', 'First school', 'A lost friend'] },
+            { name: 'Defining moments', tone: 'mixed', children: ['The decision', 'Leaving home', 'Loss of innocence', 'First love'] },
+            { name: 'Sensory anchors', tone: 'positive', children: ['Rain on windows', 'Coffee in winter', 'A specific song', 'Ocean smell'] },
+            { name: 'Quiet rooms', tone: 'neutral', children: ['Early mornings', 'Alone in the car', 'Walking at dusk'] },
+            { name: 'Forgotten faces', tone: 'mixed', children: ['The teacher', 'A stranger\'s kindness', 'Someone I hurt'] }
+        ]
+    },
+    {
+        id: 'emotions', name: 'Emotions', tone: 'mixed',
+        sub: [
+            { name: 'Joy', tone: 'positive', children: ['Small wins', 'Being understood', 'Shared laughter'] },
+            { name: 'Grief', tone: 'difficult', children: ['What ended', 'Who I was', 'Unsent letters'] },
+            { name: 'Anger', tone: 'difficult', children: ['Old wounds', 'Injustice', 'Being unseen'] },
+            { name: 'Tenderness', tone: 'positive', children: ['Caring for others', 'Private softness', 'Forgiveness'] },
+            { name: 'Shame', tone: 'difficult', children: ['What I hide', 'The body', 'Being wrong'] },
+            { name: 'Wonder', tone: 'positive', children: ['Night sky', 'A new idea', 'Strangers'] }
+        ]
+    },
+    {
+        id: 'identity', name: 'Identity', tone: 'neutral',
+        sub: [
+            { name: 'Self-image', tone: 'mixed', children: ['Who I think I am', 'Who I pretend to be', 'Who I avoid being'] },
+            { name: 'Roles', tone: 'neutral', children: ['The caregiver', 'The achiever', 'The outsider', 'The friend'] },
+            { name: 'Values', tone: 'positive', children: ['Honesty', 'Loyalty', 'Curiosity', 'Gentleness'] },
+            { name: 'Origin story', tone: 'mixed', children: ['Where I\'m from', 'What shaped me', 'What I inherited'] },
+            { name: 'Shadow self', tone: 'difficult', children: ['The parts I reject', 'What I envy', 'Hidden capacities'] }
+        ]
+    },
+    {
+        id: 'relationships', name: 'Relationships', tone: 'mixed',
+        sub: [
+            { name: 'Family', tone: 'mixed', children: ['Mother', 'Father', 'A sibling', 'Inherited silence'] },
+            { name: 'Partners', tone: 'mixed', children: ['The one before', 'Someone now', 'Patterns in love'] },
+            { name: 'Friends', tone: 'positive', children: ['The witness', 'The old friend', 'The new one'] },
+            { name: 'Estranged ties', tone: 'difficult', children: ['Unfinished conversations', 'Someone missing', 'The apology'] },
+            { name: 'Attachment style', tone: 'mixed', children: ['Closeness fears', 'Needing space', 'Needing proof'] }
+        ]
+    },
+    {
+        id: 'beliefs', name: 'Beliefs', tone: 'mixed',
+        sub: [
+            { name: 'About myself', tone: 'mixed', children: ['I am enough', 'I am behind', 'I am responsible'] },
+            { name: 'About others', tone: 'mixed', children: ['People leave', 'People try', 'People hide'] },
+            { name: 'About the world', tone: 'neutral', children: ['Things work out', 'Effort matters', 'Time is short'] },
+            { name: 'Inherited beliefs', tone: 'difficult', children: ['From my parents', 'From my culture', 'From an old wound'] },
+            { name: 'Beliefs I question', tone: 'positive', children: ['What if I\'m wrong?', 'What if I try?'] }
+        ]
+    },
+    {
+        id: 'patterns', name: 'Patterns', tone: 'neutral',
+        sub: [
+            { name: 'Loops', tone: 'difficult', children: ['Overthinking', 'Procrastination', 'Starting over'] },
+            { name: 'Triggers', tone: 'difficult', children: ['Silence', 'Criticism', 'Being ignored'] },
+            { name: 'Coping', tone: 'mixed', children: ['Distraction', 'Isolation', 'Busyness', 'Sleep'] },
+            { name: 'Rituals', tone: 'positive', children: ['Morning coffee', 'Evening walks', 'Journaling'] },
+            { name: 'Drift', tone: 'neutral', children: ['Where my mind goes', 'What I avoid thinking', 'Daydreams'] }
+        ]
+    },
+    {
+        id: 'fears', name: 'Fears & Avoidance', tone: 'difficult',
+        sub: [
+            { name: 'Core fears', tone: 'difficult', children: ['Being left', 'Being wrong', 'Being invisible', 'Being too much'] },
+            { name: 'What I postpone', tone: 'difficult', children: ['The hard conversation', 'The health check', 'The decision'] },
+            { name: 'Where I hide', tone: 'difficult', children: ['In work', 'In others\' needs', 'In stories'] },
+            { name: 'Body anxieties', tone: 'difficult', children: ['Aging', 'Illness', 'Not being seen'] },
+            { name: 'Existential', tone: 'mixed', children: ['Time passing', 'Meaninglessness', 'Being forgotten'] }
+        ]
+    },
+    {
+        id: 'desires', name: 'Desires & Goals', tone: 'positive',
+        sub: [
+            { name: 'What I want', tone: 'positive', children: ['A slower life', 'To make something', 'To be known', 'Rest'] },
+            { name: 'Aspirations', tone: 'positive', children: ['The book', 'The garden', 'The language', 'The journey'] },
+            { name: 'Longings', tone: 'mixed', children: ['An old place', 'A kind of love', 'A different self'] },
+            { name: 'Daily practice', tone: 'positive', children: ['Moving', 'Reading', 'Listening', 'Making'] },
+            { name: 'Future self', tone: 'positive', children: ['In five years', 'The wiser one', 'Softer, braver'] }
+        ]
+    }
+];
+
+/* =========================================================================
+   NODE GENERATION — reuses prior particle-brain generation, but
+   principal hubs are now hand-placed in semantically meaningful regions.
+   ========================================================================= */
+const nodes = [];
+const bbox = { minX: -10, maxX: 10, minY: -8.5, maxY: 6, minZ: -6.2, maxZ: 6.2 };
+
+function randInBbox() {
+    return [
+        bbox.minX + Math.random() * (bbox.maxX - bbox.minX),
+        bbox.minY + Math.random() * (bbox.maxY - bbox.minY),
+        bbox.minZ + Math.random() * (bbox.maxZ - bbox.minZ)
+    ];
+}
+
+// Interior — dim scatter (level 3 — weakest tier)
+{
+    const TARGET = 1100;
+    let attempts = 0, count = 0;
+    while (count < TARGET && attempts < 800000) {
+        attempts++;
+        const [x, y, z] = randInBbox();
+        if (brainSDF(x, y, z) < -0.3) {
+            nodes.push({
+                x, y, z,
+                size: 0.024 + Math.random() * 0.036,
+                brightness: 0.50 + Math.random() * 0.22,
+                parentIdx: -1,
+                isHub: false,
+                tier: 'L3'
+            });
+            count++;
+        }
+    }
+}
+
+// Shell — silhouette dots (level 3)
+{
+    const TARGET = 2200;
+    let attempts = 0, count = 0;
+    while (count < TARGET && attempts < 1200000) {
+        attempts++;
+        const [x, y, z] = randInBbox();
+        const d = brainSDF(x, y, z);
+        if (d > -0.45 && d < 0.05) {
+            nodes.push({
+                x, y, z,
+                size: 0.036 + Math.random() * 0.048,
+                brightness: 0.75 + Math.random() * 0.22,
+                parentIdx: -1,
+                isHub: false,
+                tier: 'L3'
+            });
+            count++;
+        }
+    }
+}
+
+/* =========================================================================
+   PRINCIPAL HUBS — hand-placed positions for semantic coherence
+   Rough anatomical metaphors: memories in temporal-ish area, desires/goals
+   toward frontal lobe, fears in lower/back, emotions central, etc.
+   ========================================================================= */
+const HUB_POSITIONS = {
+    memories:      { x: -2.0, y: -1.6, z:  2.8 },  // temporal lobe — memory association
+    emotions:      { x: -1.5, y:  0.8, z:  0.0 },  // central — emotional core
+    identity:      { x: -0.5, y:  2.6, z: -1.2 },  // upper central — the sense of "I"
+    relationships: { x:  1.5, y: -0.6, z:  2.4 },  // right-side social processing
+    beliefs:       { x: -4.0, y:  2.2, z:  0.8 },  // frontal lobe
+    patterns:      { x:  3.0, y:  2.4, z: -1.4 },  // upper back — recurring structure
+    fears:         { x:  4.2, y: -2.2, z:  0.6 },  // cerebellum region — body-held
+    desires:       { x: -5.2, y:  1.0, z: -0.5 }   // deep frontal — intention
+};
+
+// Cluster profile per principal hub
+function principalProfile() {
+    return {
+        numSat: 170 + Math.floor(Math.random() * 60),
+        radius: 0.96 + Math.random() * 0.30,
+        radiusJitter: 0.08,
+        hubSize: 0.44 + Math.random() * 0.10,
+        hubBright: 1.00,
+        satSize: [0.119, 0.181],
+        satBright: [0.90, 1.00]
+    };
+}
+
+function secondaryProfile() {
+    return {
+        numSat: 85 + Math.floor(Math.random() * 45),
+        radius: 0.64 + Math.random() * 0.24,
+        radiusJitter: 0.08,
+        hubSize: 0.30 + Math.random() * 0.10,
+        hubBright: 1.00,
+        satSize: [0.106, 0.162],
+        satBright: [0.88, 0.98]
+    };
+}
+
+const hubs = [];               // every hub (principal, secondary, tertiary)
+const principalHubs = [];      // just the 8 principal hubs
+
+const GOLDEN_ANGLE = Math.PI * (3.0 - Math.sqrt(5.0));
+
+// Place satellites on a fibonacci sphere around a center node
+function spawnSatellites(center, profile, satClass) {
+    const rotTheta = Math.random() * Math.PI * 2;
+    const rotPhi = Math.random() * Math.PI * 2;
+    const cosT = Math.cos(rotTheta), sinT = Math.sin(rotTheta);
+    const cosP = Math.cos(rotPhi), sinP = Math.sin(rotPhi);
+    const satIndices = [];
+    for (let i = 0; i < profile.numSat; i++) {
+        const yUnit = 1 - (i / Math.max(1, profile.numSat - 1)) * 2;
+        const radAtY = Math.sqrt(Math.max(0, 1 - yUnit * yUnit));
+        const theta = GOLDEN_ANGLE * i;
+        let ux = Math.cos(theta) * radAtY;
+        let uy = yUnit;
+        let uz = Math.sin(theta) * radAtY;
+        const rx = ux * cosT - uz * sinT;
+        const rz = ux * sinT + uz * cosT;
+        const ry = uy * cosP - rx * sinP;
+        const finalX = rx * cosP + uy * sinP;
+        const r = profile.radius * (1.0 - profile.radiusJitter + Math.random() * profile.radiusJitter * 2);
+        const sx = center.x + finalX * r;
+        const sy = center.y + ry * r;
+        const sz = center.z + rz * r;
+        if (brainSDF(sx, sy, sz) > 0.6) continue;
+
+        const satIdx = nodes.length;
+        nodes.push({
+            x: sx, y: sy, z: sz,
+            size: profile.satSize[0] + Math.random() * (profile.satSize[1] - profile.satSize[0]),
+            brightness: profile.satBright[0] + Math.random() * (profile.satBright[1] - profile.satBright[0]),
+            parentIdx: center._idx,
+            isHub: false,
+            tier: satClass
+        });
+        satIndices.push(satIdx);
+    }
+    return satIndices;
+}
+
+// Spawn the 8 principal hubs + their secondary hubs + tertiary children
+TAXONOMY.forEach((category) => {
+    const pos = HUB_POSITIONS[category.id];
+    const profile = principalProfile();
+
+    // Principal hub node — the "L1" center for this category
+    const principalIdx = nodes.length;
+    const principal = {
+        x: pos.x, y: pos.y, z: pos.z,
+        size: profile.hubSize,
+        brightness: profile.hubBright,
+        parentIdx: -1,
+        isHub: true,
+        tier: 'L1',
+        semantic: {
+            id: category.id,
+            name: category.name,
+            tone: category.tone,
+            kind: 'principal',
+            sub: category.sub
+        },
+        _idx: principalIdx,
+        secondaryHubs: [],       // indices of secondary hubs belonging to this principal
+        satIndices: []
+    };
+    nodes.push(principal);
+    hubs.push(principal);
+    principalHubs.push(principal);
+
+    // Background satellites (the dense starburst around the principal)
+    principal.satIndices = spawnSatellites(principal, profile, 'L2');
+
+    // Secondary hubs (sub-themes) — these are real nodes too
+    // Placed at staggered offsets around the principal, farther than satellites
+    const numSub = category.sub.length;
+    category.sub.forEach((sub, subIdx) => {
+        // place secondary hubs in a ring-ish pattern around principal,
+        // slightly offset so they don't all sit in one plane
+        const ang = (subIdx / numSub) * Math.PI * 2;
+        const tilt = (subIdx % 2 === 0 ? 0.35 : -0.25);
+        const dist = 2.0 + Math.random() * 0.6;
+        let sx = pos.x + Math.cos(ang) * dist;
+        let sy = pos.y + tilt + Math.random() * 0.4 - 0.2;
+        let sz = pos.z + Math.sin(ang) * dist;
+
+        // keep secondary hubs inside or very near the brain envelope
+        if (brainSDF(sx, sy, sz) > 0.8) {
+            // nudge it toward the principal
+            sx = pos.x + (sx - pos.x) * 0.5;
+            sy = pos.y + (sy - pos.y) * 0.5;
+            sz = pos.z + (sz - pos.z) * 0.5;
+        }
+
+        const subProfile = secondaryProfile();
+        const subHubIdx = nodes.length;
+        const subHub = {
+            x: sx, y: sy, z: sz,
+            size: 0.24 + Math.random() * 0.05,
+            brightness: 0.95,
+            parentIdx: principalIdx,
+            isHub: true,
+            tier: 'L2_hub',
+            semantic: {
+                id: `${category.id}:${sub.name}`,
+                name: sub.name,
+                tone: sub.tone,
+                kind: 'secondary',
+                principalId: category.id,
+                children: sub.children
+            },
+            _idx: subHubIdx,
+            tertiaryNodes: []
+        };
+        nodes.push(subHub);
+        hubs.push(subHub);
+        principal.secondaryHubs.push(subHubIdx);
+
+        // Tertiary nodes — the specific concepts (named memories, fears, etc.)
+        sub.children.forEach((childName, cIdx) => {
+            const cAng = (cIdx / sub.children.length) * Math.PI * 2 + Math.random() * 0.3;
+            const cTilt = (Math.random() - 0.5) * 0.8;
+            const cDist = 0.55 + Math.random() * 0.25;
+            const cx = sx + Math.cos(cAng) * cDist;
+            const cy = sy + cTilt;
+            const cz = sz + Math.sin(cAng) * cDist;
+
+            const tertIdx = nodes.length;
+            nodes.push({
+                x: cx, y: cy, z: cz,
+                size: 0.11 + Math.random() * 0.04,
+                brightness: 0.88,
+                parentIdx: subHubIdx,
+                isHub: false,
+                tier: 'L3_named',
+                semantic: {
+                    id: `${category.id}:${sub.name}:${childName}`,
+                    name: childName,
+                    tone: sub.tone,
+                    kind: 'tertiary',
+                    principalId: category.id,
+                    secondaryName: sub.name
+                },
+                _idx: tertIdx
+            });
+            subHub.tertiaryNodes.push(tertIdx);
+        });
+    });
+});
+
+console.log('Total nodes:', nodes.length, '| Principal hubs:', principalHubs.length);
+
+/* =========================================================================
+   EDGE GENERATION
+   ========================================================================= */
+const edges = [];
+const edgeSet = new Set();
+function addEdge(a, b, alpha, meta) {
+    if (a === b) return;
+    const key = a < b ? a * 100000 + b : b * 100000 + a;
+    if (edgeSet.has(key)) return;
+    edgeSet.add(key);
+    edges.push({ a, b, alpha, meta: meta || {} });
+}
+
+// Principal hub -> background satellites
+for (const h of principalHubs) {
+    for (const satIdx of h.satIndices) {
+        addEdge(h._idx, satIdx, 0.08 + Math.random() * 0.09, { kind: 'hub-sat', principalIdx: h._idx });
+    }
+}
+
+// Principal -> its secondary hubs
+for (const h of principalHubs) {
+    for (const subIdx of h.secondaryHubs) {
+        addEdge(h._idx, subIdx, 0.20 + Math.random() * 0.10, { kind: 'principal-secondary', principalIdx: h._idx });
+    }
+}
+
+// Secondary hub -> its tertiary children
+for (const hub of hubs) {
+    if (hub.tier === 'L2_hub') {
+        for (const tIdx of hub.tertiaryNodes) {
+            addEdge(hub._idx, tIdx, 0.14 + Math.random() * 0.08, {
+                kind: 'secondary-tertiary',
+                principalIdx: nodes[hub.parentIdx]._idx !== undefined ? nodes[hub.parentIdx]._idx : hub.parentIdx
+            });
+        }
+    }
+}
+
+// k-NN web (short-range ambient edges)
+const cellSize = 1.3;
+const grid = new Map();
+function gkey(cx, cy, cz) { return cx * 1000000 + cy * 1000 + cz; }
+const mainIndices = [];
+for (let i = 0; i < nodes.length; i++) {
+    if (nodes[i].parentIdx < 0 && !nodes[i].isHub) {
+        mainIndices.push(i);
+        const cx = Math.floor(nodes[i].x / cellSize);
+        const cy = Math.floor(nodes[i].y / cellSize);
+        const cz = Math.floor(nodes[i].z / cellSize);
+        const k = gkey(cx, cy, cz);
+        if (!grid.has(k)) grid.set(k, []);
+        grid.get(k).push(i);
+    }
+}
+function neighborsAround(x, y, z) {
+    const cx = Math.floor(x / cellSize);
+    const cy = Math.floor(y / cellSize);
+    const cz = Math.floor(z / cellSize);
+    const out = [];
+    for (let dx = -1; dx <= 1; dx++)
+        for (let dy = -1; dy <= 1; dy++)
+            for (let dz = -1; dz <= 1; dz++) {
+                const k = gkey(cx + dx, cy + dy, cz + dz);
+                if (grid.has(k)) {
+                    const cell = grid.get(k);
+                    for (let m = 0; m < cell.length; m++) out.push(cell[m]);
+                }
+            }
+    return out;
+}
+for (const idx of mainIndices) {
+    const p = nodes[idx];
+    const cands = neighborsAround(p.x, p.y, p.z);
+    const dlist = [];
+    for (const idx2 of cands) {
+        if (idx2 === idx) continue;
+        const dx = nodes[idx2].x - p.x;
+        const dy = nodes[idx2].y - p.y;
+        const dz = nodes[idx2].z - p.z;
+        const dd = dx * dx + dy * dy + dz * dz;
+        if (dd > 0 && dd < 1.7) dlist.push([idx2, dd]);
+    }
+    dlist.sort((a, b) => a[1] - b[1]);
+    const k = 1 + Math.floor(Math.random() * 3);
+    for (let m = 0; m < Math.min(k, dlist.length); m++) {
+        const [idx2, dd] = dlist[m];
+        const d = Math.sqrt(dd);
+        const alpha = 0.06 + (1 - d / 1.3) * 0.14;
+        addEdge(idx, idx2, alpha, { kind: 'ambient' });
+    }
+}
+
+// Long-range brain-internal bridges
+for (let n = 0; n < 180; n++) {
+    const i1 = mainIndices[Math.floor(Math.random() * mainIndices.length)];
+    const i2 = mainIndices[Math.floor(Math.random() * mainIndices.length)];
+    if (i1 === i2) continue;
+    const dx = nodes[i2].x - nodes[i1].x;
+    const dy = nodes[i2].y - nodes[i1].y;
+    const dz = nodes[i2].z - nodes[i1].z;
+    const dd = dx * dx + dy * dy + dz * dz;
+    if (dd > 9 && dd < 81) addEdge(i1, i2, 0.025 + Math.random() * 0.035, { kind: 'bridge' });
+}
+
+// Principal-to-principal hub highways (cross-category threads)
+for (let h1 = 0; h1 < principalHubs.length; h1++) {
+    for (let h2 = h1 + 1; h2 < principalHubs.length; h2++) {
+        if (Math.random() < 0.35) {
+            addEdge(principalHubs[h1]._idx, principalHubs[h2]._idx,
+                0.05 + Math.random() * 0.04, { kind: 'principal-link' });
+        }
+    }
+}
+
+console.log('Total edges:', edges.length);
+
+/* =========================================================================
+   PER-NODE ANIMATION PARAMETERS (subtle drift)
+   ========================================================================= */
+const anim = new Float32Array(nodes.length * 4);
+for (let i = 0; i < nodes.length; i++) {
+    anim[i * 4]     = Math.random() * 6.28318530;
+    anim[i * 4 + 1] = 0.55 + Math.random() * 0.90;
+    anim[i * 4 + 2] = 0.55 + Math.random() * 0.90;
+    anim[i * 4 + 3] = Math.random() * 6.28318530;
+}
+
+/* =========================================================================
+   POINTS RENDERING
+   Opacity now set dynamically per-frame based on focus state, via
+   THREE.BufferAttribute update.
+   ========================================================================= */
+const N = nodes.length;
+const positions = new Float32Array(N * 3);
+const sizes = new Float32Array(N);
+const brights = new Float32Array(N);
+const opacities = new Float32Array(N);
+const sizeMult = new Float32Array(N); // dynamic per-frame size boost for focused clusters
+for (let i = 0; i < N; i++) {
+    positions[i * 3]     = nodes[i].x;
+    positions[i * 3 + 1] = nodes[i].y;
+    positions[i * 3 + 2] = nodes[i].z;
+    sizes[i] = nodes[i].size;
+    brights[i] = nodes[i].brightness;
+    sizeMult[i] = 1.0;
+    // Initial opacity: L1=1.0, L2_hub=0.95, L2=0.75, L3_named=0.85, L3=0.6
+    if (nodes[i].isHub && nodes[i].tier === 'L1') opacities[i] = 1.0;
+    else if (nodes[i].isHub && nodes[i].tier === 'L2_hub') opacities[i] = 0.95;
+    else if (nodes[i].tier === 'L2') opacities[i] = 0.75;
+    else if (nodes[i].tier === 'L3_named') opacities[i] = 0.85;
+    else opacities[i] = 0.6;
+}
+
+const pgeo = new THREE.BufferGeometry();
+pgeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+pgeo.setAttribute('asize', new THREE.BufferAttribute(sizes, 1));
+pgeo.setAttribute('abrightness', new THREE.BufferAttribute(brights, 1));
+pgeo.setAttribute('aopacity', new THREE.BufferAttribute(opacities, 1));
+pgeo.setAttribute('asizeMult', new THREE.BufferAttribute(sizeMult, 1));
+pgeo.setAttribute('aAnim', new THREE.BufferAttribute(anim, 4));
+
+const pmat = new THREE.ShaderMaterial({
+    uniforms: {
+        pixelRatio: { value: renderer.getPixelRatio() },
+        time: { value: 0 }
+    },
+    vertexShader: `
+        attribute float asize;
+        attribute float abrightness;
+        attribute float aopacity;
+        attribute float asizeMult;
+        attribute vec4 aAnim;
+        uniform float pixelRatio;
+        uniform float time;
+        varying float vBright;
+        varying float vOpacity;
+        void main() {
+            vBright = abrightness;
+            vOpacity = aopacity;
+            float p1 = aAnim.x;
+            float f  = aAnim.y;
+            float a  = aAnim.z;
+            float p2 = aAnim.w;
+            vec3 primary = vec3(
+                sin(time * 0.22 * f + p1),
+                sin(time * 0.19 * f + p1 + 1.7),
+                sin(time * 0.25 * f + p1 + 3.1)
+            );
+            vec3 secondary = vec3(
+                sin(time * 0.37 * f + p2),
+                sin(time * 0.41 * f + p2 + 2.1),
+                sin(time * 0.33 * f + p2 + 4.3)
+            );
+            vec3 offset = (primary * 0.65 + secondary * 0.35) * a * 0.28;
+            vec4 mv = modelViewMatrix * vec4(position + offset, 1.0);
+            gl_PointSize = asize * asizeMult * 850.0 * pixelRatio / -mv.z;
+            gl_Position = projectionMatrix * mv;
+        }
+    `,
+    fragmentShader: `
+        varying float vBright;
+        varying float vOpacity;
+        void main() {
+            vec2 uv = gl_PointCoord - 0.5;
+            float d = length(uv);
+            if (d > 0.5) discard;
+            float alpha = 1.0 - smoothstep(0.42, 0.50, d);
+            vec3 col = vec3(0.94, 0.96, 1.00) * vBright;
+            col = min(col, vec3(1.0));
+            gl_FragColor = vec4(col, alpha * vOpacity);
+        }
+    `,
+    transparent: true,
+    depthWrite: false,
+    depthTest: false,
+    blending: THREE.NormalBlending
+});
+const pmesh = new THREE.Points(pgeo, pmat);
+
+/* =========================================================================
+   LINES RENDERING
+   Each edge carries a per-edge alpha multiplier that gets updated when
+   focus changes (connected cluster's edges brighten, others dim).
+   ========================================================================= */
+const E = edges.length;
+const lpos = new Float32Array(E * 6);
+const lcol = new Float32Array(E * 6);
+const lanim = new Float32Array(E * 8);
+for (let i = 0; i < E; i++) {
+    const e = edges[i];
+    const a = nodes[e.a], b = nodes[e.b];
+    lpos[i * 6]     = a.x;  lpos[i * 6 + 1] = a.y;  lpos[i * 6 + 2] = a.z;
+    lpos[i * 6 + 3] = b.x;  lpos[i * 6 + 4] = b.y;  lpos[i * 6 + 5] = b.z;
+    const c = e.alpha;
+    lcol[i * 6]     = c * 0.95; lcol[i * 6 + 1] = c * 0.97; lcol[i * 6 + 2] = c * 1.00;
+    lcol[i * 6 + 3] = c * 0.95; lcol[i * 6 + 4] = c * 0.97; lcol[i * 6 + 5] = c * 1.00;
+    lanim[i * 8 + 0] = anim[e.a * 4 + 0];
+    lanim[i * 8 + 1] = anim[e.a * 4 + 1];
+    lanim[i * 8 + 2] = anim[e.a * 4 + 2];
+    lanim[i * 8 + 3] = anim[e.a * 4 + 3];
+    lanim[i * 8 + 4] = anim[e.b * 4 + 0];
+    lanim[i * 8 + 5] = anim[e.b * 4 + 1];
+    lanim[i * 8 + 6] = anim[e.b * 4 + 2];
+    lanim[i * 8 + 7] = anim[e.b * 4 + 3];
+}
+const lgeo = new THREE.BufferGeometry();
+lgeo.setAttribute('position', new THREE.BufferAttribute(lpos, 3));
+lgeo.setAttribute('color', new THREE.BufferAttribute(lcol, 3));
+lgeo.setAttribute('aAnim', new THREE.BufferAttribute(lanim, 4));
+
+const lmat = new THREE.ShaderMaterial({
+    uniforms: { time: { value: 0 }, globalAlpha: { value: 1.0 } },
+    vertexShader: `
+        attribute vec3 color;
+        attribute vec4 aAnim;
+        uniform float time;
+        varying vec3 vColor;
+        void main() {
+            vColor = color;
+            float p1 = aAnim.x;
+            float f  = aAnim.y;
+            float a  = aAnim.z;
+            float p2 = aAnim.w;
+            vec3 primary = vec3(
+                sin(time * 0.22 * f + p1),
+                sin(time * 0.19 * f + p1 + 1.7),
+                sin(time * 0.25 * f + p1 + 3.1)
+            );
+            vec3 secondary = vec3(
+                sin(time * 0.37 * f + p2),
+                sin(time * 0.41 * f + p2 + 2.1),
+                sin(time * 0.33 * f + p2 + 4.3)
+            );
+            vec3 offset = (primary * 0.65 + secondary * 0.35) * a * 0.28;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position + offset, 1.0);
+        }
+    `,
+    fragmentShader: `
+        uniform float globalAlpha;
+        varying vec3 vColor;
+        void main() {
+            gl_FragColor = vec4(vColor * globalAlpha, 1.0);
+        }
+    `,
+    transparent: true,
+    depthWrite: false,
+    depthTest: false,
+    blending: THREE.AdditiveBlending
+});
+const lmesh = new THREE.LineSegments(lgeo, lmat);
+
+const brain = new THREE.Group();
+brain.add(lmesh);
+brain.add(pmesh);
+scene.add(brain);
+
+/* =========================================================================
+   LABEL LAYER (DOM overlay)
+   ========================================================================= */
+const labelsRoot = document.getElementById('labels');
+const labelRecords = [];  // { el, nodeIdx, tier, principalId, secondaryName?, shown, targetOpacity, currentOffset }
+
+function createLabel(nodeIdx) {
+    const node = nodes[nodeIdx];
+    if (!node.semantic) return null;
+    const el = document.createElement('div');
+    el.className = 'label';
+    if (node.tier === 'L1') el.classList.add('principal');
+    else if (node.tier === 'L2_hub') el.classList.add('secondary');
+    else el.classList.add('tertiary');
+
+    const dot = document.createElement('span');
+    dot.className = 'dot';
+    dot.style.background = TONE[node.semantic.tone] || TONE.neutral;
+
+    const txt = document.createElement('span');
+    txt.textContent = node.semantic.name;
+
+    el.appendChild(dot);
+    el.appendChild(txt);
+    labelsRoot.appendChild(el);
+
+    const rec = {
+        el,
+        nodeIdx,
+        tier: node.tier,
+        principalId: node.semantic.principalId || node.semantic.id,
+        secondaryName: node.semantic.secondaryName,
+        semantic: node.semantic,
+        shown: false,
+        hovered: false,
+        // screen-space offset used for hover-spread
+        offsetX: 0,
+        offsetY: 0,
+        targetOffsetX: 0,
+        targetOffsetY: 0
+    };
+
+    el.addEventListener('mouseenter', () => handleLabelHover(rec, true));
+    el.addEventListener('mouseleave', () => handleLabelHover(rec, false));
+    el.addEventListener('click', (e) => { e.stopPropagation(); handlePillClick(rec); });
+
+    labelRecords.push(rec);
+    return rec;
+}
+
+// Build labels for all semantically meaningful nodes
+for (let i = 0; i < nodes.length; i++) {
+    if (nodes[i].semantic) createLabel(i);
+}
+
+/* =========================================================================
+   FOCUS / DRILL-DOWN STATE
+   ========================================================================= */
+const FOCUS = {
+    ROOT: 'root',
+    PRINCIPAL: 'principal',
+    SECONDARY: 'secondary',
+    TERTIARY: 'tertiary'
+};
+let focusStack = [{ type: FOCUS.ROOT, nodeIdx: -1 }];  // stack of focus contexts
+let hoveredPrincipalIdx = -1;  // principal hub currently being hovered (via label or canvas proximity)
+
+// What the current focus state is
+function currentFocus() { return focusStack[focusStack.length - 1]; }
+
+/* =========================================================================
+   CAMERA CONTROL (inertial drag + smooth tween toward focus target)
+   ========================================================================= */
+let camTheta = 0;
+let camPhi = Math.PI / 2;
+let camRadius = 32;
+// Desired (target) angles — mouse writes here; render loop tweens actual
+// camTheta/camPhi toward these. Decouples irregular mouse-event cadence
+// from smooth 60Hz paint cadence, eliminating vibration during rotation.
+let camThetaDesired = 0;
+let camPhiDesired = Math.PI / 2;
+let camThetaVel = 0;
+let camPhiVel = 0;
+
+// Camera target point (orbit center) — tweens toward focus target
+const camTarget = new THREE.Vector3(0, 0, 0);
+const camTargetDesired = new THREE.Vector3(0, 0, 0);
+let camRadiusDesired = 32;
+
+let isDragging = false;
+let lastX = 0, lastY = 0;
+let lastInteractionTime = performance.now();
+const pointers = new Map();
+let pinchDist = 0;
+let recentMoves = [];
+
+const el = renderer.domElement;
+const hint = document.getElementById('hint');
+let hintHidden = false;
+function hideHint() {
+    if (hintHidden) return;
+    hintHidden = true;
+    hint.classList.add('hidden');
+}
+
+el.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, startX: e.clientX, startY: e.clientY, moved: false });
+    el.setPointerCapture(e.pointerId);
+    if (pointers.size === 1) {
+        isDragging = true;
+        lastX = e.clientX;
+        lastY = e.clientY;
+        camThetaVel = 0;
+        camPhiVel = 0;
+        recentMoves = [];
+        el.classList.add('grabbing');
+        document.body.classList.add('dragging');
+    } else if (pointers.size === 2) {
+        const arr = [...pointers.values()];
+        pinchDist = Math.hypot(arr[0].x - arr[1].x, arr[0].y - arr[1].y);
+        isDragging = false;
+    }
+    lastInteractionTime = performance.now();
+    hideHint();
+});
+el.addEventListener('pointermove', (e) => {
+    if (!pointers.has(e.pointerId)) return;
+    const p = pointers.get(e.pointerId);
+    p.x = e.clientX; p.y = e.clientY;
+    if (Math.hypot(e.clientX - p.startX, e.clientY - p.startY) > 3) p.moved = true;
+
+    if (pointers.size === 2) {
+        const arr = [...pointers.values()];
+        const d = Math.hypot(arr[0].x - arr[1].x, arr[0].y - arr[1].y);
+        if (pinchDist > 0) camRadiusDesired += (pinchDist - d) * 0.04;
+        pinchDist = d;
+        lastInteractionTime = performance.now();
+    } else if (isDragging) {
+        const dx = e.clientX - lastX;
+        const dy = e.clientY - lastY;
+        lastX = e.clientX;
+        lastY = e.clientY;
+        const now = performance.now();
+        // Write to DESIRED, not actual. Render loop will tween actual toward
+        // desired at a fixed rate per frame. This is what makes rotation
+        // smooth — mouse events fire irregularly (1-3 per frame in bursts);
+        // writing them straight to camTheta produced jagged frame-to-frame
+        // jumps that read as vibration on the projected pill positions.
+        camThetaDesired += -dx * 0.005;
+        camPhiDesired   += -dy * 0.005;
+        camPhiDesired = Math.max(0.18, Math.min(Math.PI - 0.18, camPhiDesired));
+        recentMoves.push({ dx, dy, t: now });
+        while (recentMoves.length > 0 && now - recentMoves[0].t > 100) recentMoves.shift();
+        lastInteractionTime = now;
+    }
+});
+function endPointer(e) {
+    pointers.delete(e.pointerId);
+    if (pointers.size < 2) pinchDist = 0;
+    if (pointers.size === 0) {
+        if (isDragging) {
+            const now = performance.now();
+            const recent = recentMoves.filter(m => now - m.t < 60);
+            if (recent.length > 0) {
+                let sumDX = 0, sumDY = 0;
+                for (const m of recent) { sumDX += m.dx; sumDY += m.dy; }
+                const avgDX = sumDX / recent.length;
+                const avgDY = sumDY / recent.length;
+                camThetaVel = -avgDX * 0.005;
+                camPhiVel  = -avgDY * 0.005;
+            }
+            recentMoves = [];
+        }
+        isDragging = false;
+        el.classList.remove('grabbing');
+        document.body.classList.remove('dragging');
+    }
+}
+el.addEventListener('pointerup', endPointer);
+el.addEventListener('pointercancel', endPointer);
+el.addEventListener('lostpointercapture', endPointer);
+
+// ---------- Wheel: zoom (always available, even over pills) ----------
+// Listening on window so pills/cards don't swallow the scroll. We still
+// guard against scroll inside an open card (so cards can scroll internally
+// if their content overflows) and against page-level scroll.
+window.addEventListener('wheel', (e) => {
+    // If the wheel happened inside an open card, let the card scroll its own
+    // content and don't zoom the brain.
+    if (activeCard && activeCard.el.contains(e.target)) return;
+
+    e.preventDefault();
+    hideHint();
+    lastInteractionTime = performance.now();
+
+    // Wheel-out at a focused level pops the focus stack (only on clear
+    // outward scrolls, not tiny trackpad jitter)
+    const f = currentFocus();
+    if (f.type !== FOCUS.ROOT && e.deltaY > 40) {
+        popFocus();
+        return;
+    }
+
+    // Multiplicative zoom — exponential delta scaled by current radius.
+    // This makes the zoom feel the same "speed" whether you're close or far,
+    // instead of feeling clunky/discrete at close range and slow at far range.
+    const factor = Math.exp(e.deltaY * 0.0012);
+    camRadiusDesired = Math.max(2.5, Math.min(70, camRadiusDesired * factor));
+}, { passive: false });
+
+/* =========================================================================
+   CANVAS-CLICK HANDLING (click a particle to focus it if it's semantic)
+   ========================================================================= */
+el.addEventListener('click', (e) => {
+    const p = [...pointers.values()][0];
+    if (p && p.moved) return;
+    const nearest = pickSemanticNode(e.clientX, e.clientY, 28);
+    if (nearest >= 0) {
+        // Find the label record for this node and route through the same
+        // click path as clicking the pill directly
+        const rec = labelRecords.find(r => r.nodeIdx === nearest);
+        if (rec) handlePillClick(rec);
+        else focusOnNode(nearest);
+    }
+});
+
+// Hover on canvas — detect hovered principal hub (hover-by-proximity)
+el.addEventListener('mousemove', (e) => {
+    // Don't update hover state while dragging — screen-stationary cursor
+    // sweeps through different principals as the scene rotates, which
+    // would rapidly flip label visibility (the blink)
+    if (isDragging) return;
+    const idx = pickPrincipalHub(e.clientX, e.clientY, 80);
+    if (idx !== hoveredPrincipalIdx) {
+        hoveredPrincipalIdx = idx;
+        el.classList.toggle('hovering', idx >= 0 && currentFocus().type === FOCUS.ROOT);
+    }
+});
+
+function projectToScreen(worldX, worldY, worldZ, v) {
+    v.set(worldX, worldY, worldZ);
+    v.project(camera);
+    return {
+        x: (v.x * 0.5 + 0.5) * window.innerWidth,
+        y: (-v.y * 0.5 + 0.5) * window.innerHeight,
+        behind: v.z > 1.0
+    };
+}
+
+const _tmpV = new THREE.Vector3();
+function pickPrincipalHub(sx, sy, thresh) {
+    let bestIdx = -1;
+    let bestD = thresh * thresh;
+    for (const h of principalHubs) {
+        const p = projectToScreen(h.x, h.y, h.z, _tmpV);
+        if (p.behind) continue;
+        const dx = p.x - sx, dy = p.y - sy;
+        const dd = dx * dx + dy * dy;
+        if (dd < bestD) { bestD = dd; bestIdx = h._idx; }
+    }
+    return bestIdx;
+}
+
+function pickSemanticNode(sx, sy, thresh) {
+    // Prefer labels' own click events; this is for hitting nodes without labels.
+    let bestIdx = -1;
+    let bestD = thresh * thresh;
+    for (const n of nodes) {
+        if (!n.semantic) continue;
+        const p = projectToScreen(n.x, n.y, n.z, _tmpV);
+        if (p.behind) continue;
+        const dx = p.x - sx, dy = p.y - sy;
+        const dd = dx * dx + dy * dy;
+        if (dd < bestD) { bestD = dd; bestIdx = n._idx !== undefined ? n._idx : -1; }
+    }
+    return bestIdx;
+}
+
+/* =========================================================================
+   FOCUS TRANSITIONS
+   ========================================================================= */
+function pushFocus(type, nodeIdx) {
+    focusStack.push({ type, nodeIdx });
+    applyFocus();
+}
+function popFocus() {
+    if (focusStack.length > 1) {
+        focusStack.pop();
+        applyFocus();
+    }
+}
+function focusOnNode(nodeIdx) {
+    const node = nodes[nodeIdx];
+    if (!node || !node.semantic) return;
+    if (node.semantic.kind === 'principal') {
+        // Replace stack above root with just principal
+        focusStack = [{ type: FOCUS.ROOT, nodeIdx: -1 }, { type: FOCUS.PRINCIPAL, nodeIdx }];
+    } else if (node.semantic.kind === 'secondary') {
+        // Make sure the principal is in the stack
+        const principal = findPrincipalByCategoryId(node.semantic.principalId);
+        focusStack = [
+            { type: FOCUS.ROOT, nodeIdx: -1 },
+            { type: FOCUS.PRINCIPAL, nodeIdx: principal._idx },
+            { type: FOCUS.SECONDARY, nodeIdx }
+        ];
+    } else if (node.semantic.kind === 'tertiary') {
+        const principal = findPrincipalByCategoryId(node.semantic.principalId);
+        // Find the secondary parent
+        const secondaryIdx = node.parentIdx;
+        focusStack = [
+            { type: FOCUS.ROOT, nodeIdx: -1 },
+            { type: FOCUS.PRINCIPAL, nodeIdx: principal._idx },
+            { type: FOCUS.SECONDARY, nodeIdx: secondaryIdx },
+            { type: FOCUS.TERTIARY, nodeIdx }
+        ];
+    }
+    applyFocus();
+}
+
+function findPrincipalByCategoryId(id) {
+    return principalHubs.find(h => h.semantic.id === id);
+}
+
+function applyFocus() {
+    const f = currentFocus();
+    const opacityAttr = pgeo.getAttribute('aopacity');
+    const sizeMultAttr = pgeo.getAttribute('asizeMult');
+
+    // Base opacities per tier
+    const baseOp = (n) => {
+        if (n.isHub && n.tier === 'L1') return 1.0;
+        if (n.isHub && n.tier === 'L2_hub') return 0.95;
+        if (n.tier === 'L2') return 0.75;
+        if (n.tier === 'L3_named') return 0.85;
+        return 0.6;
+    };
+
+    if (f.type === FOCUS.ROOT) {
+        // Everything at base
+        for (let i = 0; i < nodes.length; i++) {
+            opacityAttr.array[i] = baseOp(nodes[i]);
+            sizeMultAttr.array[i] = 1.0;
+        }
+        lmat.uniforms.globalAlpha.value = 1.0;
+        camTargetDesired.set(0, 0, 0);
+        camRadiusDesired = 32;
+    } else if (f.type === FOCUS.PRINCIPAL) {
+        const principal = nodes[f.nodeIdx];
+        // IDs belonging to this principal's cluster ecosystem
+        const belongs = new Set();
+        belongs.add(f.nodeIdx);
+        for (const satIdx of principal.satIndices) belongs.add(satIdx);
+        for (const secIdx of principal.secondaryHubs) {
+            belongs.add(secIdx);
+            for (const tIdx of nodes[secIdx].tertiaryNodes) belongs.add(tIdx);
+        }
+        for (let i = 0; i < nodes.length; i++) {
+            const inCluster = belongs.has(i);
+            const bo = baseOp(nodes[i]);
+            opacityAttr.array[i] = inCluster ? Math.min(1.0, bo + 0.05) : bo * 0.28;
+            sizeMultAttr.array[i] = inCluster ? 1.18 : 0.95;
+        }
+        lmat.uniforms.globalAlpha.value = 0.55;
+        camTargetDesired.set(principal.x, principal.y, principal.z);
+        camRadiusDesired = 14;
+    } else if (f.type === FOCUS.SECONDARY) {
+        const secondary = nodes[f.nodeIdx];
+        const principal = nodes[secondary.parentIdx];
+        const belongs = new Set();
+        belongs.add(f.nodeIdx);
+        belongs.add(principal._idx);
+        for (const tIdx of secondary.tertiaryNodes) belongs.add(tIdx);
+        for (let i = 0; i < nodes.length; i++) {
+            const inCluster = belongs.has(i);
+            const bo = baseOp(nodes[i]);
+            opacityAttr.array[i] = inCluster ? Math.min(1.0, bo + 0.05) : bo * 0.18;
+            sizeMultAttr.array[i] = inCluster ? 1.25 : 0.90;
+        }
+        lmat.uniforms.globalAlpha.value = 0.35;
+        camTargetDesired.set(secondary.x, secondary.y, secondary.z);
+        camRadiusDesired = 7;
+    } else if (f.type === FOCUS.TERTIARY) {
+        const tertiary = nodes[f.nodeIdx];
+        const secondary = nodes[tertiary.parentIdx];
+        const belongs = new Set();
+        belongs.add(f.nodeIdx);
+        belongs.add(secondary._idx);
+        for (const tIdx of secondary.tertiaryNodes) belongs.add(tIdx);
+        for (let i = 0; i < nodes.length; i++) {
+            const inCluster = belongs.has(i);
+            const bo = baseOp(nodes[i]);
+            opacityAttr.array[i] = inCluster ? Math.min(1.0, bo + 0.05) : bo * 0.12;
+            sizeMultAttr.array[i] = inCluster ? 1.4 : 0.85;
+        }
+        lmat.uniforms.globalAlpha.value = 0.22;
+        camTargetDesired.set(tertiary.x, tertiary.y, tertiary.z);
+        camRadiusDesired = 4.5;
+    }
+    opacityAttr.needsUpdate = true;
+    sizeMultAttr.needsUpdate = true;
+    updateBreadcrumbs();
+}
+
+function handleLabelHover(rec, entering) {
+    rec.hovered = entering;
+    if (entering && currentFocus().type === FOCUS.ROOT && rec.tier === 'L1') {
+        hoveredPrincipalIdx = rec.nodeIdx;
+    } else if (!entering && hoveredPrincipalIdx === rec.nodeIdx) {
+        hoveredPrincipalIdx = -1;
+    }
+}
+
+/* =========================================================================
+   BREADCRUMBS
+   ========================================================================= */
+const breadcrumbsEl = document.getElementById('breadcrumbs');
+function updateBreadcrumbs() {
+    breadcrumbsEl.innerHTML = '';
+    if (focusStack.length <= 1) {
+        breadcrumbsEl.classList.remove('visible');
+        return;
+    }
+    breadcrumbsEl.classList.add('visible');
+    focusStack.forEach((f, i) => {
+        const crumb = document.createElement('div');
+        crumb.className = 'crumb';
+        if (f.type === FOCUS.ROOT) crumb.textContent = 'Root';
+        else crumb.textContent = nodes[f.nodeIdx].semantic.name;
+        crumb.addEventListener('click', () => {
+            focusStack = focusStack.slice(0, i + 1);
+            applyFocus();
+        });
+        breadcrumbsEl.appendChild(crumb);
+        if (i < focusStack.length - 1) {
+            const sep = document.createElement('div');
+            sep.className = 'sep';
+            sep.textContent = '›';
+            breadcrumbsEl.appendChild(sep);
+        }
+    });
+}
+
+/* =========================================================================
+   LABEL UPDATE PER FRAME
+   - project world → screen
+   - determine visibility/opacity/class based on focus + hover
+   - apply hover-spread offsets for labels belonging to hovered principal
+   ========================================================================= */
+function updateLabels() {
+    const f = currentFocus();
+    // While dragging, freeze visibility/active/dim state completely.
+    // Only positions update, so pills track their particles without
+    // any class-toggle churn (which was the blink during drag).
+    const frozen = isDragging;
+
+    // Determine which principals/secondaries/tertiaries should be visible
+    // and identify the active cluster (the thing in focus)
+    let activePrincipalIdx = -1;
+    let activeSecondaryIdx = -1;
+    let activeTertiaryIdx = -1;
+    if (f.type === FOCUS.PRINCIPAL) activePrincipalIdx = f.nodeIdx;
+    else if (f.type === FOCUS.SECONDARY) {
+        activeSecondaryIdx = f.nodeIdx;
+        activePrincipalIdx = nodes[f.nodeIdx].parentIdx;
+    } else if (f.type === FOCUS.TERTIARY) {
+        activeTertiaryIdx = f.nodeIdx;
+        activeSecondaryIdx = nodes[f.nodeIdx].parentIdx;
+        activePrincipalIdx = nodes[activeSecondaryIdx].parentIdx;
+    }
+
+    // Hover target — only valid at root AND not while dragging
+    const hovPrincipal = (f.type === FOCUS.ROOT && !frozen) ? hoveredPrincipalIdx : -1;
+
+    // For hover-spread: compute centroid of labels belonging to hovered principal
+    let spreadCenter = null;
+    if (hovPrincipal >= 0) {
+        const h = nodes[hovPrincipal];
+        const p = projectToScreen(h.x, h.y, h.z, _tmpV);
+        if (!p.behind) spreadCenter = p;
+    }
+
+    for (const rec of labelRecords) {
+        const node = nodes[rec.nodeIdx];
+        const p = projectToScreen(node.x, node.y, node.z, _tmpV);
+
+        // Hover-spread offset (with damping so it stays smooth)
+        let tox = 0, toy = 0;
+        if (hovPrincipal >= 0 && spreadCenter && rec.principalId === nodes[hovPrincipal].semantic.id) {
+            const dx = p.x - spreadCenter.x;
+            const dy = p.y - spreadCenter.y;
+            const dist = Math.hypot(dx, dy) || 1;
+            tox = (dx / dist) * 8;
+            toy = (dy / dist) * 8;
+        }
+        rec.offsetX += (tox - rec.offsetX) * 0.15;
+        rec.offsetY += (toy - rec.offsetY) * 0.15;
+
+        // POSITION always updates — transform-based so it's composite-only
+        // (no layout, no paint). Sub-pixel positions are kept (no rounding)
+        // so smooth rotation reads as smooth motion instead of snapping
+        // 1px between frames, which manifested as vibration.
+        const tx = p.x + rec.offsetX;
+        const ty = p.y + rec.offsetY;
+        rec.el.style.transform = `translate3d(${tx.toFixed(2)}px, ${ty.toFixed(2)}px, 0) translate(-50%, -50%)`;
+
+        // STATE (show/hide/active/dim) only updates when NOT dragging.
+        // This is what fixes the blink: during drag the hoveredPrincipal
+        // changes rapidly (cursor is screen-static while scene rotates
+        // underneath), and pills cross the behind-camera boundary as they
+        // rotate — both of those would trigger show/hide churn every frame.
+        if (frozen) continue;
+
+        // Decide whether to show this label
+        let show = false;
+
+        if (f.type === FOCUS.ROOT) {
+            if (rec.tier === 'L1') show = true;
+            else if (rec.tier === 'L2_hub') {
+                const principalNode = principalHubs.find(h => h.semantic.id === rec.principalId);
+                if (principalNode && principalNode.secondaryHubs[0] === rec.nodeIdx) show = true;
+            }
+            if (hovPrincipal >= 0) {
+                const hov = nodes[hovPrincipal];
+                if (rec.tier === 'L2_hub' && rec.principalId === hov.semantic.id) show = true;
+            }
+        } else if (f.type === FOCUS.PRINCIPAL) {
+            const prNode = nodes[activePrincipalIdx];
+            if (rec.nodeIdx === activePrincipalIdx) show = true;
+            else if (rec.tier === 'L2_hub' && rec.principalId === prNode.semantic.id) show = true;
+            else if (rec.tier === 'L3_named' && rec.principalId === prNode.semantic.id) {
+                const secNode = nodes[nodes[rec.nodeIdx].parentIdx];
+                const principal = prNode;
+                const secIdxInList = principal.secondaryHubs.indexOf(secNode._idx);
+                if (secIdxInList >= 0 && secIdxInList < 2) show = true;
+            }
+            else if (rec.tier === 'L1') show = true;
+        } else if (f.type === FOCUS.SECONDARY) {
+            if (rec.nodeIdx === activeSecondaryIdx) show = true;
+            else if (rec.nodeIdx === activePrincipalIdx) show = true;
+            else if (rec.tier === 'L3_named' &&
+                     nodes[rec.nodeIdx].parentIdx === activeSecondaryIdx) show = true;
+        } else if (f.type === FOCUS.TERTIARY) {
+            if (rec.nodeIdx === activeTertiaryIdx) show = true;
+            else if (rec.nodeIdx === activeSecondaryIdx) show = true;
+            else if (rec.tier === 'L3_named' &&
+                     nodes[rec.nodeIdx].parentIdx === activeSecondaryIdx) show = true;
+        }
+
+        if (p.behind) show = false;
+
+        if (rec._shownState !== show) {
+            rec.el.classList.toggle('hidden', !show);
+            rec._shownState = show;
+        }
+
+        // Active / dim state
+        let isInActiveCluster = false;
+        let isDimmed = false;
+        if (f.type === FOCUS.ROOT) {
+            if (hovPrincipal >= 0) {
+                const belongsToHover = (rec.principalId === nodes[hovPrincipal].semantic.id);
+                if (belongsToHover) isInActiveCluster = true;
+                else isDimmed = true;
+            }
+        } else {
+            const inActive =
+                (rec.nodeIdx === activePrincipalIdx) ||
+                (rec.nodeIdx === activeSecondaryIdx) ||
+                (rec.nodeIdx === activeTertiaryIdx) ||
+                (activeSecondaryIdx >= 0 && nodes[rec.nodeIdx].parentIdx === activeSecondaryIdx) ||
+                (activePrincipalIdx >= 0 && rec.principalId && nodes[activePrincipalIdx].semantic &&
+                    rec.principalId === nodes[activePrincipalIdx].semantic.id);
+            if (inActive) isInActiveCluster = true;
+            else isDimmed = true;
+        }
+        if (rec._activeState !== isInActiveCluster) {
+            rec.el.classList.toggle('cluster-active', isInActiveCluster);
+            rec._activeState = isInActiveCluster;
+        }
+        if (rec._dimmedState !== isDimmed) {
+            rec.el.classList.toggle('dimmed', isDimmed);
+            rec._dimmedState = isDimmed;
+        }
+    }
+}
+
+/* =========================================================================
+   CAMERA UPDATE LOOP
+   ========================================================================= */
+function updateCamera() {
+    // Fling momentum (only after release) — adds to desired angles
+    if (!isDragging) {
+        camThetaDesired += camThetaVel;
+        camPhiDesired   += camPhiVel;
+        camThetaVel *= 0.93;
+        camPhiVel   *= 0.93;
+        if (Math.abs(camThetaVel) < 0.00005) camThetaVel = 0;
+        if (Math.abs(camPhiVel)   < 0.00005) camPhiVel   = 0;
+    }
+    camPhiDesired = Math.max(0.18, Math.min(Math.PI - 0.18, camPhiDesired));
+
+    // Tween ACTUAL angles toward DESIRED at a fixed rate per frame.
+    // High rate (0.35) so dragging feels responsive — almost 1:1 with the
+    // mouse — but interpolating each frame absorbs the irregularity of
+    // mouse-event delivery into smooth motion.
+    camTheta += (camThetaDesired - camTheta) * 0.35;
+    camPhi   += (camPhiDesired   - camPhi)   * 0.35;
+
+    // Smooth tween camera target & radius toward desired
+    camTarget.x += (camTargetDesired.x - camTarget.x) * 0.08;
+    camTarget.y += (camTargetDesired.y - camTarget.y) * 0.08;
+    camTarget.z += (camTargetDesired.z - camTarget.z) * 0.08;
+    camRadius += (camRadiusDesired - camRadius) * 0.12;
+
+    camPhi = Math.max(0.18, Math.min(Math.PI - 0.18, camPhi));
+    camRadius = Math.max(2.5, Math.min(70, camRadius));
+
+    const sinPhi = Math.sin(camPhi);
+    camera.position.x = camTarget.x + camRadius * sinPhi * Math.sin(camTheta);
+    camera.position.y = camTarget.y + camRadius * Math.cos(camPhi);
+    camera.position.z = camTarget.z + camRadius * sinPhi * Math.cos(camTheta);
+    camera.lookAt(camTarget);
+}
+
+/* =========================================================================
+   RENDER LOOP
+   ========================================================================= */
+function animate() {
+    requestAnimationFrame(animate);
+    updateCamera();
+    const t = performance.now() * 0.001;
+    pmat.uniforms.time.value = t;
+    lmat.uniforms.time.value = t;
+    updateLabels();
+    renderer.render(scene, camera);
+}
+
+/* =========================================================================
+   CARD CONTENT — content generation per semantic node
+   Hand-authored entries for principals + characteristic secondaries;
+   template-generated entries for remaining secondaries and all tertiaries,
+   using category-specific voice and detail pools.
+   ========================================================================= */
+
+// Hand-authored entries for depth + the example "Inner Voice"
+const AUTHORED_CARDS = {
+    // Principal cards
+    'memories': {
+        kind: 'Inner archive',
+        insight: 'The things you keep returning to are rarely the biggest events. They\'re the moments that told you something true about yourself — and you haven\'t finished listening.',
+        triggers: ['a certain smell', 'rainy afternoons', 'old songs', 'photos you weren\'t looking for'],
+        origin: 'The early years shape the map; the rest of your life keeps filling it in.',
+        related: ['Identity', 'Childhood', 'Longing'],
+        note: 'Not every memory needs to be explained. Some just want to be acknowledged.'
+    },
+    'emotions': {
+        kind: 'Inner weather',
+        insight: 'Your emotions aren\'t noise. They\'re the most honest report you get about what matters to you, what you need, and what you\'ve been avoiding.',
+        triggers: ['tiredness', 'reminders of old selves', 'sudden kindness', 'feeling unseen'],
+        origin: 'Emotional patterns often formed long before you had words for them.',
+        related: ['Patterns', 'Body', 'Relationships'],
+        note: 'Feeling something deeply is not the same as knowing what to do about it.'
+    },
+    'identity': {
+        kind: 'Sense of self',
+        insight: 'You\'re still deciding who you are — which sounds unsettling but is actually the healthy part.',
+        triggers: ['big transitions', 'being asked "what do you do?"', 'seeing old friends', 'moments of pride or shame'],
+        origin: 'A self is not discovered. It\'s assembled from what you pay attention to.',
+        related: ['Values', 'Roles', 'Shadow self'],
+        note: 'Who you are now is allowed to be different from who you were.'
+    },
+    'relationships': {
+        kind: 'The people in your life',
+        insight: 'The same few patterns keep showing up across very different people — which means the pattern is probably yours to understand, not theirs to carry.',
+        triggers: ['closeness', 'distance', 'being asked for more than feels safe', 'feeling unchosen'],
+        origin: 'You learned how to relate before you had any say in it.',
+        related: ['Attachment', 'Family', 'Trust'],
+        note: 'Being loved well is something you can learn to let happen.'
+    },
+    'beliefs': {
+        kind: 'Working assumptions',
+        insight: 'You have a handful of unspoken beliefs that quietly shape most of your decisions. Some serve you; some you inherited and never questioned.',
+        triggers: ['moments of doubt', 'unexpected feedback', 'meeting someone who sees it differently'],
+        origin: 'Beliefs travel through families like heirlooms — useful, sometimes outgrown.',
+        related: ['Identity', 'Fears', 'Patterns'],
+        note: 'A belief you can name is a belief you can negotiate with.'
+    },
+    'patterns': {
+        kind: 'Recurring shapes',
+        insight: 'The loop feels different each time, but it usually has the same three steps. Noticing it is most of the work.',
+        triggers: ['stress', 'ambiguity', 'feeling behind', 'relief after effort'],
+        origin: 'What got you through once becomes the default way you get through everything.',
+        related: ['Coping', 'Triggers', 'Avoidance'],
+        note: 'You don\'t break patterns with force. You interrupt them with attention.'
+    },
+    'fears': {
+        kind: 'Protective edges',
+        insight: 'Most of your avoidance isn\'t laziness. It\'s a kind of quiet care for a younger version of you that didn\'t feel safe.',
+        triggers: ['decisions with consequences', 'being judged', 'quiet when you expected connection'],
+        origin: 'Fear is often older than the situation making you afraid.',
+        related: ['Shame', 'Attachment', 'Shadow self'],
+        note: 'The thing you\'re avoiding is often the thing that would change everything.'
+    },
+    'desires': {
+        kind: 'Direction of wanting',
+        insight: 'What you want keeps pointing at the same thing in different costumes. The question isn\'t what to want — it\'s whether you\'ll let yourself have it.',
+        triggers: ['seeing someone living what you want', 'quiet Sunday afternoons', 'finishing something'],
+        origin: 'Desires get buried under obligations. They don\'t disappear — they wait.',
+        related: ['Future self', 'Values', 'Longings'],
+        note: 'Small movements in the direction of a desire are not small.'
+    },
+
+    // The user's example entry
+    'identity:Self-image:Inner Voice': {
+        kind: 'Internal dialogue',
+        insight: 'You tend to translate uncertainty into self-criticism before you translate it into action.',
+        triggers: ['silence after vulnerability', 'performance pressure', 'being compared'],
+        origin: 'School performance, family expectations, fear of disappointing someone who matters.',
+        related: ['Self-worth', 'Reassurance seeking', 'Overexplaining'],
+        note: 'That voice is trying to protect you. It just uses the wrong tools.'
+    },
+
+    // A few more hand-authored secondaries across categories for depth
+    'emotions:Shame': {
+        kind: 'Emotional theme',
+        insight: 'Shame makes you feel like the problem instead of having a problem. That shift is the whole trick.',
+        triggers: ['being noticed', 'mistakes', 'needing something', 'wanting to be seen'],
+        origin: 'Often learned before you could speak. Often not yours originally.',
+        related: ['Self-image', 'Hiding', 'Body'],
+        note: 'Shame shrinks in the presence of witness. That\'s why isolation makes it worse.'
+    },
+    'fears:Core fears:Being left': {
+        kind: 'Core fear',
+        insight: 'The fear of being left makes you try to be useful instead of being honest. You show up as what someone needs instead of who you are.',
+        triggers: ['someone pulling back even slightly', 'uncertainty after closeness', 'feeling too much'],
+        origin: 'An early relationship where love felt conditional on performance.',
+        related: ['Attachment', 'Overextending', 'Reassurance seeking'],
+        note: 'People who would leave you for being honest were going to leave anyway.'
+    },
+    'patterns:Loops:Overthinking': {
+        kind: 'Thought pattern',
+        insight: 'Overthinking feels like preparation but functions like avoidance. It\'s how you stay busy with a decision so you don\'t have to make it.',
+        triggers: ['high stakes', 'social ambiguity', 'right after someone else\'s opinion'],
+        origin: 'Learned as a way to stay safe when getting it wrong felt unsurvivable.',
+        related: ['Procrastination', 'Control', 'Inner Voice'],
+        note: 'The best next step is usually one you thought of early and dismissed.'
+    },
+    'relationships:Family:Mother': {
+        kind: 'Primary relationship',
+        insight: 'The way she loved you taught you what love looks like — including the parts you\'re still trying to unlearn.',
+        triggers: ['phone calls', 'holidays', 'becoming a parent yourself', 'hearing her in your own voice'],
+        origin: 'The longest relationship you\'ll ever have, started before you could defend yourself.',
+        related: ['Attachment', 'Inherited beliefs', 'Forgiveness'],
+        note: 'Some relationships only improve when you stop needing them to be different.'
+    },
+    'desires:What I want:A slower life': {
+        kind: 'Core longing',
+        insight: 'The pace you\'re living at was never yours. You adopted it to keep up — and now you don\'t remember how to walk.',
+        triggers: ['Sunday evenings', 'watching someone read in a park', 'returning from a trip'],
+        origin: 'Culture rewards speed. Your nervous system does not.',
+        related: ['Rest', 'Values', 'Inner permission'],
+        note: 'Slowness is not the reward for finishing. It\'s the condition for living.'
+    }
+};
+
+// Category-specific voice pools for template generation.
+// These make generated cards feel distinct per category.
+const CARD_TEMPLATES = {
+    memories: {
+        kindPrefix: 'Memory',
+        insights: [
+            'You don\'t remember this because it was big. You remember it because something inside you recognized it as true.',
+            'This moment keeps coming back in different forms. It\'s still trying to tell you what it meant.',
+            'You\'ve told this story a few ways. The version you don\'t tell is probably the one that matters.'
+        ],
+        triggers: ['a similar light', 'a voice that resembles theirs', 'being in the same season', 'quiet evenings', 'familiar streets', 'old handwriting'],
+        origins: ['An age when you didn\'t yet know how to name what you felt.', 'A time shaped more by atmosphere than events.', 'Before you had the words to describe who you were becoming.'],
+        related: ['Childhood', 'Longing', 'Sensory anchors', 'Identity'],
+        notes: ['Memory is not a recording. It\'s a reconstruction — and that\'s why it changes.', 'Some memories only become important decades after they happen.']
+    },
+    emotions: {
+        kindPrefix: 'Emotional theme',
+        insights: [
+            'This emotion shows up uninvited but always arrives with useful information — if you can listen past the discomfort.',
+            'You often feel this before you know why. Your body notices things your mind hasn\'t caught up with yet.',
+            'This is the feeling you try to manage instead of letting it tell you what it came to say.'
+        ],
+        triggers: ['tiredness', 'being alone too long', 'unexpected kindness', 'feeling behind', 'disappointment you didn\'t see coming', 'a certain kind of quiet'],
+        origins: ['A pattern your nervous system learned before you had a say in it.', 'An early environment that taught you which feelings were safe to show.', 'A family where some emotions were practiced and others were forbidden.'],
+        related: ['Body', 'Patterns', 'Shame', 'Tenderness'],
+        notes: ['Emotions are not problems to solve. They\'re information to receive.', 'Naming it reduces its size without reducing its truth.']
+    },
+    identity: {
+        kindPrefix: 'Aspect of self',
+        insights: [
+            'This part of you shows up reliably — which means it\'s doing something for you, even if it\'s not always useful.',
+            'You\'ve built an identity around this, but you\'re allowed to question whether it still fits.',
+            'This is more practiced than chosen. That doesn\'t make it less real, but it does make it negotiable.'
+        ],
+        triggers: ['moments of being seen', 'being compared to someone', 'trying something new', 'old friends who remember an earlier version'],
+        origins: ['A role you took on before you had other options.', 'An identity formed partly to belong and partly to survive.', 'Something you inherited, then refined, then forgot was inherited.'],
+        related: ['Roles', 'Values', 'Shadow self', 'Origin story'],
+        notes: ['A self is not found. It\'s authored, slowly, through what you pay attention to.', 'You\'re allowed to be different than the version of you people expect.']
+    },
+    relationships: {
+        kindPrefix: 'Relational pattern',
+        insights: [
+            'The way you relate to this person teaches you something about how you relate to everyone.',
+            'This connection brings out a specific part of you — notice which part and why.',
+            'You show up differently with them, and that difference is worth examining.'
+        ],
+        triggers: ['proximity', 'distance', 'old conversations replaying', 'seeing them with others', 'moments of misattunement'],
+        origins: ['Relational patterns rehearsed long before this person arrived.', 'Dynamics inherited from the first relationships you ever had.', 'Early experiences of care and its absence.'],
+        related: ['Attachment', 'Trust', 'Family', 'Communication'],
+        notes: ['The pattern is yours to understand, even when the other person is part of it.', 'Who you are with them is information about both of you.']
+    },
+    beliefs: {
+        kindPrefix: 'Underlying belief',
+        insights: [
+            'You don\'t consciously endorse this belief — but you behave as if it\'s true. That\'s how beliefs actually work.',
+            'This belief is so familiar you mistake it for reality. Examining it is the start of choosing it or not.',
+            'Every time you act on this, it reinforces itself. It\'s been accumulating evidence for years.'
+        ],
+        triggers: ['moments of decision', 'unexpected challenge', 'meeting someone who lives by the opposite', 'your own behavior surprising you'],
+        origins: ['Absorbed rather than chosen. Likely from someone whose approval you needed.', 'Formed in response to a specific early experience and generalized ever since.', 'An inheritance you accepted before you were old enough to question it.'],
+        related: ['Identity', 'Patterns', 'Fears', 'Self-image'],
+        notes: ['Every belief you can name is a belief you can revise.', 'Some beliefs you outgrow without noticing. Others require a conversation.']
+    },
+    patterns: {
+        kindPrefix: 'Recurring pattern',
+        insights: [
+            'This pattern isn\'t a flaw — it\'s an old strategy that worked once and never got updated.',
+            'You don\'t choose this each time. It\'s become automatic, which is exactly why noticing it matters.',
+            'This shape keeps showing up because it\'s still protecting you from something you haven\'t faced yet.'
+        ],
+        triggers: ['stress', 'ambiguity', 'high stakes', 'feeling behind or outside', 'the moment before effort'],
+        origins: ['A coping strategy learned early and carried forward without review.', 'A way of managing a younger self\'s overwhelm that now runs on its own.', 'Something that worked in a specific situation and got applied to all situations.'],
+        related: ['Coping', 'Triggers', 'Avoidance', 'Loops'],
+        notes: ['Patterns don\'t need to be broken. They need to be noticed until they lose authority.', 'The pattern is not you. It\'s something you learned to do.']
+    },
+    fears: {
+        kindPrefix: 'Fear / avoidance',
+        insights: [
+            'You\'re not avoiding this because you\'re weak. You\'re avoiding it because a part of you remembers when it wasn\'t safe.',
+            'This fear is doing its job. The question is whether its job description is still current.',
+            'The fear keeps you circling the thing instead of approaching it — which is its own kind of harm.'
+        ],
+        triggers: ['situations that echo something old', 'being watched while trying', 'the possibility of failing publicly', 'silence that used to mean disapproval'],
+        origins: ['An earlier moment when the stakes felt catastrophic.', 'A time when expressing this truly did have consequences.', 'An experience that taught you this specific thing was unsafe — even if it isn\'t now.'],
+        related: ['Shame', 'Avoidance', 'Protective patterns', 'Shadow self'],
+        notes: ['The fear is trying to help. Thank it, and proceed anyway.', 'What you fear most is often adjacent to what you most want.']
+    },
+    desires: {
+        kindPrefix: 'Desire / direction',
+        insights: [
+            'This isn\'t a passing want. It keeps returning — which means it\'s pointing at something structural, not seasonal.',
+            'You dismiss this desire as impractical, but that\'s often how you know it\'s real.',
+            'The version of you that wants this is quieter than the version that argues against it — but wiser.'
+        ],
+        triggers: ['Sunday afternoons', 'seeing someone living it', 'finishing a draining obligation', 'moments of honesty with yourself'],
+        origins: ['A seed you\'ve been carrying since before you could articulate it.', 'Something you wanted long before it seemed permitted.', 'A direction you\'ve been pointed in your whole life without quite following.'],
+        related: ['Future self', 'Values', 'Longings', 'Daily practice'],
+        notes: ['Small movements in the direction of a desire count as movement.', 'You don\'t have to be ready to start. You just have to start.']
+    }
+};
+
+function pickOne(arr, seed) {
+    return arr[seed % arr.length];
+}
+function pickMany(arr, n, seed) {
+    const out = [];
+    const used = new Set();
+    for (let i = 0; i < n && out.length < arr.length; i++) {
+        let s = (seed + i * 37) % arr.length;
+        while (used.has(s)) s = (s + 1) % arr.length;
+        used.add(s);
+        out.push(arr[s]);
+    }
+    return out;
+}
+// deterministic-ish seed from a string
+function strSeed(s) {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+    return Math.abs(h);
+}
+
+function getCardContent(node) {
+    const sem = node.semantic;
+    const key = sem.id;
+
+    // 1) Hand-authored takes priority
+    if (AUTHORED_CARDS[key]) {
+        return { title: sem.name, tone: sem.tone, ...AUTHORED_CARDS[key] };
+    }
+
+    // 2) Template-generated — use the principal category's voice pool
+    const categoryId = sem.principalId || sem.id;
+    const tpl = CARD_TEMPLATES[categoryId] || CARD_TEMPLATES.emotions;
+    const seed = strSeed(key);
+
+    // Tertiary cards are more personal: use the specific name in insights where possible
+    let insight = pickOne(tpl.insights, seed);
+    if (sem.kind === 'tertiary' && sem.secondaryName) {
+        // Prepend a contextualizing line so tertiary cards feel about THAT thing
+        insight = `"${sem.name}" lives inside ${sem.secondaryName.toLowerCase()}. ` + insight;
+    }
+
+    const kind = (sem.kind === 'principal')
+        ? tpl.kindPrefix + ' · core'
+        : (sem.kind === 'secondary')
+            ? tpl.kindPrefix + ' · theme'
+            : tpl.kindPrefix + ' · instance';
+
+    return {
+        title: sem.name,
+        tone: sem.tone,
+        kind,
+        insight,
+        triggers: pickMany(tpl.triggers, 3, seed),
+        origin: pickOne(tpl.origins, seed + 7),
+        related: pickMany(tpl.related, 3, seed + 13),
+        note: pickOne(tpl.notes, seed + 23)
+    };
+}
+
+/* =========================================================================
+   CARD SYSTEM
+   - FLIP-style morph: clone pill in place, then animate to card rect
+   - Only one card open at a time
+   - Opening a new one smoothly closes the current
+   - If clicked pill is a principal at root, focus first, THEN morph
+   ========================================================================= */
+const cardBackdrop = document.getElementById('card-backdrop');
+let activeCard = null;          // { el, rec, isMobile }
+let pendingOpenNodeIdx = -1;    // if we needed to focus first, what to open after
+
+function isMobileViewport() {
+    return window.innerWidth <= 640;
+}
+
+function handlePillClick(rec) {
+    const node = nodes[rec.nodeIdx];
+    if (!node || !node.semantic) return;
+
+    // If a card is already open for this same node, close it
+    if (activeCard && activeCard.rec.nodeIdx === rec.nodeIdx) {
+        closeCard();
+        return;
+    }
+
+    const f = currentFocus();
+
+    // If it's a principal hub at root → focus first, then open card
+    // We know the pill will reposition during focus transition, so we
+    // schedule opening the card AFTER the camera settles (~500ms).
+    if (node.semantic.kind === 'principal' && f.type === FOCUS.ROOT) {
+        // Close any open card first
+        if (activeCard) closeCard();
+        pendingOpenNodeIdx = rec.nodeIdx;
+        focusOnNode(rec.nodeIdx);
+        // Wait for the camera + label positions to settle
+        setTimeout(() => {
+            if (pendingOpenNodeIdx === rec.nodeIdx) {
+                openCardFromPill(rec);
+                pendingOpenNodeIdx = -1;
+            }
+        }, 520);
+        return;
+    }
+
+    // If clicking a secondary when at root, do the same treatment
+    if (node.semantic.kind === 'secondary' && f.type === FOCUS.ROOT) {
+        if (activeCard) closeCard();
+        pendingOpenNodeIdx = rec.nodeIdx;
+        focusOnNode(rec.nodeIdx);
+        setTimeout(() => {
+            if (pendingOpenNodeIdx === rec.nodeIdx) {
+                openCardFromPill(rec);
+                pendingOpenNodeIdx = -1;
+            }
+        }, 520);
+        return;
+    }
+
+    // Otherwise pill is already in the active cluster — open in place
+    // Still refresh focus if clicking a deeper-level item
+    if ((node.semantic.kind === 'secondary' && f.type !== FOCUS.SECONDARY) ||
+        (node.semantic.kind === 'tertiary' && f.type !== FOCUS.TERTIARY)) {
+        // Update focus but without the 520ms delay — the pill is already visible
+        focusOnNode(rec.nodeIdx);
+        // Brief wait for any small label repositioning
+        setTimeout(() => openCardFromPill(rec), 180);
+    } else {
+        openCardFromPill(rec);
+    }
+}
+
+function openCardFromPill(rec) {
+    // If another card is open, close it smoothly first and chain the open
+    if (activeCard) {
+        const prev = activeCard;
+        closeCard(() => {
+            // Wait a beat so the previous close doesn't collide visually
+            setTimeout(() => openCardFromPill(rec), 80);
+        });
+        return;
+    }
+
+    const node = nodes[rec.nodeIdx];
+    const content = getCardContent(node);
+
+    // Force label to be visible for the capture (it may be hidden based on tier
+    // rules, but we've already asserted the user clicked it, so it was rendered
+    // at click time — still, we sample its rect NOW)
+    const pillRect = rec.el.getBoundingClientRect();
+
+    // Build card DOM
+    const card = document.createElement('div');
+    card.className = 'card as-pill';
+    if (isMobileViewport()) card.classList.add('mobile', 'sheet-closed');
+
+    const dotColor = TONE[content.tone] || TONE.neutral;
+
+    // Start: pill rect
+    card.innerHTML = `
+        <div class="card-header">
+            <span class="dot" style="background: ${dotColor};"></span>
+            <span class="title">${escapeHTML(content.title)}</span>
+            <button class="close" aria-label="Close">×</button>
+        </div>
+        <div class="card-kind">${escapeHTML(content.kind)}</div>
+        <div class="card-body">
+            <div class="card-insight">${escapeHTML(content.insight)}</div>
+            ${content.triggers && content.triggers.length ? `
+            <div class="card-section">
+                <div class="label-caption">Triggers</div>
+                <div class="card-chips">
+                    ${content.triggers.map(t => `<span class="card-chip">${escapeHTML(t)}</span>`).join('')}
+                </div>
+            </div>` : ''}
+            ${content.origin ? `
+            <div class="card-section">
+                <div class="label-caption">Origin / context</div>
+                <div class="content">${escapeHTML(content.origin)}</div>
+            </div>` : ''}
+            ${content.related && content.related.length ? `
+            <div class="card-section">
+                <div class="label-caption">Related themes</div>
+                <div class="card-chips">
+                    ${content.related.map(r => `<span class="card-chip">${escapeHTML(r)}</span>`).join('')}
+                </div>
+            </div>` : ''}
+            ${content.note ? `<div class="card-note">${escapeHTML(content.note)}</div>` : ''}
+        </div>
+    `;
+
+    document.body.appendChild(card);
+
+    // Hide the original pill so the illusion holds
+    rec.el.style.visibility = 'hidden';
+
+    // Place card EXACTLY over the pill to start
+    if (!isMobileViewport()) {
+        card.style.left  = pillRect.left + 'px';
+        card.style.top   = pillRect.top  + 'px';
+        card.style.width = pillRect.width + 'px';
+        card.style.height = pillRect.height + 'px';
+    }
+
+    // Force a reflow so the starting rect is committed before we trigger transition
+    void card.offsetWidth;
+
+    // Compute target rect
+    if (isMobileViewport()) {
+        // Mobile: slide up as bottom sheet
+        card.classList.remove('as-pill');
+        // trigger slide
+        requestAnimationFrame(() => {
+            card.classList.remove('sheet-closed');
+        });
+    } else {
+        // Desktop: morph to card size, placed near the pill but kept in viewport
+        const cardW = 340;
+        // We don't know the final card height until content renders. Approximate:
+        // header (~50) + kind (~30) + insight (~80) + sections (~200) + padding (~20)
+        const approxH = estimateCardHeight(content);
+        const margin = 16;
+
+        // Prefer opening below-right of the pill, flip if insufficient space
+        let targetLeft = pillRect.left + pillRect.width / 2 - cardW / 2;
+        let targetTop  = pillRect.top  + pillRect.height + 10;
+
+        // Keep inside viewport horizontally
+        if (targetLeft + cardW + margin > window.innerWidth) {
+            targetLeft = window.innerWidth - cardW - margin;
+        }
+        if (targetLeft < margin) targetLeft = margin;
+
+        // Vertically: if overflowing below, open above the pill
+        if (targetTop + approxH + margin > window.innerHeight) {
+            targetTop = pillRect.top - approxH - 10;
+            if (targetTop < margin) targetTop = margin;
+        }
+
+        // Use double rAF to make sure the starting state (as-pill rect) is
+        // painted before we remove the class and set target dimensions
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                card.classList.remove('as-pill');
+                card.style.left   = targetLeft + 'px';
+                card.style.top    = targetTop  + 'px';
+                card.style.width  = cardW + 'px';
+                card.style.height = 'auto';
+            });
+        });
+    }
+
+    // Wire interactions
+    card.querySelector('.close').addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeCard();
+    });
+    // Clicks INSIDE card shouldn't bubble to the outside-click handler
+    card.addEventListener('click', (e) => e.stopPropagation());
+    // Related-chip click: find node by related name and route to it
+    card.querySelectorAll('.card-chip').forEach(chip => {
+        chip.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const name = chip.textContent.trim();
+            // Try to find a node whose semantic name matches
+            const matchIdx = findNodeBySemanticName(name);
+            if (matchIdx >= 0) {
+                const matchRec = labelRecords.find(r => r.nodeIdx === matchIdx);
+                if (matchRec) handlePillClick(matchRec);
+            }
+        });
+    });
+
+    cardBackdrop.classList.add('visible');
+    activeCard = { el: card, rec, isMobile: isMobileViewport() };
+}
+
+function closeCard(onDone) {
+    if (!activeCard) { if (onDone) onDone(); return; }
+    const card = activeCard.el;
+    const rec  = activeCard.rec;
+    card.classList.add('closing');
+
+    if (activeCard.isMobile) {
+        card.classList.add('sheet-closed');
+        cardBackdrop.classList.remove('visible');
+        setTimeout(() => {
+            if (card.parentNode) card.parentNode.removeChild(card);
+            rec.el.style.visibility = '';
+            if (onDone) onDone();
+        }, 400);
+    } else {
+        // Morph back to pill rect
+        const pillRect = rec.el.getBoundingClientRect();
+        card.classList.add('as-pill');
+        card.style.left  = pillRect.left + 'px';
+        card.style.top   = pillRect.top  + 'px';
+        card.style.width = pillRect.width + 'px';
+        card.style.height = pillRect.height + 'px';
+        cardBackdrop.classList.remove('visible');
+        setTimeout(() => {
+            if (card.parentNode) card.parentNode.removeChild(card);
+            rec.el.style.visibility = '';
+            if (onDone) onDone();
+        }, 440);
+    }
+    activeCard = null;
+}
+
+function estimateCardHeight(content) {
+    let h = 0;
+    h += 56;  // header
+    h += 30;  // kind strip
+    h += 16;  // body top padding
+    // insight
+    h += Math.max(60, Math.ceil(content.insight.length / 40) * 22) + 16;
+    if (content.triggers && content.triggers.length) h += 56;
+    if (content.origin) h += Math.max(50, Math.ceil(content.origin.length / 40) * 22) + 22;
+    if (content.related && content.related.length) h += 56;
+    if (content.note) h += 60;
+    h += 20;  // body bottom padding
+    return h;
+}
+
+function findNodeBySemanticName(name) {
+    const lower = name.toLowerCase();
+    for (let i = 0; i < nodes.length; i++) {
+        if (nodes[i].semantic && nodes[i].semantic.name.toLowerCase() === lower) return i;
+    }
+    return -1;
+}
+
+function escapeHTML(s) {
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+// Click outside (on backdrop) closes the card
+cardBackdrop.addEventListener('click', () => closeCard());
+
+// Escape closes the card
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && activeCard) closeCard();
+});
+
+// Boot — set initial focus + start the render loop
+applyFocus();
+animate();
+
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    pmat.uniforms.pixelRatio.value = renderer.getPixelRatio();
+});
+</script>
+</body>
+</html>

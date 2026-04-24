@@ -1,0 +1,1013 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cognitive Field · v0.1</title>
+<style>
+  :root {
+    --ink: #e9edf5;
+    --ink-dim: rgba(233, 237, 245, 0.55);
+    --ink-faint: rgba(233, 237, 245, 0.22);
+    --panel: rgba(8, 10, 18, 0.55);
+    --edge: rgba(255, 255, 255, 0.09);
+    --edge-hot: rgba(255, 255, 255, 0.32);
+    --mono: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; width: 100%;
+    overflow: hidden;
+    background: #04050a;
+    color: var(--ink);
+    font-family: var(--sans);
+    cursor: grab;
+    -webkit-font-smoothing: antialiased;
+  }
+  body.grabbing { cursor: grabbing; }
+  body.hover { cursor: pointer; }
+  canvas { display: block; position: fixed; inset: 0; z-index: 1; }
+
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    pointer-events: none;
+    z-index: 3;
+    background:
+      radial-gradient(ellipse 120% 80% at 50% 50%, transparent 35%, rgba(0,0,0,0.55) 100%),
+      radial-gradient(ellipse 60% 40% at 50% 50%, rgba(40,40,80,0.06) 0%, transparent 70%);
+  }
+
+  .brand {
+    position: fixed; top: 20px; left: 22px; z-index: 12;
+    font-family: var(--mono); font-size: 10px;
+    letter-spacing: 0.24em; color: var(--ink-dim);
+    text-transform: uppercase; pointer-events: none;
+    user-select: none; line-height: 1.4;
+  }
+  .brand .mark { color: var(--ink); font-weight: 500; }
+  .brand .sub {
+    opacity: 0.55; font-size: 8.5px;
+    letter-spacing: 0.3em; margin-top: 4px; font-weight: 400;
+  }
+
+  .status {
+    position: fixed; bottom: 18px; right: 22px; z-index: 12;
+    font-family: var(--mono); font-size: 9px;
+    letter-spacing: 0.2em; color: var(--ink-faint);
+    text-transform: uppercase; text-align: right;
+    pointer-events: none; user-select: none; line-height: 1.7;
+  }
+  .status .pulse {
+    display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+    background: #7fe070; box-shadow: 0 0 10px #7fe070;
+    margin-right: 8px; vertical-align: middle;
+    animation: pulse 2.8s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 0.5; transform: scale(0.85); }
+    50%      { opacity: 1;   transform: scale(1.15); }
+  }
+
+  .hints {
+    position: fixed; bottom: 20px; left: 22px; z-index: 12;
+    font-family: var(--mono); font-size: 9px;
+    letter-spacing: 0.2em; color: var(--ink-faint);
+    text-transform: uppercase; pointer-events: none;
+    user-select: none; line-height: 1.8;
+  }
+  .hints span { color: var(--ink-dim); }
+
+  #labels, #sublabels {
+    position: fixed; inset: 0;
+    pointer-events: none; z-index: 10;
+  }
+  .label {
+    position: absolute; left: 0; top: 0;
+    padding: 5px 9px;
+    font-family: var(--mono); font-size: 9.5px;
+    line-height: 1.15; letter-spacing: 0.13em;
+    color: var(--ink);
+    background: var(--panel);
+    border: 1px solid var(--edge);
+    text-transform: uppercase;
+    white-space: nowrap;
+    pointer-events: none;
+    transition: opacity 280ms ease, border-color 280ms ease;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    user-select: none;
+    will-change: transform, opacity;
+  }
+  .label::before, .label::after {
+    content: ''; position: absolute;
+    width: 5px; height: 5px;
+    border: 1px solid currentColor;
+    opacity: 0.55; pointer-events: none;
+  }
+  .label::before { top: -1px; left: -1px; border-right: none; border-bottom: none; }
+  .label::after  { bottom: -1px; right: -1px; border-left: none; border-top: none; }
+  .label .name { display: block; font-weight: 500; color: var(--ink); }
+  .label .stat {
+    display: block; margin-top: 3px;
+    font-size: 8px; opacity: 0.5;
+    letter-spacing: 0.16em; font-weight: 400; color: var(--ink);
+  }
+  .label.hot {
+    border-color: var(--edge-hot);
+    background: rgba(12, 14, 24, 0.7);
+  }
+  .label.hot .stat { opacity: 0.85; }
+  .label.dim { opacity: 0.22; }
+  .label.hidden { opacity: 0; }
+
+  .sub-label {
+    position: absolute; left: 0; top: 0;
+    padding: 2px 7px;
+    font-family: var(--mono); font-size: 8.5px;
+    letter-spacing: 0.16em;
+    background: rgba(4,5,10,0.5);
+    border: 1px solid var(--edge);
+    text-transform: uppercase;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 500ms ease;
+    user-select: none;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+  }
+  .sub-label::before {
+    content: ''; display: inline-block;
+    width: 4px; height: 4px;
+    background: currentColor;
+    margin-right: 6px; vertical-align: middle;
+    opacity: 0.9;
+  }
+  .sub-label.show { opacity: 0.9; }
+
+  .focus-panel {
+    position: fixed; top: 50%; left: 22px;
+    transform: translateY(-50%) translateX(-12px);
+    width: 230px; padding: 16px 16px 14px;
+    z-index: 12;
+    font-family: var(--mono);
+    background: var(--panel);
+    border: 1px solid var(--edge);
+    border-left: 2px solid #fff;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    opacity: 0; pointer-events: none;
+    transition: opacity 450ms ease, transform 450ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  .focus-panel.show {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+    pointer-events: auto;
+  }
+  .focus-panel .tag {
+    font-size: 8px; letter-spacing: 0.28em;
+    color: var(--ink-faint); text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .focus-panel .name {
+    font-size: 13px; letter-spacing: 0.16em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+    color: var(--ink); font-weight: 500;
+  }
+  .focus-panel .metrics {
+    font-size: 9px; letter-spacing: 0.14em;
+    color: var(--ink-dim); line-height: 1.9;
+    text-transform: uppercase;
+  }
+  .focus-panel .metrics .row { display: flex; justify-content: space-between; }
+  .focus-panel .metrics span { color: var(--ink); font-weight: 500; }
+  .focus-panel .release {
+    margin-top: 14px; padding-top: 11px;
+    border-top: 1px solid var(--edge);
+    font-size: 8.5px; letter-spacing: 0.24em;
+    color: var(--ink-faint); text-transform: uppercase;
+    cursor: pointer; pointer-events: auto;
+    transition: color 220ms ease;
+  }
+  .focus-panel .release:hover { color: var(--ink); }
+
+  #err {
+    position: fixed;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    max-width: 640px; width: calc(100% - 60px);
+    padding: 22px 24px;
+    font-family: var(--mono);
+    font-size: 11px; line-height: 1.6;
+    letter-spacing: 0.06em;
+    color: #ff8e8b;
+    background: rgba(20, 8, 10, 0.85);
+    border: 1px solid rgba(255, 100, 100, 0.25);
+    border-left: 2px solid #ff5e5b;
+    z-index: 9999;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    white-space: pre-wrap;
+    word-break: break-word;
+    display: none;
+  }
+  #err .tag {
+    color: #ff5e5b;
+    font-size: 9px;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    opacity: 0.9;
+  }
+</style>
+</head>
+<body>
+  <div class="brand">
+    <div class="mark">COGNITIVE FIELD</div>
+    <div class="sub">semantic activation · v0.1</div>
+  </div>
+
+  <div class="status">
+    <div><span class="pulse"></span>BASELINE · <span id="globalAct">0.00</span></div>
+    <div style="opacity: 0.6; margin-top: 4px;">DRAG · ZOOM · CLICK REGION</div>
+  </div>
+
+  <div class="hints"><span>ESC</span> RELEASE FOCUS</div>
+
+  <div id="labels"></div>
+  <div id="sublabels"></div>
+
+  <div class="focus-panel" id="focusPanel">
+    <div class="tag">FOCUSED REGION</div>
+    <div class="name" id="focusName">—</div>
+    <div class="metrics" id="focusMetrics"></div>
+    <div class="release" id="focusRelease">↵ RELEASE · ESC</div>
+  </div>
+
+  <div id="err"><div class="tag">SYSTEM ERROR</div><div id="errMsg"></div></div>
+
+  <script>
+    var _errBox = document.getElementById('err');
+    var _errMsg = document.getElementById('errMsg');
+    function showError(msg) {
+      if (_errMsg) _errMsg.textContent = msg;
+      if (_errBox) _errBox.style.display = 'block';
+      console.error(msg);
+    }
+    window.addEventListener('error', function (e) {
+      showError((e.message || 'Unknown error') +
+        (e.filename ? '\nat ' + e.filename + ':' + e.lineno + ':' + e.colno : ''));
+    });
+    window.addEventListener('unhandledrejection', function (e) {
+      var r = e.reason;
+      showError('Module failed to load.\n' +
+        (r && r.message ? r.message : String(r)) +
+        '\n\nIf this is a CDN block, try opening over http(s), not file://.');
+    });
+  </script>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+
+  <script type="module">
+  import * as THREE from 'three';
+  import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(
+    55, window.innerWidth / window.innerHeight, 0.1, 500
+  );
+  camera.position.set(0, 2, 48);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setClearColor(0x04050a, 1);
+  document.body.appendChild(renderer.domElement);
+
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.07;
+  controls.minDistance = 12;
+  controls.maxDistance = 110;
+  controls.rotateSpeed = 0.55;
+  controls.panSpeed = 0.6;
+  controls.zoomSpeed = 0.8;
+
+  const clock = new THREE.Clock();
+
+  const REGIONS = [
+    { name:'Emotional Core',    color:0xff5d5b, pos:[  0, -0.5,  0], r:6.2, n:2400,
+      subs:['PRIMARY','SECONDARY','UNSPOKEN','RESIDUAL'] },
+    { name:'Memory Center',     color:0xf5b84e, pos:[-15,  3,  7], r:4.9, n:1650,
+      subs:['RECENT','FORMATIVE','RECURRING','SOMATIC'] },
+    { name:'Concept Layer',     color:0x8bd4ff, pos:[ -5, 11,  3], r:4.6, n:1550,
+      subs:['FRAMES','SCHEMAS','METAPHORS','BELIEFS'] },
+    { name:'Narrative Engine',  color:0xe85ab8, pos:[ 12,  8, -3], r:4.6, n:1550,
+      subs:['SELF-STORY','OTHERS','FUTURE-SELF','REVISIONS'] },
+    { name:'Conflict Map',      color:0xff8b3d, pos:[  9, -6,  8], r:4.4, n:1450,
+      subs:['INTERNAL','RELATIONAL','VALUE','UNRESOLVED'] },
+    { name:'Pattern Detector',  color:0x4fd1b8, pos:[ -9, -6,-11], r:4.4, n:1450,
+      subs:['CYCLES','TRIGGERS','ECHOES','LOOPS'] },
+    { name:'Attachment Signal', color:0xff8fb6, pos:[-13, -3, -5], r:4.3, n:1400,
+      subs:['SAFE','ANXIOUS','AVOIDANT','AMBIVALENT'] },
+    { name:'Forecast Engine',   color:0x7b6fff, pos:[ 14,  2,  4], r:4.4, n:1450,
+      subs:['FEAR','HOPE','REHEARSAL','CONTINGENCY'] },
+    { name:'Identity Field',    color:0xb77aff, pos:[  2,  9,-10], r:4.7, n:1550,
+      subs:['CORE-SELF','ADAPTED','PROJECTED','EMERGING'] },
+    { name:'Body Signal',       color:0x7fe070, pos:[  3,-12,  3], r:4.7, n:1550,
+      subs:['TENSION','BREATH','WARMTH','HEAVINESS'] },
+  ];
+
+  REGIONS.forEach((region, i) => {
+    region.index = i;
+    region.colorObj = new THREE.Color(region.color);
+    region.position = new THREE.Vector3(...region.pos);
+    region.activity = 0.5;
+    region.targetActivity = 0.5;
+    region.burstUntil = 0;
+    const n = region.subs.length;
+    region.subPositions = region.subs.map((name, k) => {
+      const angle = (k / n) * Math.PI * 2 + 0.6;
+      const elev = Math.sin(k * 2.3) * region.r * 0.35;
+      const rad = region.r * 0.78;
+      return {
+        name,
+        pos: new THREE.Vector3(
+          region.position.x + Math.cos(angle) * rad,
+          region.position.y + elev,
+          region.position.z + Math.sin(angle) * rad,
+        ),
+      };
+    });
+  });
+
+  const NUM_R = REGIONS.length;
+
+  // Data-texture activity lookup (avoids dynamic uniform-array indexing)
+  const ATEX_W = 16;
+  const activityBytes = new Uint8Array(ATEX_W * 4);
+  const activityTex = new THREE.DataTexture(
+    activityBytes, ATEX_W, 1, THREE.RGBAFormat
+  );
+  activityTex.magFilter = THREE.NearestFilter;
+  activityTex.minFilter = THREE.NearestFilter;
+  activityTex.wrapS = THREE.ClampToEdgeWrapping;
+  activityTex.wrapT = THREE.ClampToEdgeWrapping;
+  activityTex.needsUpdate = true;
+
+  function writeActivityTex() {
+    for (let i = 0; i < NUM_R; i++) {
+      activityBytes[i * 4] = Math.max(0, Math.min(255,
+        Math.round(REGIONS[i].activity * 200)));
+    }
+    activityTex.needsUpdate = true;
+  }
+
+  function makeCircleTexture() {
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const ctx = c.getContext('2d');
+    const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    g.addColorStop(0,   'rgba(255,255,255,1)');
+    g.addColorStop(0.35,'rgba(255,255,255,0.5)');
+    g.addColorStop(1,   'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 64, 64);
+    const tex = new THREE.CanvasTexture(c);
+    tex.minFilter = THREE.LinearFilter;
+    return tex;
+  }
+  const circleTex = makeCircleTexture();
+
+  const TOTAL = REGIONS.reduce((s, r) => s + r.n, 0);
+  const positions     = new Float32Array(TOTAL * 3);
+  const colors        = new Float32Array(TOTAL * 3);
+  const regionIdx     = new Float32Array(TOTAL);
+  const phases        = new Float32Array(TOTAL);
+  const sizes         = new Float32Array(TOTAL);
+  const baseIntensity = new Float32Array(TOTAL);
+  const driftSeeds    = new Float32Array(TOTAL);
+
+  let p = 0;
+  REGIONS.forEach((region, rIdx) => {
+    for (let i = 0; i < region.n; i++) {
+      const rBase = Math.pow(Math.random(), 0.55);
+      const rJit = (0.75 + Math.random() * 0.6);
+      const r = region.r * rBase * rJit;
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+
+      positions[p*3    ] = region.position.x + r * Math.sin(phi) * Math.cos(theta);
+      positions[p*3 + 1] = region.position.y + r * Math.sin(phi) * Math.sin(theta);
+      positions[p*3 + 2] = region.position.z + r * Math.cos(phi);
+
+      const c = region.colorObj.clone();
+      const hsl = {};
+      c.getHSL(hsl);
+      c.setHSL(
+        hsl.h + (Math.random() - 0.5) * 0.035,
+        Math.max(0, Math.min(1, hsl.s * (0.85 + Math.random() * 0.3))),
+        Math.max(0, Math.min(1, hsl.l * (0.6 + Math.random() * 0.75)))
+      );
+      colors[p*3    ] = c.r;
+      colors[p*3 + 1] = c.g;
+      colors[p*3 + 2] = c.b;
+
+      regionIdx[p]     = rIdx;
+      phases[p]        = Math.random() * Math.PI * 2;
+      sizes[p]         = 0.9 + Math.random() * 1.9;
+      baseIntensity[p] = 0.35 + Math.random() * 0.65;
+      driftSeeds[p]    = Math.random() * 100;
+      p++;
+    }
+  });
+
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geom.setAttribute('aColor',   new THREE.BufferAttribute(colors, 3));
+  geom.setAttribute('aRegion',  new THREE.BufferAttribute(regionIdx, 1));
+  geom.setAttribute('aPhase',   new THREE.BufferAttribute(phases, 1));
+  geom.setAttribute('aSize',    new THREE.BufferAttribute(sizes, 1));
+  geom.setAttribute('aBase',    new THREE.BufferAttribute(baseIntensity, 1));
+  geom.setAttribute('aDrift',   new THREE.BufferAttribute(driftSeeds, 1));
+
+  const particleMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime:        { value: 0 },
+      uActivityTex: { value: activityTex },
+      uTexW:        { value: ATEX_W },
+      uHover:       { value: -1 },
+      uFocus:       { value: 0 },
+      uFocusRegion: { value: -1 },
+      uPixelRatio:  { value: renderer.getPixelRatio() },
+    },
+    vertexShader: `
+      attribute vec3 aColor;
+      attribute float aRegion;
+      attribute float aPhase;
+      attribute float aSize;
+      attribute float aBase;
+      attribute float aDrift;
+
+      uniform float uTime;
+      uniform sampler2D uActivityTex;
+      uniform float uTexW;
+      uniform float uHover;
+      uniform float uFocus;
+      uniform float uFocusRegion;
+      uniform float uPixelRatio;
+
+      varying vec3 vColor;
+      varying float vAlpha;
+
+      void main() {
+        float u = (aRegion + 0.5) / uTexW;
+        float activity = texture2D(uActivityTex, vec2(u, 0.5)).r * (255.0 / 200.0);
+
+        vec3 pos = position;
+        float t = uTime;
+        pos.x += sin(t * 0.22 + aPhase + aDrift * 0.3) * 0.14;
+        pos.y += cos(t * 0.19 + aPhase * 1.37) * 0.14;
+        pos.z += sin(t * 0.17 + aPhase * 0.71 + aDrift * 0.2) * 0.14;
+
+        vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+        gl_Position = projectionMatrix * mvPosition;
+
+        float slow   = 0.6 + 0.4 * sin(t * 0.9 + aPhase);
+        float fast   = 0.7 + 0.3 * sin(t * 3.2 + aPhase * 4.0);
+        float flicker = mix(0.65, 1.0, slow * fast);
+
+        float hoverBoost = (uHover > -0.5 && abs(aRegion - uHover) < 0.5) ? 1.45 : 1.0;
+        float intensity = aBase * activity * flicker * hoverBoost;
+
+        float sizePx = aSize * intensity * 2.4;
+        gl_PointSize = sizePx * (230.0 / -mvPosition.z) * uPixelRatio;
+
+        vColor = aColor * (0.5 + intensity * 0.9);
+
+        float alpha = intensity;
+        if (uFocus > 0.01) {
+          bool isFocused = abs(aRegion - uFocusRegion) < 0.5;
+          alpha *= isFocused ? mix(1.0, 1.25, uFocus) : mix(1.0, 0.08, uFocus);
+        }
+        vAlpha = clamp(alpha, 0.0, 1.6);
+      }
+    `,
+    fragmentShader: `
+      varying vec3 vColor;
+      varying float vAlpha;
+
+      void main() {
+        vec2 uv = gl_PointCoord - 0.5;
+        float d = length(uv);
+        if (d > 0.5) discard;
+
+        float halo = pow(1.0 - smoothstep(0.0, 0.5, d), 2.2);
+        float core = pow(1.0 - smoothstep(0.0, 0.28, d), 6.0);
+
+        vec3 col = vColor * halo + vec3(1.0) * core * 0.45;
+        gl_FragColor = vec4(col, halo * vAlpha);
+      }
+    `,
+    blending: THREE.AdditiveBlending,
+    transparent: true,
+    depthWrite: false,
+  });
+
+  // Seed the activity texture so particles are visible on frame 1
+  writeActivityTex();
+
+  const particles = new THREE.Points(geom, particleMat);
+  scene.add(particles);
+
+  // Deep-field dust
+  {
+    const N = 900;
+    const pos = new Float32Array(N * 3);
+    for (let i = 0; i < N; i++) {
+      pos[i*3+0] = (Math.random() - 0.5) * 180;
+      pos[i*3+1] = (Math.random() - 0.5) * 100;
+      pos[i*3+2] = (Math.random() - 0.5) * 180;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const m = new THREE.PointsMaterial({
+      color: 0x8aa0c5,
+      size: 0.7,
+      transparent: true,
+      opacity: 0.38,
+      map: circleTex,
+      alphaTest: 0.02,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      sizeAttenuation: true,
+    });
+    scene.add(new THREE.Points(g, m));
+  }
+
+  // Synapses
+  const synapseGroup = new THREE.Group();
+  scene.add(synapseGroup);
+  const synapses = [];
+  const MAX_SYNAPSES = 14;
+
+  function createSynapse(fromIdx, toIdx, opts) {
+    opts = opts || {};
+    const from = REGIONS[fromIdx];
+    const to   = REGIONS[toIdx];
+
+    const mid = from.position.clone().add(to.position).multiplyScalar(0.5);
+    const outward = mid.clone();
+    if (outward.lengthSq() > 0.001) outward.normalize();
+    else outward.set(0, 1, 0);
+    mid.addScaledVector(outward, 2 + Math.random() * 3);
+    mid.add(new THREE.Vector3(
+      (Math.random() - 0.5) * 2.5,
+      (Math.random() - 0.5) * 2.5,
+      (Math.random() - 0.5) * 2.5
+    ));
+
+    const curve = new THREE.QuadraticBezierCurve3(
+      from.position.clone(), mid, to.position.clone()
+    );
+    const pts = curve.getPoints(40);
+    const g = new THREE.BufferGeometry().setFromPoints(pts);
+
+    const mixColor = from.colorObj.clone().lerp(to.colorObj, 0.5);
+    const lineMat = new THREE.LineBasicMaterial({
+      color: mixColor,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const line = new THREE.Line(g, lineMat);
+    synapseGroup.add(line);
+
+    const pulseGeom = new THREE.BufferGeometry();
+    pulseGeom.setAttribute('position',
+      new THREE.BufferAttribute(new Float32Array([0,0,0]), 3));
+    // Skip frustum culling — the pulse is a single moving point, bounding
+    // sphere would be stale anyway, and skipping avoids any NaN path.
+    pulseGeom.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 50);
+    const pulseMat = new THREE.PointsMaterial({
+      color: mixColor,
+      size: 0.55,
+      transparent: true,
+      opacity: 0,
+      map: circleTex,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      sizeAttenuation: true,
+    });
+    const pulse = new THREE.Points(pulseGeom, pulseMat);
+    pulse.frustumCulled = false;
+    line.frustumCulled = false;
+    synapseGroup.add(pulse);
+
+    return {
+      from: fromIdx, to: toIdx,
+      curve, line, lineMat, pulse, pulseGeom, pulseMat,
+      created: clock.getElapsedTime(),
+      duration: opts.duration != null ? opts.duration : (1.4 + Math.random() * 1.6),
+      peak: opts.peak != null ? opts.peak : (0.45 + Math.random() * 0.3),
+    };
+  }
+
+  function removeSynapse(s) {
+    synapseGroup.remove(s.line);
+    synapseGroup.remove(s.pulse);
+    s.line.geometry.dispose();
+    s.lineMat.dispose();
+    s.pulseGeom.dispose();
+    s.pulseMat.dispose();
+  }
+
+  function updateSynapses() {
+    const t = clock.getElapsedTime();
+    if (synapses.length < MAX_SYNAPSES && Math.random() < 0.09) {
+      const ranked = REGIONS
+        .map(r => ({ i: r.index, a: r.activity }))
+        .sort((a, b) => b.a - a.a)
+        .slice(0, 6);
+      const A = ranked[Math.floor(Math.random() * ranked.length)];
+      const B = ranked[Math.floor(Math.random() * ranked.length)];
+      if (A && B && A.i !== B.i) {
+        synapses.push(createSynapse(A.i, B.i));
+      }
+    }
+
+    for (let i = synapses.length - 1; i >= 0; i--) {
+      const s = synapses[i];
+      const age = t - s.created;
+      const prog = age / s.duration;
+      if (prog >= 1) {
+        removeSynapse(s);
+        synapses.splice(i, 1);
+        continue;
+      }
+      const env = Math.sin(prog * Math.PI);
+      const focusDim = focusT > 0.1 ? (1 - focusT * 0.85) : 1;
+      s.lineMat.opacity = env * s.peak * focusDim;
+
+      // getPoint (parametric), NOT getPointAt (arc-length, can NaN on degenerate curves)
+      const pPos = s.curve.getPoint(prog);
+      s.pulseGeom.attributes.position.setXYZ(0, pPos.x, pPos.y, pPos.z);
+      s.pulseGeom.attributes.position.needsUpdate = true;
+      s.pulseMat.opacity = env * 0.95 * focusDim;
+    }
+  }
+
+  // Pick meshes (invisible spheres for raycasting)
+  const pickMeshes = REGIONS.map((region) => {
+    const g = new THREE.SphereGeometry(region.r * 1.2, 14, 10);
+    const m = new THREE.MeshBasicMaterial({
+      visible: false, transparent: true, opacity: 0
+    });
+    const mesh = new THREE.Mesh(g, m);
+    mesh.position.copy(region.position);
+    mesh.userData.regionIdx = region.index;
+    scene.add(mesh);
+    return mesh;
+  });
+
+  // Labels
+  const labelContainer = document.getElementById('labels');
+  const labels = REGIONS.map((region) => {
+    const el = document.createElement('div');
+    el.className = 'label';
+    el.innerHTML =
+      '<span class="name">' + region.name + '</span>' +
+      '<span class="stat">' + region.n + ' SIGNALS · FIRING <span class="firing">0.00</span></span>';
+    el.style.color = '#' + region.colorObj.getHexString();
+    labelContainer.appendChild(el);
+
+    const dir = region.position.clone();
+    if (dir.lengthSq() < 0.1) dir.set(0, 1, 0);
+    else dir.normalize();
+
+    return {
+      el,
+      region,
+      firingEl: el.querySelector('.firing'),
+      offsetDir: new THREE.Vector3(dir.x * 0.4, 0.8, dir.z * 0.4).normalize(),
+    };
+  });
+
+  function updateLabels() {
+    const v = new THREE.Vector3();
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    for (const L of labels) {
+      const anchor = L.region.position.clone()
+        .addScaledVector(L.offsetDir, L.region.r * 0.6 + 1.2);
+      v.copy(anchor).project(camera);
+      const behind = v.z > 1 || v.z < -1;
+      if (behind) { L.el.classList.add('hidden'); continue; }
+      L.el.classList.remove('hidden');
+
+      const x = (v.x * 0.5 + 0.5) * width;
+      const y = (-v.y * 0.5 + 0.5) * height;
+      L.el.style.transform =
+        'translate3d(calc(' + x + 'px - 50%), calc(' + y + 'px - 50%), 0)';
+
+      L.firingEl.textContent = L.region.activity.toFixed(2);
+
+      const isHot = hoveredRegion === L.region.index
+                 || L.region.activity > 0.88
+                 || focusRegion === L.region.index;
+      L.el.classList.toggle('hot', isHot);
+      L.el.classList.toggle('dim',
+        focusRegion !== -1 && focusRegion !== L.region.index);
+    }
+  }
+
+  // Sub-labels
+  const sublabelContainer = document.getElementById('sublabels');
+  let activeSubLabels = [];
+
+  function showSubLabels(idx) {
+    clearSubLabels();
+    const region = REGIONS[idx];
+    region.subPositions.forEach((sub, i) => {
+      const el = document.createElement('div');
+      el.className = 'sub-label';
+      el.textContent = sub.name;
+      el.style.color = '#' + region.colorObj.getHexString();
+      sublabelContainer.appendChild(el);
+      setTimeout(() => el.classList.add('show'), 220 + i * 90);
+      activeSubLabels.push({ el, pos: sub.pos });
+    });
+  }
+  function clearSubLabels() {
+    activeSubLabels.forEach(({ el }) => {
+      el.classList.remove('show');
+      setTimeout(() => el.remove(), 450);
+    });
+    activeSubLabels = [];
+  }
+  function updateSubLabels() {
+    if (!activeSubLabels.length) return;
+    const v = new THREE.Vector3();
+    for (const S of activeSubLabels) {
+      v.copy(S.pos).project(camera);
+      if (v.z > 1) { S.el.style.opacity = '0'; continue; }
+      const x = (v.x * 0.5 + 0.5) * window.innerWidth;
+      const y = (-v.y * 0.5 + 0.5) * window.innerHeight;
+      S.el.style.transform =
+        'translate3d(calc(' + x + 'px - 50%), calc(' + y + 'px - 50%), 0)';
+    }
+  }
+
+  // Sub-nodes (bright markers inside focused region)
+  const SUB_MAX = 8;
+  const subNodeGeom = new THREE.BufferGeometry();
+  const subNodePos = new Float32Array(SUB_MAX * 3);
+  subNodeGeom.setAttribute('position', new THREE.BufferAttribute(subNodePos, 3));
+  subNodeGeom.setDrawRange(0, 0);
+  subNodeGeom.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 50);
+  const subNodeMat = new THREE.PointsMaterial({
+    color: 0xffffff,
+    size: 0.7,
+    transparent: true,
+    opacity: 0,
+    map: circleTex,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    sizeAttenuation: true,
+  });
+  const subNodes = new THREE.Points(subNodeGeom, subNodeMat);
+  subNodes.frustumCulled = false;
+  scene.add(subNodes);
+
+  function updateSubNodes() {
+    if (focusRegion < 0) {
+      subNodeMat.opacity += (0 - subNodeMat.opacity) * 0.09;
+      if (subNodeMat.opacity < 0.02) subNodeGeom.setDrawRange(0, 0);
+      return;
+    }
+    const region = REGIONS[focusRegion];
+    const t = clock.getElapsedTime();
+    region.subPositions.forEach((sub, i) => {
+      const jx = Math.sin(t * 0.9 + i * 1.7) * 0.15;
+      const jy = Math.cos(t * 0.75 + i * 2.1) * 0.15;
+      const jz = Math.sin(t * 0.6  + i * 1.3) * 0.15;
+      subNodePos[i*3+0] = sub.pos.x + jx;
+      subNodePos[i*3+1] = sub.pos.y + jy;
+      subNodePos[i*3+2] = sub.pos.z + jz;
+    });
+    subNodeGeom.attributes.position.needsUpdate = true;
+    subNodeGeom.setDrawRange(0, region.subs.length);
+    subNodeMat.color.setHex(region.color);
+    subNodeMat.opacity += (1.0 - subNodeMat.opacity) * 0.07;
+  }
+
+  // Interaction
+  const raycaster = new THREE.Raycaster();
+  const mouse = new THREE.Vector2();
+  let hoveredRegion = -1;
+  let focusRegion = -1;
+
+  const DEFAULT_CAM_POS = new THREE.Vector3(0, 2, 48);
+  const DEFAULT_TARGET  = new THREE.Vector3(0, 0, 0);
+  const targetCamPos    = DEFAULT_CAM_POS.clone();
+  const targetCamTarget = DEFAULT_TARGET.clone();
+  let focusT = 0;
+  let transitionUntil = 0;  // camera is lerped only while now < transitionUntil
+
+  let downX = 0, downY = 0, isDown = false;
+
+  renderer.domElement.addEventListener('pointerdown', (e) => {
+    isDown = true;
+    downX = e.clientX; downY = e.clientY;
+    document.body.classList.add('grabbing');
+  });
+  window.addEventListener('pointerup', (e) => {
+    document.body.classList.remove('grabbing');
+    if (!isDown) return;
+    isDown = false;
+    const dx = e.clientX - downX;
+    const dy = e.clientY - downY;
+    if (Math.hypot(dx, dy) < 5) handleClick(e);
+  });
+  window.addEventListener('pointermove', (e) => {
+    mouse.x =  (e.clientX / window.innerWidth)  * 2 - 1;
+    mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObjects(pickMeshes, false);
+    const newHover = hits.length ? hits[0].object.userData.regionIdx : -1;
+    if (newHover !== hoveredRegion) onHoverChange(newHover);
+  });
+
+  function onHoverChange(newIdx) {
+    hoveredRegion = newIdx;
+    particleMat.uniforms.uHover.value = newIdx;
+    document.body.classList.toggle('hover', newIdx >= 0);
+
+    if (newIdx >= 0 && focusRegion < 0) {
+      const region = REGIONS[newIdx];
+      const nearest = REGIONS
+        .filter(r => r.index !== newIdx)
+        .map(r => ({ i: r.index, d: region.position.distanceTo(r.position) }))
+        .sort((a, b) => a.d - b.d)
+        .slice(0, 2);
+      nearest.forEach(n => {
+        if (synapses.length < MAX_SYNAPSES) {
+          synapses.push(createSynapse(newIdx, n.i,
+            { duration: 1.6 + Math.random() * 0.6, peak: 0.55 }));
+        }
+      });
+      region.burstUntil = clock.getElapsedTime() + 0.8;
+    }
+  }
+
+  function handleClick(e) {
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObjects(pickMeshes, false);
+    if (hits.length) setFocus(hits[0].object.userData.regionIdx);
+    else releaseFocus();
+  }
+
+  function setFocus(idx) {
+    focusRegion = idx;
+    particleMat.uniforms.uFocusRegion.value = idx;
+    transitionUntil = clock.getElapsedTime() + 1.3;
+
+    const region = REGIONS[idx];
+    targetCamTarget.copy(region.position);
+    const worldOffset = new THREE.Vector3(1, 0.45, 1.4).normalize()
+      .multiplyScalar(region.r * 3.8 + 6);
+    targetCamPos.copy(region.position).add(worldOffset);
+
+    const panel = document.getElementById('focusPanel');
+    panel.style.borderLeftColor = '#' + region.colorObj.getHexString();
+    document.getElementById('focusName').textContent = region.name;
+    document.getElementById('focusMetrics').innerHTML =
+      '<div class="row"><span>SIGNALS</span><span>' + region.n + '</span></div>' +
+      '<div class="row"><span>SUBLAYERS</span><span>' + region.subs.length + '</span></div>' +
+      '<div class="row"><span>STATE</span><span>ACTIVE</span></div>';
+    panel.classList.add('show');
+
+    showSubLabels(idx);
+  }
+
+  function releaseFocus() {
+    if (focusRegion === -1) return;
+    focusRegion = -1;
+    targetCamPos.copy(DEFAULT_CAM_POS);
+    targetCamTarget.copy(DEFAULT_TARGET);
+    transitionUntil = clock.getElapsedTime() + 1.3;
+    document.getElementById('focusPanel').classList.remove('show');
+    clearSubLabels();
+  }
+
+  document.getElementById('focusRelease').addEventListener('click', releaseFocus);
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') releaseFocus();
+  });
+
+  // Activity dynamics
+  let nextWave = 4 + Math.random() * 3;
+  function triggerWaves(t) {
+    if (t < nextWave) return;
+    nextWave = t + 9 + Math.random() * 7;
+    const startIdx = Math.floor(Math.random() * REGIONS.length);
+    const origin = REGIONS[startIdx].position;
+    REGIONS.forEach((r) => {
+      const d = origin.distanceTo(r.position);
+      const delayMs = d * 140;
+      setTimeout(() => {
+        r.burstUntil = Math.max(r.burstUntil, clock.getElapsedTime() + 0.9);
+      }, delayMs);
+    });
+  }
+
+  function updateActivity(dt) {
+    const t = clock.getElapsedTime();
+    triggerWaves(t);
+
+    let globalSum = 0;
+    REGIONS.forEach((region, i) => {
+      const a1 = 0.55 + 0.22 * Math.sin(t * 0.23 + i * 1.31);
+      const a2 = 0.15 * Math.sin(t * 0.71 + i * 2.77) * Math.cos(t * 0.44 + i);
+      let target = a1 + a2;
+
+      if (Math.random() < 0.0015) {
+        region.burstUntil = Math.max(region.burstUntil, t + 0.8 + Math.random() * 1.2);
+      }
+      if (t < region.burstUntil) {
+        target = Math.max(target, 0.88 + Math.random() * 0.12);
+      }
+      if (hoveredRegion === i) target = Math.min(1.15, target + 0.25);
+      if (focusRegion === i)   target = Math.min(1.2,  target + 0.15);
+
+      target = Math.max(0.28, Math.min(1.15, target));
+      region.targetActivity = target;
+      region.activity += (target - region.activity) * Math.min(1, dt * 2.4);
+      globalSum += region.activity;
+    });
+
+    writeActivityTex();
+
+    const globalEl = document.getElementById('globalAct');
+    if (globalEl) globalEl.textContent = (globalSum / REGIONS.length).toFixed(2);
+  }
+
+  // Loop
+  function animate() {
+    requestAnimationFrame(animate);
+    const dt = Math.min(0.05, clock.getDelta());
+    const t = clock.getElapsedTime();
+
+    particleMat.uniforms.uTime.value = t;
+
+    updateActivity(dt);
+    updateSynapses();
+    updateSubNodes();
+
+    // Only lerp camera while actively transitioning — otherwise the user's
+    // drag/zoom would be fought by the lerp pulling back to target every frame
+    if (t < transitionUntil) {
+      camera.position.lerp(targetCamPos, 0.08);
+      controls.target.lerp(targetCamTarget, 0.08);
+    }
+    const fT = focusRegion >= 0 ? 1 : 0;
+    focusT += (fT - focusT) * 0.05;
+    particleMat.uniforms.uFocus.value = focusT;
+
+    controls.update();
+
+    // Scroll/zoom out past a threshold while focused → return to main view
+    if (focusRegion >= 0 && t > transitionUntil + 0.2) {
+      const r = REGIONS[focusRegion];
+      const d = camera.position.distanceTo(r.position);
+      if (d > r.r * 9) releaseFocus();
+    }
+
+    renderer.render(scene, camera);
+
+    updateLabels();
+    updateSubLabels();
+  }
+  animate();
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    particleMat.uniforms.uPixelRatio.value = renderer.getPixelRatio();
+  });
+  </script>
+</body>
+</html>

@@ -1,0 +1,1319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Semantic Activation Field · Instance 01</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #04050a;
+    --ink: #ece8dc;
+    --ink-dim: rgba(236, 232, 220, 0.5);
+    --ink-dimmer: rgba(236, 232, 220, 0.22);
+    --rule: rgba(236, 232, 220, 0.09);
+    --accent: #f0c674;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-weight: 300;
+    overflow: hidden;
+    overscroll-behavior: none;
+    cursor: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    pointer-events: none;
+    z-index: 9;
+    opacity: 0.045;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='1'/></svg>");
+  }
+
+  body::after {
+    content: '';
+    position: fixed; inset: 0;
+    pointer-events: none;
+    z-index: 8;
+    background: radial-gradient(ellipse at center, transparent 42%, rgba(0,0,0,0.55) 100%);
+  }
+
+  #scene {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    display: block;
+  }
+
+  #labels {
+    position: fixed;
+    inset: 0;
+    z-index: 4;
+    pointer-events: none;
+  }
+
+  .region-label {
+    pointer-events: auto;
+    cursor: none;
+    user-select: none;
+    transform: translate(-50%, -50%);
+    white-space: nowrap;
+    font-family: 'Inter', sans-serif;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.22em;
+    color: var(--ink);
+    padding: 5px 12px 5px 24px;
+    background: rgba(10, 12, 20, 0.58);
+    backdrop-filter: blur(10px) saturate(1.2);
+    -webkit-backdrop-filter: blur(10px) saturate(1.2);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-left: 1px solid var(--rc);
+    position: relative;
+    transition: background 0.4s, border-color 0.4s, opacity 0.5s, transform 0.4s;
+    text-transform: uppercase;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  }
+  .region-label::before {
+    content: '';
+    position: absolute;
+    left: 9px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--rc);
+    box-shadow: 0 0 10px var(--rc), 0 0 2px var(--rc);
+    animation: dotPulse 2.4s ease-in-out infinite;
+  }
+  .region-label .meta {
+    color: var(--ink-dim);
+    margin-left: 14px;
+    font-size: 9px;
+    letter-spacing: 0.14em;
+    font-weight: 400;
+  }
+  .region-label .meta .act {
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+  .region-label:hover {
+    background: rgba(22, 26, 38, 0.88);
+    border-color: rgba(255, 255, 255, 0.14);
+  }
+  .region-label.focused {
+    background: rgba(30, 36, 54, 0.92);
+    border-color: var(--rc);
+    transform: translate(-50%, -50%) scale(1.05);
+  }
+  .region-label.dimmed {
+    opacity: 0.25;
+    pointer-events: none;
+  }
+
+  .sub-label {
+    pointer-events: none;
+    font-family: 'Inter', sans-serif;
+    font-size: 8px;
+    font-weight: 400;
+    letter-spacing: 0.28em;
+    color: rgba(236, 232, 220, 0.85);
+    text-transform: uppercase;
+    white-space: nowrap;
+    padding: 3px 8px;
+    background: rgba(10, 12, 20, 0.5);
+    border-top: 1px solid var(--rc);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    opacity: 0;
+    transform: translate(-50%, -50%) translateY(6px);
+    transition: opacity 0.6s, transform 0.6s;
+  }
+  .sub-label.visible {
+    opacity: 1;
+    transform: translate(-50%, -50%) translateY(0);
+  }
+
+  @keyframes dotPulse {
+    0%, 100% { opacity: 1; transform: translateY(-50%) scale(1); }
+    50%      { opacity: 0.45; transform: translateY(-50%) scale(0.75); }
+  }
+
+  .hud {
+    position: fixed;
+    z-index: 10;
+    pointer-events: none;
+    color: var(--ink-dim);
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    font-weight: 400;
+  }
+  .hud.tl { top: 32px; left: 36px; }
+  .hud.tr { top: 32px; right: 36px; text-align: right; pointer-events: auto; }
+  .hud.bl { bottom: 32px; left: 36px; }
+  .hud.br { bottom: 32px; right: 36px; text-align: right; pointer-events: auto; }
+
+  .hud .title {
+    font-family: 'Inter', sans-serif;
+    font-size: 24px;
+    font-weight: 300;
+    font-style: italic;
+    letter-spacing: -0.015em;
+    color: var(--ink);
+    text-transform: none;
+    margin-bottom: 6px;
+    line-height: 1;
+  }
+  .hud .sub {
+    color: var(--ink-dimmer);
+    font-size: 9px;
+    letter-spacing: 0.36em;
+    margin-bottom: 4px;
+    font-weight: 500;
+  }
+  .hud .tag {
+    color: var(--ink-dim);
+    font-size: 9px;
+    letter-spacing: 0.22em;
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+  }
+  .hud .tag span.dim { color: var(--ink-dimmer); }
+  .hud .tag .sep { color: var(--ink-dimmer); margin: 0 6px; }
+
+  .readout {
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 3px 16px;
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 14px;
+    font-weight: 400;
+  }
+  .readout .k { color: var(--ink-dimmer); text-align: right; letter-spacing: 0.22em; font-weight: 500; }
+  .readout .v { color: var(--ink); text-align: right; letter-spacing: 0.08em; }
+
+  .activity-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    align-items: flex-end;
+  }
+  .activity-row {
+    display: grid;
+    grid-template-columns: 92px;
+    gap: 0;
+    align-items: center;
+    font-size: 8px;
+    letter-spacing: 0.24em;
+    text-align: right;
+    font-weight: 500;
+  }
+  .activity-row .label {
+    color: var(--ink-dim);
+    margin-bottom: 2px;
+    transition: color 0.3s;
+  }
+  .activity-row .bar {
+    height: 2px;
+    background: rgba(255, 255, 255, 0.05);
+    position: relative;
+    overflow: hidden;
+    width: 92px;
+  }
+  .activity-row .bar .fill {
+    position: absolute;
+    left: 0; top: 0;
+    height: 100%;
+    background: var(--rc);
+    box-shadow: 0 0 4px var(--rc);
+    transition: width 0.15s linear;
+  }
+  .activity-row.active .label { color: var(--ink); }
+
+  .instructions {
+    font-size: 9px;
+    letter-spacing: 0.22em;
+    color: var(--ink-dimmer);
+    line-height: 1.9;
+    font-weight: 400;
+  }
+  .instructions .key {
+    display: inline-block;
+    color: var(--ink-dim);
+    background: rgba(255, 255, 255, 0.035);
+    border: 1px solid var(--rule);
+    padding: 1px 6px;
+    margin-right: 8px;
+    font-size: 8px;
+    min-width: 44px;
+    text-align: center;
+    font-weight: 500;
+    letter-spacing: 0.2em;
+  }
+
+  .status-line {
+    margin-bottom: 12px;
+    font-size: 9px;
+    letter-spacing: 0.22em;
+    color: var(--ink-dim);
+    font-weight: 400;
+  }
+  .status-dot {
+    display: inline-block;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #7ed396;
+    box-shadow: 0 0 10px #7ed396;
+    margin-right: 10px;
+    animation: dotPulse 1.8s ease-in-out infinite;
+    vertical-align: middle;
+  }
+
+  .back-btn {
+    pointer-events: none;
+    cursor: none;
+    padding: 9px 18px 9px 14px;
+    background: rgba(10, 12, 20, 0.65);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid var(--rule);
+    color: var(--ink-dim);
+    font-family: 'Inter', sans-serif;
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 0.5s, transform 0.5s, color 0.2s, border-color 0.2s;
+  }
+  .back-btn.visible {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+  }
+  .back-btn:hover {
+    color: var(--ink);
+    border-color: rgba(255, 255, 255, 0.22);
+  }
+
+  .cursor {
+    position: fixed;
+    pointer-events: none;
+    z-index: 100;
+    transform: translate(-50%, -50%);
+    mix-blend-mode: difference;
+    top: -100px; left: -100px;
+  }
+  .cursor .ring {
+    width: 22px; height: 22px;
+    border: 1px solid rgba(236, 232, 220, 0.4);
+    border-radius: 50%;
+    transition: width 0.25s ease, height 0.25s ease, border-color 0.25s ease;
+  }
+  .cursor.hot .ring {
+    width: 34px; height: 34px;
+    border-color: rgba(236, 232, 220, 0.9);
+  }
+  .cursor .dot {
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 2px; height: 2px;
+    background: var(--ink);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  .loading {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    z-index: 1000;
+    transition: opacity 1.2s;
+    gap: 18px;
+  }
+  .loading .mark {
+    width: 34px; height: 34px;
+    border: 1px solid var(--ink-dimmer);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 1.4s linear infinite;
+  }
+  .loading .txt {
+    font-family: 'Inter', sans-serif;
+    font-size: 9px;
+    letter-spacing: 0.4em;
+    color: var(--ink-dim);
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .err {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(4, 5, 10, 0.96);
+    padding: 40px;
+  }
+  .err.show { display: flex; }
+  .err .box {
+    max-width: 600px;
+    border: 1px solid rgba(255, 100, 100, 0.3);
+    padding: 28px 32px;
+    font-family: 'Inter', sans-serif;
+    color: var(--ink);
+  }
+  .err h3 {
+    font-weight: 500;
+    font-size: 12px;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: #ff8a8a;
+    margin-bottom: 14px;
+  }
+  .err pre {
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    line-height: 1.6;
+    color: var(--ink-dim);
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-weight: 300;
+  }
+
+  .focus-frame {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 5;
+    opacity: 0;
+    transition: opacity 0.8s;
+  }
+  .focus-frame.active { opacity: 0.6; }
+  .focus-frame::before,
+  .focus-frame::after {
+    content: '';
+    position: absolute;
+    width: 22px; height: 22px;
+    border: 1px solid var(--ink-dimmer);
+  }
+  .focus-frame::before {
+    top: 24px; left: 24px;
+    border-right: none; border-bottom: none;
+  }
+  .focus-frame::after {
+    bottom: 24px; right: 24px;
+    border-left: none; border-top: none;
+  }
+
+  @media (max-width: 800px) {
+    .hud.tl .title { font-size: 18px; }
+    .hud.tr { display: none; }
+    .hud.bl .instructions { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="loading" id="loading">
+  <div class="mark"></div>
+  <div class="txt">Initializing activation field</div>
+</div>
+
+<div class="err" id="err">
+  <div class="box">
+    <h3>Initialization error</h3>
+    <pre id="err-msg"></pre>
+  </div>
+</div>
+
+<canvas id="scene"></canvas>
+<div id="labels"></div>
+
+<div class="focus-frame" id="focus-frame"></div>
+
+<div class="hud tl">
+  <div class="sub">Instance 01 · Live</div>
+  <div class="title">Semantic Activation Field</div>
+  <div class="tag">
+    <span class="dim">iter.</span> 04.02
+    <span class="sep">/</span>
+    10 <span class="dim">fields online</span>
+    <span class="sep">/</span>
+    ambient coherence <span id="coherence">0.47</span>
+  </div>
+</div>
+
+<div class="hud tr">
+  <div class="readout">
+    <span class="k">field</span><span class="v" id="r-field">ambient</span>
+    <span class="k">particles</span><span class="v" id="r-particles">—</span>
+    <span class="k">activity</span><span class="v" id="r-activity">0.00</span>
+    <span class="k">synapses</span><span class="v" id="r-synapses">0</span>
+    <span class="k">uptime</span><span class="v" id="r-time">00:00.00</span>
+  </div>
+  <div class="activity-panel" id="activity-panel"></div>
+</div>
+
+<div class="hud bl">
+  <div class="instructions">
+    <div><span class="key">drag</span> orbit view</div>
+    <div><span class="key">scroll</span> zoom</div>
+    <div><span class="key">click</span> enter region</div>
+    <div><span class="key">esc</span> return to field</div>
+  </div>
+</div>
+
+<div class="hud br">
+  <div class="status-line"><span class="status-dot"></span>system nominal</div>
+  <button class="back-btn" id="back-btn">◂ Return to field</button>
+</div>
+
+<div class="cursor" id="cursor">
+  <div class="ring"></div>
+  <div class="dot"></div>
+</div>
+
+<script>
+  window.addEventListener('error', (e) => showErr((e.message || 'Unknown error') + '\n\n' + (e.error && e.error.stack ? e.error.stack : '')));
+  window.addEventListener('unhandledrejection', (e) => showErr((e.reason && e.reason.message) || String(e.reason)));
+  function showErr(msg) {
+    const panel = document.getElementById('err');
+    const box = document.getElementById('err-msg');
+    if (panel && box) {
+      box.textContent = msg;
+      panel.classList.add('show');
+    }
+    const loading = document.getElementById('loading');
+    if (loading) loading.style.display = 'none';
+  }
+</script>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+const REGIONS = [
+  { name: 'Emotional Core',    code: 'EMO', color: 0xff6b6b, pos: [ 0.0, -0.8,  0.5], size: 4.3, count: 2880,
+    subs: ['Fear', 'Longing', 'Joy', 'Grief', 'Shame'] },
+  { name: 'Memory Center',     code: 'MEM', color: 0x4fd1c5, pos: [-9.8,  2.8,  2.5], size: 3.2, count: 1440,
+    subs: ['Episodic', 'Semantic', 'Somatic', 'Trigger', 'Echo'] },
+  { name: 'Concept Layer',     code: 'CNC', color: 0xf6ad55, pos: [-1.6,  8.2, -2.2], size: 3.0, count: 1320,
+    subs: ['Schema', 'Frame', 'Metaphor', 'Symbol', 'Category'] },
+  { name: 'Narrative Engine',  code: 'NAR', color: 0xb794f4, pos: [ 9.6,  3.5, -1.4], size: 3.3, count: 1500,
+    subs: ['Origin', 'Arc', 'Voice', 'Motif', 'Role'] },
+  { name: 'Conflict Map',      code: 'CFL', color: 0xfc5858, pos: [-7.8, -4.2, -3.8], size: 2.8, count: 1200,
+    subs: ['Contradiction', 'Avoidance', 'Rupture', 'Friction', 'Paradox'] },
+  { name: 'Pattern Detector',  code: 'PAT', color: 0x63b3ed, pos: [-11.2, -0.6, -1.8], size: 2.9, count: 1260,
+    subs: ['Repeat', 'Loop', 'Thread', 'Signal', 'Anomaly'] },
+  { name: 'Attachment Signal', code: 'ATT', color: 0xf687b3, pos: [ 8.6, -3.2,  4.2], size: 3.1, count: 1380,
+    subs: ['Bond', 'Seeking', 'Trust', 'Distance', 'Rupture'] },
+  { name: 'Forecast Engine',   code: 'FOR', color: 0x7fe3a1, pos: [ 5.0,  7.0,  3.5], size: 2.9, count: 1260,
+    subs: ['Scenario', 'Prediction', 'Hope', 'Worry', 'Anticipation'] },
+  { name: 'Identity Field',    code: 'IDN', color: 0xecc94b, pos: [-4.0, -7.2,  4.0], size: 3.1, count: 1380,
+    subs: ['Self', 'Role', 'Mask', 'Core', 'Voice'] },
+  { name: 'Body Signal',       code: 'BOD', color: 0xed8936, pos: [ 3.8, -7.4, -3.2], size: 2.9, count: 1260,
+    subs: ['Tension', 'Breath', 'Warmth', 'Pulse', 'Stillness'] },
+];
+
+const vertexShader = /* glsl */`
+  attribute float size;
+  attribute float phase;
+  attribute vec3 offset;
+  attribute float depth;
+
+  uniform float time;
+  uniform float activity;
+  uniform float focus;
+  uniform vec3 color;
+  uniform float dimness;
+
+  varying vec3 vColor;
+  varying float vAlpha;
+
+  void main() {
+    float f1 = sin(time * 1.7 + phase * 6.2831);
+    float f2 = sin(time * 3.4 + phase * 11.7);
+    float f3 = sin(time * 0.8 + phase * 3.1);
+    float flicker = 0.40 + 0.28 * f1 + 0.14 * f2 + 0.08 * f3;
+    flicker = clamp(flicker, 0.10, 1.15);
+
+    vec3 drift = vec3(
+      sin(time * 0.33 + phase * 6.1),
+      cos(time * 0.27 + phase * 7.8),
+      sin(time * 0.30 + phase * 5.4)
+    ) * offset * 0.45;
+
+    vec3 pos = position + drift;
+
+    vec3 outward = normalize(position + vec3(0.0001));
+    pos += outward * activity * depth * 0.30 * (0.55 + 0.45 * sin(time * 1.9 + phase * 2.0));
+
+    vec4 mv = modelViewMatrix * vec4(pos, 1.0);
+    float sizeMul = (1.0 + activity * 0.45 + focus * 0.20) * flicker;
+    gl_PointSize = size * sizeMul * (360.0 / max(-mv.z, 0.1));
+    gl_Position = projectionMatrix * mv;
+
+    float boost = 0.62 + 0.50 * activity + 0.15 * focus;
+    vColor = color * (0.42 + 0.45 * flicker) * boost * dimness;
+    vAlpha = flicker * (0.45 + activity * 0.45) * dimness;
+  }
+`;
+
+const fragmentShader = /* glsl */`
+  precision highp float;
+  varying vec3 vColor;
+  varying float vAlpha;
+
+  void main() {
+    vec2 uv = gl_PointCoord - 0.5;
+    float d = length(uv);
+    if (d > 0.5) discard;
+    float core = smoothstep(0.5, 0.0, d);
+    float a = pow(core, 1.8);
+    vec3 col = vColor + vColor * pow(core, 7.0) * 0.90;
+    gl_FragColor = vec4(col, a * vAlpha);
+  }
+`;
+
+const PULSE_VS = /* glsl */`
+  uniform float intensity;
+  void main() {
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    gl_PointSize = 9.0 * intensity * (340.0 / max(-mv.z, 0.1));
+    gl_Position = projectionMatrix * mv;
+  }
+`;
+const PULSE_FS = /* glsl */`
+  precision highp float;
+  uniform vec3 color;
+  uniform float intensity;
+  void main() {
+    vec2 uv = gl_PointCoord - 0.5;
+    float d = length(uv);
+    if (d > 0.5) discard;
+    float core = smoothstep(0.5, 0.0, d);
+    float a = pow(core, 1.6);
+    vec3 c = color + vec3(1.0) * pow(core, 8.0) * 0.2;
+    gl_FragColor = vec4(c * intensity, a * intensity);
+  }
+`;
+
+let scene, camera, renderer, labelRenderer, controls, composer, bloomPass;
+let raycaster, pointerNDC;
+const regions = [];
+let centralField, distantField;
+const synapses = [];
+let synapseGroup;
+let hoverRegion = null;
+let focusRegion = null;
+const clock = new THREE.Clock();
+const t0 = performance.now();
+
+const BASE_CAM_POS  = new THREE.Vector3(0, 3.5, 30);
+const BASE_CAM_LOOK = new THREE.Vector3(0, 0, 0);
+
+const cursorEl = document.getElementById('cursor');
+
+try {
+  init();
+  animate();
+} catch (e) {
+  console.error(e);
+  const panel = document.getElementById('err');
+  const box = document.getElementById('err-msg');
+  if (box) box.textContent = (e && e.message ? e.message : String(e)) + '\n\n' + (e && e.stack ? e.stack : '');
+  if (panel) panel.classList.add('show');
+  const loading = document.getElementById('loading');
+  if (loading) loading.style.display = 'none';
+}
+
+function init() {
+  scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x04050a, 0.017);
+
+  camera = new THREE.PerspectiveCamera(52, window.innerWidth / window.innerHeight, 0.1, 220);
+  camera.position.copy(BASE_CAM_POS);
+
+  renderer = new THREE.WebGLRenderer({
+    canvas: document.getElementById('scene'),
+    antialias: true,
+    alpha: false,
+    powerPreference: 'high-performance',
+  });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setClearColor(0x04050a, 1);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 0.96;
+
+  labelRenderer = new CSS2DRenderer();
+  labelRenderer.setSize(window.innerWidth, window.innerHeight);
+  const labelsEl = document.getElementById('labels');
+  labelRenderer.domElement.style.position = 'absolute';
+  labelRenderer.domElement.style.inset = '0';
+  labelRenderer.domElement.style.pointerEvents = 'none';
+  labelsEl.appendChild(labelRenderer.domElement);
+
+  composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  bloomPass = new UnrealBloomPass(
+    new THREE.Vector2(window.innerWidth, window.innerHeight),
+    0.68, 0.75, 0.38
+  );
+  composer.addPass(bloomPass);
+  composer.addPass(new OutputPass());
+
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.055;
+  controls.rotateSpeed = 0.45;
+  controls.zoomSpeed = 0.7;
+  controls.panSpeed = 0.5;
+  controls.minDistance = 7;
+  controls.maxDistance = 80;
+  controls.enablePan = true;
+  controls.autoRotate = true;
+  controls.autoRotateSpeed = 0.14;
+  controls.target.copy(BASE_CAM_LOOK);
+
+  raycaster = new THREE.Raycaster();
+  pointerNDC = new THREE.Vector2();
+
+  createDistantField();
+  createCentralField();
+  REGIONS.forEach((def, i) => regions.push(createRegion(def, i)));
+
+  synapseGroup = new THREE.Group();
+  scene.add(synapseGroup);
+
+  buildActivityPanel();
+
+  window.addEventListener('resize', onResize);
+  window.addEventListener('pointermove', onPointerMove, { passive: true });
+  window.addEventListener('pointerdown', onPointerDown);
+  window.addEventListener('keydown', onKeyDown);
+
+  const backBtn = document.getElementById('back-btn');
+  backBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    clearFocus();
+  });
+  backBtn.addEventListener('mouseenter', () => cursorEl.classList.add('hot'));
+  backBtn.addEventListener('mouseleave', () => cursorEl.classList.remove('hot'));
+
+  const total = REGIONS.reduce((s, r) => s + r.count, 0) + 3200 + 1800;
+  document.getElementById('r-particles').textContent = total.toLocaleString();
+
+  setTimeout(() => {
+    const loading = document.getElementById('loading');
+    if (loading) {
+      loading.style.opacity = '0';
+      setTimeout(() => loading.remove(), 1300);
+    }
+  }, 450);
+}
+
+function createDistantField() {
+  const count = 1800;
+  const positions = new Float32Array(count * 3);
+  const phases = new Float32Array(count);
+  const sizes = new Float32Array(count);
+  const offsets = new Float32Array(count * 3);
+  const depths = new Float32Array(count);
+
+  for (let i = 0; i < count; i++) {
+    const r = 40 + Math.random() * 55;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    positions[i*3]   = r * Math.sin(phi) * Math.cos(theta);
+    positions[i*3+1] = r * Math.sin(phi) * Math.sin(theta);
+    positions[i*3+2] = r * Math.cos(phi);
+    phases[i] = Math.random();
+    sizes[i] = 0.4 + Math.random() * 0.9;
+    depths[i] = 0;
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('phase', new THREE.BufferAttribute(phases, 1));
+  geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+  geo.setAttribute('offset', new THREE.BufferAttribute(offsets, 3));
+  geo.setAttribute('depth', new THREE.BufferAttribute(depths, 1));
+
+  const mat = new THREE.ShaderMaterial({
+    vertexShader, fragmentShader,
+    uniforms: {
+      time: { value: 0 },
+      activity: { value: 0.08 },
+      focus: { value: 0 },
+      color: { value: new THREE.Color(0x9fb3d1) },
+      dimness: { value: 0.7 },
+    },
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+
+  distantField = new THREE.Points(geo, mat);
+  scene.add(distantField);
+}
+
+function createCentralField() {
+  const count = 3200;
+  const positions = new Float32Array(count * 3);
+  const phases = new Float32Array(count);
+  const sizes = new Float32Array(count);
+  const offsets = new Float32Array(count * 3);
+  const depths = new Float32Array(count);
+
+  for (let i = 0; i < count; i++) {
+    const r = Math.pow(Math.random(), 0.55) * 15 + 1.5;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    positions[i*3]   = r * Math.sin(phi) * Math.cos(theta);
+    positions[i*3+1] = r * Math.sin(phi) * Math.sin(theta) * 0.85;
+    positions[i*3+2] = r * Math.cos(phi);
+    phases[i] = Math.random();
+    sizes[i] = 0.55 + Math.random() * 1.15;
+    offsets[i*3]   = (Math.random() - 0.5);
+    offsets[i*3+1] = (Math.random() - 0.5);
+    offsets[i*3+2] = (Math.random() - 0.5);
+    depths[i] = Math.random();
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('phase', new THREE.BufferAttribute(phases, 1));
+  geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+  geo.setAttribute('offset', new THREE.BufferAttribute(offsets, 3));
+  geo.setAttribute('depth', new THREE.BufferAttribute(depths, 1));
+
+  const mat = new THREE.ShaderMaterial({
+    vertexShader, fragmentShader,
+    uniforms: {
+      time: { value: 0 },
+      activity: { value: 0.18 },
+      focus: { value: 0 },
+      color: { value: new THREE.Color(0xb5c4dd) },
+      dimness: { value: 1.0 },
+    },
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+
+  centralField = new THREE.Points(geo, mat);
+  scene.add(centralField);
+}
+
+function createRegion(def, index) {
+  const { name, color, pos, size, count } = def;
+  const group = new THREE.Group();
+  group.position.set(...pos);
+
+  const positions = new Float32Array(count * 3);
+  const phases = new Float32Array(count);
+  const sizes = new Float32Array(count);
+  const offsets = new Float32Array(count * 3);
+  const depths = new Float32Array(count);
+
+  for (let i = 0; i < count; i++) {
+    const u = Math.random();
+    const r = Math.pow(u, 0.42) * size;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    const flatten = 0.82 + Math.random() * 0.3;
+    positions[i*3]   = r * Math.sin(phi) * Math.cos(theta);
+    positions[i*3+1] = r * Math.sin(phi) * Math.sin(theta) * flatten;
+    positions[i*3+2] = r * Math.cos(phi);
+    positions[i*3]   += (Math.random() - 0.5) * 0.35;
+    positions[i*3+1] += (Math.random() - 0.5) * 0.35;
+    positions[i*3+2] += (Math.random() - 0.5) * 0.35;
+    phases[i] = Math.random();
+    sizes[i]  = 0.9 + Math.random() * 2.1;
+    offsets[i*3]   = (Math.random() - 0.5);
+    offsets[i*3+1] = (Math.random() - 0.5);
+    offsets[i*3+2] = (Math.random() - 0.5);
+    depths[i] = r / size;
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('phase', new THREE.BufferAttribute(phases, 1));
+  geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+  geo.setAttribute('offset', new THREE.BufferAttribute(offsets, 3));
+  geo.setAttribute('depth', new THREE.BufferAttribute(depths, 1));
+
+  const mat = new THREE.ShaderMaterial({
+    vertexShader, fragmentShader,
+    uniforms: {
+      time: { value: 0 },
+      activity: { value: 0.25 },
+      focus: { value: 0 },
+      color: { value: new THREE.Color(color) },
+      dimness: { value: 1.0 },
+    },
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+
+  const points = new THREE.Points(geo, mat);
+  group.add(points);
+
+  const hitGeo = new THREE.SphereGeometry(size * 1.2, 12, 10);
+  const hitMat = new THREE.MeshBasicMaterial({ visible: false });
+  const hitMesh = new THREE.Mesh(hitGeo, hitMat);
+  group.add(hitMesh);
+
+  scene.add(group);
+
+  const hex = '#' + new THREE.Color(color).getHexString();
+  const labelEl = document.createElement('div');
+  labelEl.className = 'region-label';
+  labelEl.style.setProperty('--rc', hex);
+  labelEl.innerHTML = `
+    <span>${name}</span>
+    <span class="meta">${def.code} · <span class="act">0.00</span></span>
+  `;
+  const labelObj = new CSS2DObject(labelEl);
+  const labelAngle = (index * 137.5) * Math.PI / 180;
+  const lx = Math.cos(labelAngle) * size * 0.95;
+  const ly = size * 0.95 + Math.abs(Math.sin(labelAngle)) * 0.25;
+  labelObj.position.set(lx, ly, 0);
+  group.add(labelObj);
+
+  const subLabels = def.subs.map((text, i) => {
+    const el = document.createElement('div');
+    el.className = 'sub-label';
+    el.style.setProperty('--rc', hex);
+    el.textContent = text;
+    const obj = new CSS2DObject(el);
+    const a = (i / def.subs.length) * Math.PI * 2 + Math.PI * 0.15;
+    const r = size * 1.55;
+    obj.position.set(
+      Math.cos(a) * r,
+      Math.sin(a) * r * 0.75,
+      (i % 2 === 0 ? 0.5 : -0.5) * size * 0.5
+    );
+    obj.visible = false;
+    group.add(obj);
+    return { el, obj };
+  });
+
+  const region = {
+    def, group, points, material: mat, labelEl, labelObj, subLabels,
+    hitMesh, index,
+    baseActivity: 0.18 + Math.random() * 0.22,
+    activitySeed: Math.random() * 100,
+    targetActivity: 0.25,
+    dimness: 1.0,
+    targetDimness: 1.0,
+  };
+
+  hitMesh.userData.region = region;
+
+  labelEl.addEventListener('mouseenter', () => {
+    hoverRegion = region;
+    cursorEl.classList.add('hot');
+  });
+  labelEl.addEventListener('mouseleave', () => {
+    if (hoverRegion === region) hoverRegion = null;
+    cursorEl.classList.remove('hot');
+  });
+  labelEl.addEventListener('click', (e) => {
+    e.stopPropagation();
+    setFocus(region);
+  });
+
+  return region;
+}
+
+function spawnSynapse() {
+  if (synapses.length > 8) return;
+  if (regions.length < 2) return;
+
+  const weighted = regions.map(r => ({ r, w: Math.max(0.05, r.material.uniforms.activity.value) }));
+
+  function pick() {
+    const total = weighted.reduce((s, x) => s + x.w, 0);
+    let v = Math.random() * total;
+    for (const x of weighted) { v -= x.w; if (v <= 0) return x.r; }
+    return weighted[0].r;
+  }
+
+  const a = pick();
+  let b = pick();
+  let tries = 0;
+  while (b === a && tries++ < 5) b = pick();
+  if (b === a) return;
+
+  const pA = a.group.position.clone();
+  const pB = b.group.position.clone();
+
+  const mid = pA.clone().add(pB).multiplyScalar(0.5).multiplyScalar(0.35);
+  const perp = new THREE.Vector3(
+    Math.random() - 0.5,
+    Math.random() - 0.5,
+    Math.random() - 0.5
+  ).normalize().multiplyScalar(1.8 + Math.random() * 1.5);
+  mid.add(perp);
+
+  const segments = 40;
+  const pts = [];
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    const it = 1 - t;
+    pts.push(new THREE.Vector3(
+      it*it*pA.x + 2*it*t*mid.x + t*t*pB.x,
+      it*it*pA.y + 2*it*t*mid.y + t*t*pB.y,
+      it*it*pA.z + 2*it*t*mid.z + t*t*pB.z,
+    ));
+  }
+
+  const geo = new THREE.BufferGeometry().setFromPoints(pts);
+  const colA = new THREE.Color(a.def.color);
+  const colB = new THREE.Color(b.def.color);
+  const blend = colA.clone().lerp(colB, 0.5);
+  const mat = new THREE.LineBasicMaterial({
+    color: blend,
+    transparent: true,
+    opacity: 0,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const line = new THREE.Line(geo, mat);
+  synapseGroup.add(line);
+
+  const pGeo = new THREE.BufferGeometry();
+  pGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(3), 3));
+  const pMat = new THREE.ShaderMaterial({
+    vertexShader: PULSE_VS,
+    fragmentShader: PULSE_FS,
+    uniforms: {
+      intensity: { value: 0 },
+      color: { value: blend },
+    },
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const pulse = new THREE.Points(pGeo, pMat);
+  synapseGroup.add(pulse);
+
+  synapses.push({
+    line, pulse, pts,
+    life: 0,
+    duration: 1.4 + Math.random() * 1.8,
+    a, b,
+  });
+
+  a.targetActivity = Math.min(0.78, a.targetActivity + 0.12);
+  b.targetActivity = Math.min(0.78, b.targetActivity + 0.12);
+}
+
+function updateSynapses(dt) {
+  for (let i = synapses.length - 1; i >= 0; i--) {
+    const s = synapses[i];
+    s.life += dt;
+    const t = s.life / s.duration;
+    if (t >= 1) {
+      synapseGroup.remove(s.line);
+      synapseGroup.remove(s.pulse);
+      s.line.geometry.dispose();
+      s.line.material.dispose();
+      s.pulse.geometry.dispose();
+      s.pulse.material.dispose();
+      synapses.splice(i, 1);
+      continue;
+    }
+    const fadeIn  = Math.min(1, t * 4.5);
+    const fadeOut = Math.min(1, (1 - t) * 2.8);
+    const k = Math.min(fadeIn, fadeOut);
+    s.line.material.opacity = k * 0.22;
+
+    const pt_t = Math.min(1, t * 1.05);
+    const idx = Math.min(s.pts.length - 1, Math.floor(pt_t * (s.pts.length - 1)));
+    const pos = s.pts[idx];
+    s.pulse.geometry.attributes.position.setXYZ(0, pos.x, pos.y, pos.z);
+    s.pulse.geometry.attributes.position.needsUpdate = true;
+    s.pulse.material.uniforms.intensity.value = k * 0.55;
+  }
+}
+
+function onPointerMove(e) {
+  cursorEl.style.left = e.clientX + 'px';
+  cursorEl.style.top  = e.clientY + 'px';
+
+  pointerNDC.x =  (e.clientX / window.innerWidth ) * 2 - 1;
+  pointerNDC.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+  if (!focusRegion) {
+    raycaster.setFromCamera(pointerNDC, camera);
+    const hits = raycaster.intersectObjects(regions.map(r => r.hitMesh), false);
+    if (hits.length > 0) {
+      const newHover = hits[0].object.userData.region;
+      if (hoverRegion !== newHover) {
+        hoverRegion = newHover;
+        cursorEl.classList.add('hot');
+      }
+    } else {
+      const overLabel = e.target && e.target.closest && e.target.closest('.region-label');
+      if (hoverRegion && !overLabel) {
+        hoverRegion = null;
+        cursorEl.classList.remove('hot');
+      }
+    }
+  }
+}
+
+function onPointerDown(e) {
+  if (e.target.closest && (e.target.closest('.region-label') || e.target.closest('.back-btn'))) return;
+
+  const downX = e.clientX;
+  const downY = e.clientY;
+  const threshold = 5;
+  const onUp = (ue) => {
+    window.removeEventListener('pointerup', onUp);
+    const dx = ue.clientX - downX;
+    const dy = ue.clientY - downY;
+    if (Math.hypot(dx, dy) > threshold) return;
+    if (hoverRegion) {
+      setFocus(hoverRegion);
+    } else if (focusRegion) {
+      clearFocus();
+    }
+  };
+  window.addEventListener('pointerup', onUp);
+}
+
+function onKeyDown(e) {
+  if (e.key === 'Escape' && focusRegion) clearFocus();
+}
+
+function setFocus(region) {
+  if (focusRegion === region) return;
+  focusRegion = region;
+
+  document.getElementById('r-field').textContent = region.def.code.toLowerCase();
+  document.getElementById('back-btn').classList.add('visible');
+  document.getElementById('focus-frame').classList.add('active');
+
+  regions.forEach(r => {
+    if (r === region) {
+      r.labelEl.classList.add('focused');
+      r.labelEl.classList.remove('dimmed');
+      r.targetDimness = 1.0;
+      r.subLabels.forEach((sl, i) => {
+        sl.obj.visible = true;
+        setTimeout(() => sl.el.classList.add('visible'), 420 + i * 90);
+      });
+    } else {
+      r.labelEl.classList.remove('focused');
+      r.labelEl.classList.add('dimmed');
+      r.targetDimness = 0.22;
+    }
+  });
+  centralField.material.uniforms.dimness.value = 0.5;
+  distantField.material.uniforms.dimness.value = 0.35;
+
+  controls.autoRotate = false;
+
+  const regionPos = region.group.position.clone();
+  const fromCenter = regionPos.clone().normalize();
+  const dist = region.def.size * 3.4 + 3.0;
+  const camTarget = regionPos.clone().add(fromCenter.multiplyScalar(dist));
+  camTarget.y += 1.8;
+
+  flyTo(camTarget, regionPos, 1.7);
+}
+
+function clearFocus() {
+  if (!focusRegion) return;
+  focusRegion = null;
+
+  document.getElementById('r-field').textContent = 'ambient';
+  document.getElementById('back-btn').classList.remove('visible');
+  document.getElementById('focus-frame').classList.remove('active');
+
+  regions.forEach(r => {
+    r.labelEl.classList.remove('focused');
+    r.labelEl.classList.remove('dimmed');
+    r.targetDimness = 1.0;
+    r.subLabels.forEach(sl => {
+      sl.el.classList.remove('visible');
+      setTimeout(() => { sl.obj.visible = false; }, 650);
+    });
+  });
+  centralField.material.uniforms.dimness.value = 1.0;
+  distantField.material.uniforms.dimness.value = 0.7;
+
+  controls.autoRotate = true;
+  flyTo(BASE_CAM_POS.clone(), BASE_CAM_LOOK.clone(), 1.6);
+}
+
+function flyTo(targetPos, targetLook, duration) {
+  controls.enabled = false;
+  const wasAutoRotate = controls.autoRotate;
+  controls.autoRotate = false;
+  const startPos = camera.position.clone();
+  const startLook = controls.target.clone();
+  const start = performance.now();
+  function step() {
+    const t = Math.min(1, (performance.now() - start) / (duration * 1000));
+    const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    camera.position.lerpVectors(startPos, targetPos, e);
+    controls.target.lerpVectors(startLook, targetLook, e);
+    camera.lookAt(controls.target);
+    if (t < 1) requestAnimationFrame(step);
+    else {
+      controls.enabled = true;
+      controls.autoRotate = wasAutoRotate;
+      controls.update();
+    }
+  }
+  step();
+}
+
+function onResize() {
+  const w = window.innerWidth, h = window.innerHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+  labelRenderer.setSize(w, h);
+  composer.setSize(w, h);
+  bloomPass.setSize(w, h);
+}
+
+function buildActivityPanel() {
+  const panel = document.getElementById('activity-panel');
+  REGIONS.forEach((def, i) => {
+    const row = document.createElement('div');
+    row.className = 'activity-row';
+    row.style.setProperty('--rc', '#' + new THREE.Color(def.color).getHexString());
+    row.id = 'row-' + i;
+    row.innerHTML = `
+      <div class="label">${def.code} · ${def.name.split(' ')[0]}</div>
+      <div class="bar"><div class="fill" id="bar-${i}" style="width: 20%"></div></div>
+    `;
+    panel.appendChild(row);
+  });
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(0.05, clock.getDelta());
+  const t = clock.elapsedTime;
+
+  centralField.material.uniforms.time.value = t;
+  distantField.material.uniforms.time.value = t;
+
+  centralField.rotation.y = t * 0.01;
+  centralField.rotation.x = Math.sin(t * 0.05) * 0.05;
+
+  let totalActivity = 0;
+  regions.forEach((r, i) => {
+    r.material.uniforms.time.value = t;
+
+    const baseline = r.baseActivity
+      + 0.13 * Math.sin(t * 0.42 + r.activitySeed)
+      + 0.08 * Math.sin(t * 1.6  + r.activitySeed * 2.1)
+      + 0.05 * Math.sin(t * 3.2  + r.activitySeed * 3.7);
+
+    let target = baseline;
+    if (hoverRegion === r)  target = Math.max(target, 0.68);
+    if (focusRegion === r)  target = Math.max(target, 0.92);
+    if (focusRegion && focusRegion !== r) target = Math.min(baseline, 0.20);
+
+    r.targetActivity += (target - r.targetActivity) * 0.06;
+    if (r.targetActivity > 0.80) r.targetActivity = 0.80;
+    r.material.uniforms.activity.value += (r.targetActivity - r.material.uniforms.activity.value) * 0.09;
+    if (r.material.uniforms.activity.value > 0.88) r.material.uniforms.activity.value = 0.88;
+
+    const fTarget = (focusRegion === r) ? 1 : 0;
+    r.material.uniforms.focus.value += (fTarget - r.material.uniforms.focus.value) * 0.05;
+
+    r.dimness += (r.targetDimness - r.dimness) * 0.06;
+    r.material.uniforms.dimness.value = r.dimness;
+
+    r.group.rotation.y += dt * 0.04 * (1 + r.material.uniforms.activity.value * 0.6);
+    r.group.rotation.x = Math.sin(t * 0.3 + i) * 0.07;
+
+    totalActivity += r.material.uniforms.activity.value;
+
+    const actVal = r.material.uniforms.activity.value;
+    const actEl = r.labelEl.querySelector('.act');
+    if (actEl) actEl.textContent = actVal.toFixed(2);
+    const bar = document.getElementById('bar-' + i);
+    if (bar) bar.style.width = Math.min(100, actVal * 100) + '%';
+    const row = document.getElementById('row-' + i);
+    if (row) row.classList.toggle('active', actVal > 0.5);
+  });
+
+  const avg = totalActivity / regions.length;
+  const spawnP = 0.028 + (focusRegion ? 0.012 : 0) + avg * 0.02;
+  if (Math.random() < spawnP) spawnSynapse();
+  updateSynapses(dt);
+
+  // Zoom-out gesture = back: if user pulls camera far from focused region, release focus.
+  if (focusRegion && controls.enabled) {
+    const focusDist = camera.position.distanceTo(controls.target);
+    const releaseAt = focusRegion.def.size * 3.4 + 9.5;
+    if (focusDist > releaseAt) clearFocus();
+  }
+
+  document.getElementById('r-activity').textContent = avg.toFixed(2);
+  document.getElementById('r-synapses').textContent = synapses.length.toString().padStart(2, '0');
+  document.getElementById('coherence').textContent = (0.38 + 0.18 * Math.sin(t * 0.2) + avg * 0.25).toFixed(2);
+  const elapsed = (performance.now() - t0) / 1000;
+  const mm = Math.floor(elapsed / 60).toString().padStart(2, '0');
+  const ss = Math.floor(elapsed % 60).toString().padStart(2, '0');
+  const cc = Math.floor((elapsed * 100) % 100).toString().padStart(2, '0');
+  document.getElementById('r-time').textContent = `${mm}:${ss}.${cc}`;
+
+  controls.update();
+  composer.render();
+  labelRenderer.render(scene, camera);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,1911 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Digital Brain</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  html, body {
+    margin: 0; padding: 0;
+    overflow: hidden;
+    background: #000;
+    width: 100%; height: 100%;
+    cursor: grab;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  body:active { cursor: grabbing; }
+  canvas { display: block; }
+
+  /* ---------- LABEL PILLS (more visible now) ---------- */
+  #labels {
+    position: fixed; inset: 0;
+    pointer-events: none;
+    z-index: 10;
+  }
+  .pill {
+    position: absolute;
+    top: 0; left: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 12px 6px 10px;
+    background: rgba(22, 22, 30, 0.96);
+    -webkit-backdrop-filter: blur(14px) saturate(1.3);
+    backdrop-filter: blur(14px) saturate(1.3);
+    border: 1px solid rgba(255, 255, 255, 0.38);
+    border-radius: 100px;
+    font-family: 'Inter', sans-serif;
+    font-weight: 500;
+    color: #fff;
+    letter-spacing: 0.005em;
+    white-space: nowrap;
+    pointer-events: auto;
+    cursor: pointer;
+    user-select: none;
+    transform-origin: center center;
+    will-change: transform, opacity;
+    transition:
+      opacity 0.45s ease,
+      color 0.35s ease,
+      background 0.35s ease,
+      border-color 0.35s ease;
+    box-shadow:
+      0 6px 22px rgba(0, 0, 0, 0.7),
+      0 0 0 1px rgba(255,255,255,0.04) inset;
+  }
+  .pill.l1 { font-size: 13px; font-weight: 600; padding: 7px 14px 7px 12px; }
+  .pill.l2 { font-size: 11.5px; }
+  .pill.l3 {
+    font-size: 10.5px;
+    padding: 5px 10px 5px 9px;
+    color: rgba(255,255,255,0.95);
+  }
+  .pill .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 0 9px currentColor;
+  }
+  .pill.l2 .dot, .pill.l3 .dot { width: 6px; height: 6px; }
+  .pill:hover {
+    background: rgba(36, 36, 44, 0.98);
+    border-color: rgba(255,255,255,0.55);
+    color: #fff;
+  }
+  .pill.hidden {
+    opacity: 0 !important;
+    pointer-events: none;
+  }
+  .pill.focused { z-index: 5; }
+
+  /* ---------- CARD ---------- */
+  #cards { position: fixed; inset: 0; pointer-events: none; z-index: 60; }
+
+  .card {
+    position: fixed;
+    pointer-events: auto;
+    box-sizing: border-box;
+    color: #fff;
+    font-family: 'Inter', sans-serif;
+    background: rgba(18, 18, 24, 0.88);
+    -webkit-backdrop-filter: blur(14px) saturate(1.2);
+    backdrop-filter: blur(14px) saturate(1.2);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 100px;  /* starts as pill */
+    overflow: hidden;
+    box-shadow:
+      0 4px 16px rgba(0, 0, 0, 0.55),
+      0 0 0 0.5px rgba(255,255,255,0.03) inset;
+    will-change: transform, width, height, border-radius, left, top;
+    transition:
+      left 0.52s cubic-bezier(0.22, 1, 0.36, 1),
+      top 0.52s cubic-bezier(0.22, 1, 0.36, 1),
+      width 0.52s cubic-bezier(0.22, 1, 0.36, 1),
+      height 0.52s cubic-bezier(0.22, 1, 0.36, 1),
+      border-radius 0.52s cubic-bezier(0.22, 1, 0.36, 1),
+      background 0.35s ease,
+      border-color 0.35s ease,
+      box-shadow 0.35s ease;
+  }
+  .card.open {
+    background: rgba(14, 14, 20, 0.94);
+    border-color: rgba(255, 255, 255, 0.14);
+    box-shadow:
+      0 22px 60px rgba(0, 0, 0, 0.6),
+      0 0 0 0.5px rgba(255,255,255,0.04) inset;
+  }
+  .card-inner {
+    /* Wraps the whole card content, clipped by card border-radius */
+    width: 100%;
+  }
+  .card-header {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 14px 7px 12px;
+    white-space: nowrap;
+    transition: padding 0.52s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .card.open .card-header {
+    padding: 18px 16px 10px 18px;
+  }
+  .card-header .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 0 9px currentColor;
+  }
+  .card-title {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.005em;
+    color: rgba(255,255,255,0.98);
+    transition:
+      font-size 0.52s cubic-bezier(0.22, 1, 0.36, 1),
+      letter-spacing 0.52s ease;
+  }
+  .card.open .card-title {
+    font-size: 16px;
+    letter-spacing: 0.003em;
+  }
+  .card-close {
+    margin-left: auto;
+    background: transparent;
+    border: 0;
+    color: rgba(255,255,255,0.55);
+    cursor: pointer;
+    width: 24px; height: 24px;
+    padding: 0;
+    font-size: 20px;
+    line-height: 20px;
+    opacity: 0;
+    transition: opacity 0.28s ease, color 0.2s ease;
+    pointer-events: none;
+  }
+  .card.open .card-close {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .card-close:hover { color: rgba(255,255,255,0.95); }
+
+  .card-body {
+    padding: 2px 20px 20px 20px;
+    opacity: 0;
+    transform: translateY(6px);
+    transition:
+      opacity 0.3s ease 0.18s,
+      transform 0.32s cubic-bezier(0.22, 1, 0.36, 1) 0.18s;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    max-height: calc(100vh - 120px);
+  }
+  .card.open .card-body {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .card-category {
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(255,255,255,0.45);
+    font-weight: 500;
+    margin-bottom: 12px;
+  }
+  .card-insight {
+    font-size: 14px;
+    line-height: 1.55;
+    color: rgba(255,255,255,0.96);
+    font-weight: 400;
+    margin-bottom: 18px;
+  }
+  .card-section { margin-bottom: 14px; }
+  .card-section-label {
+    font-size: 9.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: rgba(255,255,255,0.42);
+    font-weight: 500;
+    margin-bottom: 7px;
+  }
+  .card-section-text {
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: rgba(255,255,255,0.82);
+  }
+  .card-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+  .card-tag {
+    display: inline-block;
+    padding: 3px 9px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 100px;
+    font-size: 10.5px;
+    color: rgba(255,255,255,0.86);
+  }
+  .card-note {
+    margin-top: 4px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    font-size: 11.5px;
+    color: rgba(255,255,255,0.6);
+    font-style: italic;
+    line-height: 1.45;
+  }
+
+  #hint {
+    position: fixed;
+    bottom: 20px; left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255,255,255,0.45);
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: 0.04em;
+    pointer-events: none;
+    z-index: 20;
+    transition: opacity 0.6s ease;
+  }
+  #hint.hidden { opacity: 0; }
+</style>
+</head>
+<body>
+<div id="labels"></div>
+<div id="cards"></div>
+<div id="hint">Click a region to explore · scroll out to return</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  // ============================================================
+  // SEMANTIC CONTENT + CARD DATA
+  // ============================================================
+  const TONE_COLOR = {
+    positive:  '#5EE6A0',
+    neutral:   '#8AB0FF',
+    mixed:     '#C9A4FF',
+    difficult: '#FF9B87'
+  };
+
+  const CATEGORIES = [
+    {
+      name: 'Identity', zone: [-1.00, 0.10, 0], tone: 'neutral',
+      card: {
+        insight: "Identity is a working hypothesis built from what you were told, what you absorbed, and what you've finally decided is yours.",
+        triggers: ['being described', 'big decisions', 'role changes', 'returning home'],
+        origin: 'Built from stories told about you before you could tell your own.',
+        related: ['Memories', 'Patterns', 'Direction'],
+        note: 'You are allowed to update the hypothesis.'
+      },
+      l2: [
+        { n: 'Self-image', t: 'mixed',
+          card: {
+            insight: 'You live mostly in the version of yourself you imagine others are seeing.',
+            triggers: ['mirrors', 'photos', 'meeting new people', 'old friends'],
+            origin: 'A collage built from early feedback and self-observation.',
+            related: ['Shame', 'Pride', 'Perception']
+          },
+          l3: [
+            { n: 'How I see me',      insight: 'The internal portrait, often drawn in harsher light than needed.' },
+            { n: 'How others see me', insight: "A kinder picture, often — if only you'd believe it." },
+            { n: 'The gap',           insight: 'The distance between those two images is where growth happens.' }
+          ]
+        },
+        { n: 'Values', t: 'positive',
+          card: {
+            insight: 'What you actually value shows up in what you refuse to compromise.',
+            triggers: ['decisions', 'disagreements', 'tired days'],
+            origin: 'Earned slowly, often through being disappointed by other options.',
+            related: ['Integrity', 'Purpose', 'Boundaries']
+          },
+          l3: [
+            { n: 'Honesty',  insight: 'Willingness to be boring when lies would be more interesting.' },
+            { n: 'Depth',    insight: 'Preferring meaning over momentum, even when it costs speed.' },
+            { n: 'Freedom',  insight: 'The room to shape your days without constant explanation.' }
+          ]
+        },
+        { n: 'My voice', t: 'mixed',
+          card: {
+            insight: 'Your voice is what remains when you stop editing it for the room.',
+            triggers: ['disagreement', 'being asked your opinion', 'being ignored'],
+            origin: 'Shaped by what was encouraged and what was silenced.',
+            related: ['Assertion', 'Authenticity', 'Creativity']
+          },
+          l3: [
+            { n: 'What I say',       insight: 'The edited version — usually safer than needed.' },
+            { n: 'What I hold back', insight: 'The unsaid is often where the real material is.' },
+            { n: 'Truth',            insight: 'What remains after the performance drops.' }
+          ]
+        },
+        { n: 'Core beliefs', t: 'mixed',
+          card: {
+            insight: "The deepest beliefs don't feel like beliefs — they feel like reality.",
+            triggers: ['contradiction', 'meeting different lives', 'surprise'],
+            origin: 'Inherited or absorbed before you had the tools to examine them.',
+            related: ['Identity', 'Trust', 'Worldview'],
+            note: 'The beliefs you never examine are the ones running most of the show.'
+          },
+          l3: [
+            { n: 'About myself', insight: 'The sentences you think about yourself when you are tired.' },
+            { n: 'About others', insight: "The default expectation of the next person you'll meet." },
+            { n: 'About life',   insight: 'Whether the world, underneath, feels friendly or hostile.' }
+          ]
+        },
+        { n: 'Roles I wear', t: 'neutral',
+          card: {
+            insight: 'Each role asks a different version of you to show up.',
+            triggers: ['switching contexts', 'being formal', 'family gatherings'],
+            origin: 'The costumes you learned to wear without realizing they were costumes.',
+            related: ['Authenticity', 'Masks', 'Performance']
+          },
+          l3: [
+            { n: 'Professional', insight: "A suit cut from real fabric that sometimes forgets it's fabric." },
+            { n: 'Partner',      insight: 'The version of you only one person usually meets.' },
+            { n: 'Friend',       insight: "The easiest role, when it's real." }
+          ]
+        }
+      ]
+    },
+    {
+      name: 'Emotions', zone: [0.10, -0.40, 0], tone: 'mixed',
+      card: {
+        insight: "Each emotion carries information you haven't yet put into words.",
+        triggers: ['change', 'intimacy', 'being witnessed', 'thresholds', 'waiting'],
+        origin: 'Body first, meaning second. The nervous system names things before you do.',
+        related: ['Body awareness', 'Patterns', 'Memories'],
+        note: 'No emotion is the problem. Avoidance of emotion usually is.'
+      },
+      l2: [
+        { n: 'Joy', t: 'positive',
+          card: {
+            insight: 'Joy is easier to receive than to manufacture — the hardest part is letting it stay.',
+            triggers: ['presence', 'being seen well', 'flow states', 'beauty'],
+            origin: 'Moments when nothing was required of you.',
+            related: ['Aliveness', 'Wonder', 'Gratitude']
+          },
+          l3: [
+            { n: 'Laughter', insight: 'The involuntary yes of your whole body.' },
+            { n: 'Flow',     insight: 'When time stops negotiating and just lets you be there.' },
+            { n: 'Wonder',   insight: 'The willingness to be awed without understanding.' }
+          ]
+        },
+        { n: 'Sadness', t: 'difficult',
+          card: {
+            insight: 'Sadness is usually love that has nowhere to go.',
+            triggers: ['goodbyes', 'things ending well', 'seeing beauty pass', 'old memories'],
+            origin: 'The honest response to losing something that mattered.',
+            related: ['Grief', 'Love', 'Tenderness']
+          },
+          l3: [
+            { n: 'Longing',    insight: 'The ache of wanting something you can still name.' },
+            { n: 'Grief',      insight: "The price of love — don't try to get a discount." },
+            { n: 'Melancholy', insight: 'Sadness that has made peace with itself.' }
+          ]
+        },
+        { n: 'Anger', t: 'difficult',
+          card: {
+            insight: "Anger points — follow where it's pointing instead of dismissing it.",
+            triggers: ['injustice', 'being talked over', 'old roles being reassigned'],
+            origin: 'A boundary that was crossed before you had words for it.',
+            related: ['Boundaries', 'Values', 'Voice']
+          },
+          l3: [
+            { n: 'Frustration', insight: "A signal that your effort isn't meeting its match." },
+            { n: 'Injustice',   insight: 'The moral center sending an alert.' },
+            { n: 'Boundaries',  insight: 'Anger as a teacher showing you your no.' }
+          ]
+        },
+        { n: 'Anxiety', t: 'difficult',
+          card: {
+            insight: "Anxiety rehearses futures that aren't going to happen the way it fears.",
+            triggers: ['uncertainty', 'high-stakes conversations', 'being evaluated'],
+            origin: 'A nervous system trained to scan for what could go wrong.',
+            related: ['Control', 'Overthinking', 'Body']
+          },
+          l3: [
+            { n: 'Racing thoughts', insight: 'Mental preparation at the wrong speed.' },
+            { n: 'Tightness',       insight: 'The body keeping a record the mind refuses to.' },
+            { n: 'Worry',           insight: 'Trying to love someone by rehearsing their loss.' }
+          ]
+        },
+        { n: 'Tenderness', t: 'positive',
+          card: {
+            insight: "Tenderness is the opposite of armor — it's what stays soft on purpose.",
+            triggers: ['safety', 'being cared for', 'vulnerability shared'],
+            origin: 'Moments of being held without having to earn it.',
+            related: ['Love', 'Intimacy', 'Safety']
+          },
+          l3: [
+            { n: 'Warmth',     insight: 'Low-grade love, always running in the background.' },
+            { n: 'Compassion', insight: 'Understanding without fixing.' },
+            { n: 'Softness',   insight: 'The advanced skill of not armoring when you could.' }
+          ]
+        }
+      ]
+    },
+    {
+      name: 'Memories', zone: [1.05, 0.05, 0], tone: 'mixed',
+      card: {
+        insight: "Memories aren't stored as files — they're reassembled each time, colored by what you feel today.",
+        triggers: ['returning to a place', 'a song', 'certain smells', 'someone saying your old name'],
+        origin: 'Your earliest formative years and the people who anchored your attention during them.',
+        related: ['Identity', 'Emotions', 'Relationships']
+      },
+      l2: [
+        { n: 'Childhood', t: 'mixed',
+          card: {
+            insight: "The child you were still lives inside your reactions — they surface when you're small again.",
+            triggers: ['childhood smells', 'seeing old photos', 'kids the age you were', 'holidays'],
+            origin: 'Your first years — before language organized the world for you.',
+            related: ['Home', 'Safety', 'First impressions']
+          },
+          l3: [
+            { n: 'Home',         insight: 'Home is less a place than a frequency you learned to recognize.' },
+            { n: 'First friend', insight: 'Early friendships teach you the alphabet of attachment.' },
+            { n: 'Summer',       insight: 'Long empty days became the soundtrack for how play feels.' }
+          ]
+        },
+        { n: 'People who shaped me', t: 'mixed',
+          card: {
+            insight: "A few people are still arguing inside you long after you've left them.",
+            triggers: ['being parented', "advice you didn't ask for", 'praise', 'criticism'],
+            origin: 'The adults whose approval mattered before you learned to author your own.',
+            related: ['Voice', 'Self-image', 'Belonging']
+          },
+          l3: [
+            { n: 'Mother',    insight: 'The first person whose absence you could not tolerate.' },
+            { n: 'Father',    insight: "The first frame for how authority meets tenderness — or doesn't." },
+            { n: 'A teacher', insight: "An outsider's belief in you can quietly rewrite what you believe about yourself." }
+          ]
+        },
+        { n: 'Turning points', t: 'neutral',
+          card: {
+            insight: 'Turning points feel small while you live them — their weight arrives later.',
+            triggers: ['anniversaries', 'thresholds', 'being asked about your path'],
+            origin: 'Decisions that split the timeline into "before" and "after".',
+            related: ['Identity', 'Regret', 'Possibility']
+          },
+          l3: [
+            { n: 'The move',   insight: 'A dislocation that reorganized your sense of where you belong.' },
+            { n: 'The choice', insight: 'A decision that quietly rewired every decision after it.' },
+            { n: 'The loss',   insight: 'The moment the world stopped being guaranteed.' }
+          ]
+        },
+        { n: 'Places', t: 'neutral',
+          card: {
+            insight: 'Places remember you — your body still knows certain streets.',
+            triggers: ['returning', 'a similar light', 'architectural details'],
+            origin: 'Where meaningful time lived; the body stored the spatial map.',
+            related: ['Home', 'Belonging', 'Nostalgia']
+          },
+          l3: [
+            { n: 'Hometown',       insight: 'The map your first self walked — still underlying everything.' },
+            { n: 'A certain room', insight: 'Four walls that held an entire era of your interior life.' },
+            { n: 'Distant cities', insight: 'Places you escaped to, and the person you were there.' }
+          ]
+        }
+      ]
+    },
+    {
+      name: 'Relationships', zone: [-0.55, -0.30, 0], tone: 'mixed',
+      card: {
+        insight: "You don't just relate to people — you relate to who you become around them.",
+        triggers: ['closeness', 'distance', 'being chosen', 'being forgotten'],
+        origin: 'The blueprint your earliest attachments drew; you update it, slowly.',
+        related: ['Emotions', 'Identity', 'Memories']
+      },
+      l2: [
+        { n: 'Family', t: 'mixed',
+          card: {
+            insight: 'Family is the first grammar — you still speak with that accent.',
+            triggers: ['holidays', 'hearing your voice sound like theirs', 'having kids of your own'],
+            origin: 'The earliest relational ecosystem.',
+            related: ['Childhood', 'Inheritance', 'Belonging']
+          },
+          l3: [
+            { n: 'Mother',   insight: 'The relationship that taught you about being wanted and being weighed.' },
+            { n: 'Father',   insight: 'The relationship that taught you about presence and its absences.' },
+            { n: 'Siblings', insight: 'Mirrors forged in the same house.' }
+          ]
+        },
+        { n: 'Partner', t: 'mixed',
+          card: {
+            insight: 'In love you become both your best and your most unresolved self.',
+            triggers: ['closeness', 'conflict', 'life transitions', 'the day-to-day'],
+            origin: 'A mirror that reveals what other relationships missed.',
+            related: ['Intimacy', 'Attachment', 'Growth']
+          },
+          l3: [
+            { n: 'Intimacy',    insight: "Being known before you've had time to edit." },
+            { n: 'Conflict',    insight: 'Two nervous systems in a room, trying to love each other.' },
+            { n: 'Shared life', insight: 'The unglamorous love of dishes and calendars.' }
+          ]
+        },
+        { n: 'Close friends', t: 'positive',
+          card: {
+            insight: 'The friends you choose reveal who you are becoming.',
+            triggers: ['milestones', 'hard times', 'ordinary afternoons'],
+            origin: 'The chosen family you gathered on your own terms.',
+            related: ['Belonging', 'Trust', 'Chosen family']
+          },
+          l3: [
+            { n: 'Chosen family', insight: 'The people who chose you back, without obligation.' },
+            { n: 'Old friends',   insight: 'They remember the person you were when you were still guessing.' },
+            { n: 'Trust',         insight: "The slow currency between two people who've earned each other." }
+          ]
+        },
+        { n: 'Work', t: 'neutral',
+          card: {
+            insight: 'Work relationships test your boundaries without calling it that.',
+            triggers: ['reviews', 'disagreement', 'being under-credited'],
+            origin: 'A place where values and compromise negotiate daily.',
+            related: ['Voice', 'Ambition', 'Boundaries']
+          },
+          l3: [
+            { n: 'Colleagues', insight: 'Adjacent lives sharing the same hours.' },
+            { n: 'Mentor',     insight: 'Someone further down the path who lends you their headlamp.' },
+            { n: 'Boundaries', insight: 'The quiet rules that protect the version of you showing up to work.' }
+          ]
+        }
+      ]
+    },
+    {
+      name: 'Patterns', zone: [0.55, 0.62, 0], tone: 'neutral',
+      card: {
+        insight: 'A pattern is a protection that outlived its usefulness. When two protections argue, you call it an inner conflict.',
+        triggers: ['stakes rising', 'closeness', 'being looked at', 'something going well', 'forks in the road'],
+        origin: 'Strategies built when smaller and alone; kept running on autopilot long after.',
+        related: ['Direction', 'Identity', 'Emotions'],
+        note: 'A pattern is not a flaw. It was a solution. It just stopped fitting.'
+      },
+      l2: [
+        { n: 'Overthinking', t: 'difficult',
+          card: {
+            insight: 'Overthinking is fear wearing a smart outfit.',
+            triggers: ['stakes', 'ambiguity', 'making an impression', 'after mistakes'],
+            origin: 'Trying to control outcomes by analyzing them into safety.',
+            related: ['Anxiety', 'Control', 'Self-doubt']
+          },
+          l3: [
+            { n: 'Second-guessing', insight: 'Undoing decisions in your head after you already made them.' },
+            { n: 'The loop',        insight: "A thought that keeps returning because it hasn't been heard." },
+            { n: 'Analysis',        insight: 'Dissecting a feeling to avoid having it.' }
+          ]
+        },
+        { n: 'Avoidance', t: 'difficult',
+          card: {
+            insight: "Avoidance feels like rest; it's actually a kind of alertness.",
+            triggers: ['difficulty', 'important emails', 'emotional conversations'],
+            origin: 'Learning that waiting sometimes made problems disappear.',
+            related: ['Procrastination', 'Fear', 'Self-sabotage']
+          },
+          l3: [
+            { n: 'Procrastination', insight: 'A dispute with the self, dressed as laziness.' },
+            { n: 'Freezing',        insight: 'A nervous-system response mistaken for indecision.' },
+            { n: 'Delaying',        insight: "Buying time from a future you haven't yet forgiven." }
+          ]
+        },
+        { n: 'People-pleasing', t: 'mixed',
+          card: {
+            insight: "You've confused belonging with not disappointing anyone.",
+            triggers: ['group settings', 'conflict', 'authority', 'being asked'],
+            origin: 'An environment where being agreeable meant being safe.',
+            related: ['Belonging', 'Voice', 'Boundaries']
+          },
+          l3: [
+            { n: 'Saying yes',     insight: 'Protecting connection at the cost of truth.' },
+            { n: 'Smoothing over', insight: "Managing other people's discomfort as a full-time job." },
+            { n: 'Hiding needs',   insight: 'Acting like the cost was free so no one feels bad.' }
+          ]
+        },
+        { n: 'Self-sabotage', t: 'difficult',
+          card: {
+            insight: 'You undermine the version of you that would have to be seen.',
+            triggers: ['things going well', 'being chosen', 'opportunities'],
+            origin: "A belief that success will change the rules of who you're allowed to be.",
+            related: ['Fear of exposure', 'Self-worth', 'Doubt']
+          },
+          l3: [
+            { n: 'Pulling back', insight: 'Creating distance right before contact could become real.' },
+            { n: 'Almost-there', insight: 'Getting close to the finish, then wandering off.' },
+            { n: 'Doubt',        insight: "A familiar voice that's mistaken for wisdom." }
+          ]
+        },
+        { n: 'Inner conflicts', t: 'mixed',
+          card: {
+            insight: "A conflict isn't a failure to choose — it's two honest needs asking the same self for room.",
+            triggers: ['forks in the road', 'success that costs you', 'love that requires growth'],
+            origin: 'The place where old self and new self meet without apology.',
+            related: ['Identity', 'Direction', 'Patterns']
+          },
+          l3: [
+            { n: 'Wants vs. shoulds',  insight: "Desire that won't let you just be good." },
+            { n: 'Safety vs. growth',  insight: 'The familiar cage versus the unfamiliar field.' },
+            { n: 'Old vs. new self',   insight: 'A long renovation where both versions still live in the house.' }
+          ]
+        }
+      ]
+    },
+    {
+      name: 'Direction', zone: [0.00, 0.78, 0], tone: 'mixed',
+      card: {
+        insight: "You're shaped equally by what you reach for and what you flinch from. Direction is the sum of both.",
+        triggers: ['big decisions', 'restlessness', 'exposure', 'opportunities', 'comparisons'],
+        origin: 'The push of what you want and the pull of what you fear; both have been with you a long time.',
+        related: ['Patterns', 'Identity', 'Emotions'],
+        note: 'Aim is rarely a straight line. It is the angle between hope and hesitation.'
+      },
+      l2: [
+        { n: 'Creative pull', t: 'positive',
+          card: {
+            insight: 'Creative desire is the urge to make the thing only you could make.',
+            triggers: ['inspiration', 'boredom', "seeing someone else's work", 'quiet time'],
+            origin: 'A part of you that wants to leave fingerprints.',
+            related: ['Expression', 'Making', 'Courage']
+          },
+          l3: [
+            { n: 'Making',     insight: 'The urge to put hands on matter and leave a mark.' },
+            { n: 'Expressing', insight: 'The internal insisting on becoming external.' },
+            { n: 'A project',  insight: 'A long-term love affair with a question.' }
+          ]
+        },
+        { n: 'Connection', t: 'positive',
+          card: {
+            insight: 'The deepest connection is being known without performance.',
+            triggers: ['meeting someone real', 'long conversations', 'ordinary days together'],
+            origin: 'The universal need to be held in another mind.',
+            related: ['Intimacy', 'Belonging', 'Trust']
+          },
+          l3: [
+            { n: 'Deep bond', insight: 'A few people who will answer the late-night call.' },
+            { n: 'Community', insight: 'Belonging wider than intimacy.' },
+            { n: 'Love',      insight: "The thing that teaches you what you didn't know you could survive." }
+          ]
+        },
+        { n: 'Mastery', t: 'positive',
+          card: {
+            insight: 'Mastery is falling in love with the practice, not the praise.',
+            triggers: ['progress', 'plateaus', 'teachers', 'challenging work'],
+            origin: 'A drive to grow in directions that feel true to you.',
+            related: ['Craft', 'Patience', 'Depth']
+          },
+          l3: [
+            { n: 'Craft',  insight: 'Doing a small thing extremely well.' },
+            { n: 'Impact', insight: 'Leaving the room better than you found it.' },
+            { n: 'Growth', insight: "Becoming, even when it's inconvenient." }
+          ]
+        },
+        { n: 'Fear of rejection', t: 'difficult',
+          card: {
+            insight: 'Fear of rejection makes you reject yourself first, in anticipation.',
+            triggers: ['asking for what you want', 'standing out', 'being chosen or not'],
+            origin: 'Early moments when needing someone was answered with absence.',
+            related: ['Attachment', 'Belonging', 'Self-worth']
+          },
+          l3: [
+            { n: 'Being left',    insight: 'The old fear that you can be walked away from.' },
+            { n: 'Being judged',  insight: 'Imagining the room is voting, silently.' },
+            { n: 'Not mattering', insight: 'The fear that you could vanish and nothing would tilt.' }
+          ]
+        },
+        { n: 'Fear of failure', t: 'difficult',
+          card: {
+            insight: 'Failure threatens identity more than outcome.',
+            triggers: ['visibility', 'attempts', 'comparison'],
+            origin: 'A place where being good became conditional on achieving.',
+            related: ['Perfectionism', 'Self-worth', 'Ambition']
+          },
+          l3: [
+            { n: 'Not enough',     insight: 'A measurement without a clear ruler.' },
+            { n: 'Public failure', insight: "Failure with an audience isn't failure — it's a second fear stacked on." },
+            { n: 'Wasted time',    insight: 'The fear that your years will not add up.' }
+          ]
+        },
+        { n: 'Fear of exposure', t: 'difficult',
+          card: {
+            insight: 'Being seen fully is thrilling and terrifying — often at the same time.',
+            triggers: ['vulnerability', 'being photographed', 'speaking a truth'],
+            origin: 'Moments when being visible meant being hurt or judged.',
+            related: ['Shame', 'Intimacy', 'Trust']
+          },
+          l3: [
+            { n: 'Being seen',    insight: 'The thing you most want, also the thing that most terrifies.' },
+            { n: 'Vulnerability', insight: 'Softness with a spotlight on it.' },
+            { n: 'Being known',   insight: 'Relief and risk in the same breath.' }
+          ]
+        }
+      ]
+    }
+  ];
+
+  // ============================================================
+  // Renderer / Scene / Camera
+  // ============================================================
+  const renderer = new THREE.WebGLRenderer({
+    antialias: true, powerPreference: 'high-performance'
+  });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setClearColor(0x000000, 1);
+  document.body.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(
+    34, window.innerWidth / window.innerHeight, 0.1, 100
+  );
+  camera.position.set(0, 0, 6.2);
+  camera.lookAt(0, 0, 0);
+
+  const LEVELS = {
+    0: { min: 3.0,  max: 14.0, home: 6.2, popThreshold: 999 },
+    1: { min: 2.0,  max: 4.2,  home: 3.1, popThreshold: 4.2 },
+    2: { min: 1.1,  max: 2.6,  home: 1.7, popThreshold: 2.6 }
+  };
+  let cameraZ = 6.2;
+  let targetCameraZ = 6.2;
+
+  // ============================================================
+  // Brain envelope + helpers
+  // ============================================================
+  const brainBlobs = [
+    { cx:  0.00, cy:  0.20, cz: 0, rx: 1.18, ry: 0.72, rz: 1.08, w: 1.0 },
+    { cx: -0.95, cy:  0.15, cz: 0, rx: 0.55, ry: 0.62, rz: 0.92, w: 1.0 },
+    { cx: -0.55, cy:  0.62, cz: 0, rx: 0.50, ry: 0.32, rz: 0.85, w: 0.9 },
+    { cx:  0.00, cy:  0.78, cz: 0, rx: 0.55, ry: 0.25, rz: 0.85, w: 0.9 },
+    { cx:  0.50, cy:  0.65, cz: 0, rx: 0.45, ry: 0.30, rz: 0.85, w: 0.9 },
+    { cx:  1.00, cy:  0.10, cz: 0, rx: 0.50, ry: 0.55, rz: 0.92, w: 1.0 },
+    { cx: -0.55, cy: -0.42, cz: 0, rx: 0.50, ry: 0.40, rz: 0.92, w: 0.95 },
+    { cx:  0.05, cy: -0.50, cz: 0, rx: 0.55, ry: 0.30, rz: 0.82, w: 0.9 },
+    { cx:  0.85, cy: -0.55, cz: 0, rx: 0.42, ry: 0.35, rz: 0.72, w: 1.0 },
+    { cx:  0.60, cy: -0.60, cz: 0, rx: 0.28, ry: 0.25, rz: 0.58, w: 0.9 },
+    { cx:  0.48, cy: -0.85, cz: 0, rx: 0.17, ry: 0.20, rz: 0.22, w: 1.2 },
+    { cx:  0.48, cy: -1.05, cz: 0, rx: 0.13, ry: 0.18, rz: 0.18, w: 1.2 }
+  ];
+  function inBrain(x, y, z) {
+    for (let i=0;i<brainBlobs.length;i++){const b=brainBlobs[i];
+      const dx=(x-b.cx)/b.rx, dy=(y-b.cy)/b.ry, dz=(z-b.cz)/b.rz;
+      if (dx*dx+dy*dy+dz*dz<1) return true;
+    } return false;
+  }
+  function brainDepth(x, y, z) {
+    let d=0; for (let i=0;i<brainBlobs.length;i++){const b=brainBlobs[i];
+      const dx=(x-b.cx)/b.rx, dy=(y-b.cy)/b.ry, dz=(z-b.cz)/b.rz;
+      const r2=dx*dx+dy*dy+dz*dz;
+      if (r2<1) d+=(1-r2)*b.w;
+    } return d;
+  }
+  const colorZones = [
+    { p: [-1.00,  0.10, 0], c: [1.00, 0.45, 0.30] },
+    { p: [-0.55,  0.65, 0], c: [0.78, 0.32, 0.95] },
+    { p: [ 0.00,  0.78, 0], c: [0.32, 0.50, 1.00] },
+    { p: [ 0.55,  0.62, 0], c: [0.32, 0.78, 1.00] },
+    { p: [ 1.05,  0.05, 0], c: [0.32, 0.95, 1.00] },
+    { p: [-0.55, -0.30, 0], c: [1.00, 0.30, 0.55] },
+    { p: [ 0.10, -0.40, 0], c: [0.85, 0.45, 1.00] },
+    { p: [ 0.55, -0.30, 0], c: [1.00, 0.55, 0.30] },
+    { p: [ 0.90, -0.55, 0], c: [0.78, 0.45, 1.00] },
+    { p: [ 0.48, -0.95, 0], c: [1.00, 0.55, 0.30] }
+  ];
+  function colorAt(x, y, z) {
+    let r=0,g=0,b=0,total=0;
+    for (let i=0;i<colorZones.length;i++){const zn=colorZones[i];
+      const dx=x-zn.p[0], dy=y-zn.p[1], dz=z-zn.p[2];
+      const d2=dx*dx+dy*dy+dz*dz;
+      const w=1.0/(d2*d2+0.02);
+      r+=zn.c[0]*w; g+=zn.c[1]*w; b+=zn.c[2]*w; total+=w;
+    }
+    return [r/total, g/total, b/total];
+  }
+
+  // ============================================================
+  // Sample particles
+  // ============================================================
+  const TARGET = 7500;
+  const positions = [], cols = [], sizes = [], seeds = [];
+  let attempts = 0;
+  while (positions.length < TARGET && attempts < TARGET * 80) {
+    attempts++;
+    const x = (Math.random()*2-1) * 1.7;
+    const y = (Math.random()*2-1) * 1.4;
+    const z = (Math.random()*2-1) * 1.35;
+    if (!inBrain(x, y, z)) continue;
+    positions.push([x, y, z]);
+    const c = colorAt(x, y, z);
+    const j = 0.85 + Math.random() * 0.3;
+    cols.push([Math.min(1,c[0]*j), Math.min(1,c[1]*j), Math.min(1,c[2]*j)]);
+    sizes.push(0.022 + Math.random() * 0.026);
+    seeds.push(Math.random() * 1000);
+  }
+  const N = positions.length;
+
+  // ============================================================
+  // Pick 32 hubs
+  // ============================================================
+  const NUM_HUBS = 32;
+  const allDepths = positions.map(p => brainDepth(p[0], p[1], p[2]));
+  const sortedByDepth = allDepths.map((d, i) => ({ d, i })).sort((a,b) => b.d - a.d);
+  const hubIdx = [];
+  const minHubDist2 = 0.34 * 0.34;
+  for (const o of sortedByDepth) {
+    if (hubIdx.length >= NUM_HUBS) break;
+    const p = positions[o.i];
+    let ok = true;
+    for (const hi of hubIdx) {
+      const q = positions[hi];
+      const dx=p[0]-q[0], dy=p[1]-q[1], dz=p[2]-q[2];
+      if (dx*dx+dy*dy+dz*dz < minHubDist2) { ok = false; break; }
+    }
+    if (ok) hubIdx.push(o.i);
+  }
+  const HUB_COUNT = hubIdx.length;
+  const isHub = new Uint8Array(N);
+  const hubSlot = new Int16Array(N).fill(-1);
+  for (let h=0; h<HUB_COUNT; h++) {
+    isHub[hubIdx[h]] = 1;
+    hubSlot[hubIdx[h]] = h;
+    sizes[hubIdx[h]] = 0.14 + Math.random() * 0.05;
+    cols[hubIdx[h]] = [
+      Math.min(1, cols[hubIdx[h]][0]*1.4 + 0.18),
+      Math.min(1, cols[hubIdx[h]][1]*1.4 + 0.18),
+      Math.min(1, cols[hubIdx[h]][2]*1.4 + 0.18)
+    ];
+  }
+
+  // ============================================================
+  // Cluster assignment
+  // ============================================================
+  const clusterId   = new Float32Array(N);
+  const clusterCore = new Float32Array(N);
+  const INNER_R = 0.20, OUTER_R = 0.40;
+  for (let i=0; i<N; i++) {
+    if (isHub[i]) { clusterId[i]=hubSlot[i]; clusterCore[i]=2; continue; }
+    let nearH=-1, nearD2=Infinity;
+    const px=positions[i][0], py=positions[i][1], pz=positions[i][2];
+    for (let h=0; h<HUB_COUNT; h++) {
+      const hp=positions[hubIdx[h]];
+      const dx=px-hp[0], dy=py-hp[1], dz=pz-hp[2];
+      const d2=dx*dx+dy*dy+dz*dz;
+      if (d2<nearD2){nearD2=d2;nearH=h;}
+    }
+    const d=Math.sqrt(nearD2);
+    if (d < OUTER_R) {
+      clusterId[i]=nearH; clusterCore[i]=1;
+      if (d<INNER_R) {
+        sizes[i] *= 1.55;
+        cols[i]=[Math.min(1,cols[i][0]*1.2+0.05), Math.min(1,cols[i][1]*1.2+0.05), Math.min(1,cols[i][2]*1.2+0.05)];
+      } else {
+        sizes[i] *= 1.12;
+        cols[i]=[Math.min(1,cols[i][0]*1.06), Math.min(1,cols[i][1]*1.06), Math.min(1,cols[i][2]*1.06)];
+      }
+    } else {
+      clusterId[i]=-1; clusterCore[i]=0;
+      sizes[i] *= 0.82;
+      cols[i]=[cols[i][0]*0.74, cols[i][1]*0.74, cols[i][2]*0.74];
+    }
+  }
+
+  // ============================================================
+  // Assign categories to hubs
+  // ============================================================
+  const usedHubs = new Set();
+  const principals = CATEGORIES.map((cat, ci) => {
+    let bestH = -1, bestD = Infinity;
+    for (let h=0; h<HUB_COUNT; h++) {
+      if (usedHubs.has(h)) continue;
+      const p = positions[hubIdx[h]];
+      const dx=p[0]-cat.zone[0], dy=p[1]-cat.zone[1], dz=p[2]-cat.zone[2];
+      const d=dx*dx+dy*dy+dz*dz;
+      if (d<bestD) { bestD=d; bestH=h; }
+    }
+    usedHubs.add(bestH);
+    return { categoryIndex: ci, hubSlot: bestH, particleIndex: hubIdx[bestH], l2List: [] };
+  });
+
+  // Visually boost principal hubs — larger in the 6-region version
+  // so the pillars read as load-bearing.
+  const PRINCIPAL_SIZE = 0.30;
+  const isPrincipal = new Uint8Array(N);
+  for (const pr of principals) {
+    isPrincipal[pr.particleIndex] = 1;
+    sizes[pr.particleIndex] = PRINCIPAL_SIZE + Math.random() * 0.03;
+    const c = cols[pr.particleIndex];
+    cols[pr.particleIndex] = [
+      Math.min(1, c[0]*1.15 + 0.08),
+      Math.min(1, c[1]*1.15 + 0.08),
+      Math.min(1, c[2]*1.15 + 0.08)
+    ];
+  }
+
+  // L2: remaining hubs assigned to nearest principal
+  const promoted = new Set();
+  for (let h=0; h<HUB_COUNT; h++) {
+    if (usedHubs.has(h)) continue;
+    const p = positions[hubIdx[h]];
+    let bestPi=-1, bestD=Infinity;
+    for (let pi=0; pi<principals.length; pi++) {
+      const pp = positions[principals[pi].particleIndex];
+      const dx=p[0]-pp[0], dy=p[1]-pp[1], dz=p[2]-pp[2];
+      const d=dx*dx+dy*dy+dz*dz;
+      if (d<bestD){bestD=d; bestPi=pi;}
+    }
+    const principal = principals[bestPi];
+    const cat = CATEGORIES[principal.categoryIndex];
+    if (principal.l2List.length < cat.l2.length) {
+      const l2DefIdx = principal.l2List.length;
+      principal.l2List.push({ particleIndex: hubIdx[h], defIdx: l2DefIdx, l3List: [] });
+    }
+  }
+
+  // Fill any remaining L2 slots by promoting cluster particles
+  for (let pi=0; pi<principals.length; pi++) {
+    const principal = principals[pi];
+    const cat = CATEGORIES[principal.categoryIndex];
+    const need = cat.l2.length - principal.l2List.length;
+    if (need <= 0) continue;
+    const pp = positions[principal.particleIndex];
+    const cands = [];
+    for (let i=0; i<N; i++) {
+      if (isHub[i]) continue;
+      if (promoted.has(i)) continue;
+      if (clusterId[i] !== principal.hubSlot) continue;
+      if (clusterCore[i] < 1) continue;
+      const dx=positions[i][0]-pp[0], dy=positions[i][1]-pp[1], dz=positions[i][2]-pp[2];
+      cands.push({ i, d: dx*dx+dy*dy+dz*dz });
+    }
+    cands.sort((a,b) => a.d - b.d);
+    const filtered = cands.filter(c => c.d > 0.015);
+    const pool = filtered.length >= need ? filtered : cands;
+    for (let k=0; k<need && k<pool.length; k++) {
+      const pIdx = pool[k].i;
+      promoted.add(pIdx);
+      sizes[pIdx] = 0.09 + Math.random() * 0.025;
+      const c = cols[pIdx];
+      cols[pIdx] = [
+        Math.min(1, c[0]*1.15 + 0.04),
+        Math.min(1, c[1]*1.15 + 0.04),
+        Math.min(1, c[2]*1.15 + 0.04)
+      ];
+      const l2DefIdx = principal.l2List.length;
+      principal.l2List.push({ particleIndex: pIdx, defIdx: l2DefIdx, l3List: [] });
+    }
+  }
+
+  // L3: for each L2, assign nearest inner-ring cluster particles
+  const l3Used = new Set();
+  for (let pi=0; pi<principals.length; pi++) {
+    const principal = principals[pi];
+    const cat = CATEGORIES[principal.categoryIndex];
+    for (let li=0; li<principal.l2List.length; li++) {
+      const l2 = principal.l2List[li];
+      const l2Def = cat.l2[l2.defIdx];
+      const need = l2Def.l3 ? l2Def.l3.length : 0;
+      if (need === 0) continue;
+      const lp = positions[l2.particleIndex];
+      const cands = [];
+      for (let i=0; i<N; i++) {
+        if (isHub[i]) continue;
+        if (promoted.has(i)) continue;
+        if (l3Used.has(i)) continue;
+        if (clusterCore[i] < 1) continue;
+        const dx=positions[i][0]-lp[0], dy=positions[i][1]-lp[1], dz=positions[i][2]-lp[2];
+        const d=dx*dx+dy*dy+dz*dz;
+        if (d > 0.14) continue;
+        cands.push({ i, d });
+      }
+      cands.sort((a,b) => a.d - b.d);
+      for (let k=0; k<need && k<cands.length; k++) {
+        const pIdx = cands[k].i;
+        l3Used.add(pIdx);
+        sizes[pIdx] *= 1.25;
+        l2.l3List.push({ particleIndex: pIdx, defIdx: k });
+      }
+    }
+  }
+
+  // ============================================================
+  // Particle geometry + shader (unchanged from last version)
+  // ============================================================
+  const posArr = new Float32Array(N * 3);
+  const colArr = new Float32Array(N * 3);
+  const sizeArr = new Float32Array(N);
+  const seedArr = new Float32Array(N);
+  const clusterArr = new Float32Array(N);
+  const coreArr = new Float32Array(N);
+  for (let i=0; i<N; i++) {
+    posArr[i*3]=positions[i][0]; posArr[i*3+1]=positions[i][1]; posArr[i*3+2]=positions[i][2];
+    colArr[i*3]=cols[i][0]; colArr[i*3+1]=cols[i][1]; colArr[i*3+2]=cols[i][2];
+    sizeArr[i]=sizes[i]; seedArr[i]=seeds[i];
+    clusterArr[i]=clusterId[i]; coreArr[i]=clusterCore[i];
+  }
+  const ptGeo = new THREE.BufferGeometry();
+  ptGeo.setAttribute('position',     new THREE.BufferAttribute(posArr, 3));
+  ptGeo.setAttribute('aColor',       new THREE.BufferAttribute(colArr, 3));
+  ptGeo.setAttribute('aSize',        new THREE.BufferAttribute(sizeArr, 1));
+  ptGeo.setAttribute('aSeed',        new THREE.BufferAttribute(seedArr, 1));
+  ptGeo.setAttribute('aClusterId',   new THREE.BufferAttribute(clusterArr, 1));
+  ptGeo.setAttribute('aClusterCore', new THREE.BufferAttribute(coreArr, 1));
+
+  function makeParticleTex() {
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const ctx = c.getContext('2d');
+    const g = ctx.createRadialGradient(64,64,0, 64,64,64);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.10, 'rgba(255,255,255,0.95)');
+    g.addColorStop(0.25, 'rgba(255,255,255,0.55)');
+    g.addColorStop(0.50, 'rgba(255,255,255,0.18)');
+    g.addColorStop(0.80, 'rgba(255,255,255,0.04)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g; ctx.fillRect(0,0,128,128);
+    return new THREE.CanvasTexture(c);
+  }
+  const partTex = makeParticleTex();
+
+  const breathingGLSL = `
+    vec3 breathingDisp(vec3 p, float seed, float t) {
+      float r1 = fract(seed * 0.1379);
+      float r2 = fract(seed * 0.2417);
+      float r3 = fract(seed * 0.3891);
+      float rA = fract(seed * 0.5171);
+      float f1 = 0.30 + 0.22 * r1;
+      float f2 = 0.36 + 0.22 * r2;
+      float f3 = 0.26 + 0.22 * r3;
+      float amp = 0.022 + 0.030 * rA;
+      vec3 disp = vec3(
+        sin(t * f1 + seed * 1.00),
+        sin(t * f2 + seed * 1.31),
+        sin(t * f3 + seed * 0.71)
+      ) * amp;
+      return p + disp;
+    }
+  `;
+  function fract(x){return x - Math.floor(x);}
+  const _brOut = {x:0,y:0,z:0};
+  function jsBreathing(seed, t) {
+    const r1=fract(seed*0.1379), r2=fract(seed*0.2417), r3=fract(seed*0.3891), rA=fract(seed*0.5171);
+    const f1=0.30+0.22*r1, f2=0.36+0.22*r2, f3=0.26+0.22*r3;
+    const amp=0.022+0.030*rA;
+    _brOut.x=Math.sin(t*f1+seed*1.00)*amp;
+    _brOut.y=Math.sin(t*f2+seed*1.31)*amp;
+    _brOut.z=Math.sin(t*f3+seed*0.71)*amp;
+    return _brOut;
+  }
+
+  const ptMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uMap: { value: partTex },
+      uPxR: { value: renderer.getPixelRatio() },
+      uTime: { value: 0 },
+      uHoverCluster: { value: -1.0 },
+      uHoverStrength: { value: 0.0 },
+      uFocusCluster: { value: -1.0 },
+      uFocusStrength: { value: 0.0 }
+    },
+    vertexShader: `
+      attribute vec3 aColor;
+      attribute float aSize, aSeed, aClusterId, aClusterCore;
+      varying vec3 vColor;
+      uniform float uPxR, uTime, uHoverCluster, uHoverStrength, uFocusCluster, uFocusStrength;
+      ${breathingGLSL}
+      void main() {
+        float bgPulse = 0.92 + 0.08 * sin(uTime * 1.4 + aSeed);
+        float cPhase = aClusterId * 2.3994;
+        float cBeat = 0.50 + 0.50 * sin(uTime * 0.55 + cPhase);
+        float cEnv  = 0.50 + 0.50 * sin(uTime * 0.17 + cPhase * 0.41 + 1.7);
+        float clusterAct = 0.70 + 0.18 * cBeat + 0.12 * cEnv;
+        float isCluster = step(0.5, aClusterCore);
+        float pulse = mix(bgPulse, clusterAct, isCluster);
+        float hoverMatch = 1.0 - step(0.5, abs(aClusterId - uHoverCluster));
+        float hover = uHoverStrength * hoverMatch * isCluster;
+        float hoverBoost = 1.0 + 0.55 * hover;
+        float focusMatch = 1.0 - step(0.5, abs(aClusterId - uFocusCluster));
+        float focusedBoost = 1.0 + 0.35 * uFocusStrength * focusMatch * isCluster;
+        float dimOther = 1.0 - 0.62 * uFocusStrength * (1.0 - focusMatch);
+        vColor = aColor * pulse * hoverBoost * focusedBoost * dimOther;
+        vec3 breathed = breathingDisp(position, aSeed, uTime);
+        vec4 mv = modelViewMatrix * vec4(breathed, 1.0);
+        float sizeMult = 0.94 + 0.10 * pulse + 0.18 * hover;
+        gl_PointSize = aSize * 920.0 * uPxR * sizeMult / -mv.z;
+        gl_Position = projectionMatrix * mv;
+      }
+    `,
+    fragmentShader: `
+      uniform sampler2D uMap; varying vec3 vColor;
+      void main() {
+        vec4 t = texture2D(uMap, gl_PointCoord);
+        if (t.a < 0.005) discard;
+        gl_FragColor = vec4(vColor, 1.0) * t;
+      }
+    `,
+    transparent: true, blending: THREE.AdditiveBlending,
+    depthWrite: false, depthTest: false
+  });
+  const points = new THREE.Points(ptGeo, ptMat);
+
+  // Hub halos
+  const HN = HUB_COUNT;
+  const hPos = new Float32Array(HN*3), hCol = new Float32Array(HN*3),
+        hSz = new Float32Array(HN), hSeed = new Float32Array(HN),
+        hCluster = new Float32Array(HN), hCore = new Float32Array(HN);
+  for (let i=0; i<HN; i++) {
+    const idx = hubIdx[i];
+    const principal = isPrincipal[idx]===1;
+    hPos[i*3]=positions[idx][0]; hPos[i*3+1]=positions[idx][1]; hPos[i*3+2]=positions[idx][2];
+    const haloBright = principal ? 0.65 : 0.45;
+    hCol[i*3]=cols[idx][0]*haloBright; hCol[i*3+1]=cols[idx][1]*haloBright; hCol[i*3+2]=cols[idx][2]*haloBright;
+    hSz[i]=(principal?1.20:0.55) + Math.random()*0.30;
+    hSeed[i]=seeds[idx]; hCluster[i]=i; hCore[i]=2;
+  }
+  const hGeo = new THREE.BufferGeometry();
+  hGeo.setAttribute('position', new THREE.BufferAttribute(hPos, 3));
+  hGeo.setAttribute('aColor', new THREE.BufferAttribute(hCol, 3));
+  hGeo.setAttribute('aSize', new THREE.BufferAttribute(hSz, 1));
+  hGeo.setAttribute('aSeed', new THREE.BufferAttribute(hSeed, 1));
+  hGeo.setAttribute('aClusterId', new THREE.BufferAttribute(hCluster, 1));
+  hGeo.setAttribute('aClusterCore', new THREE.BufferAttribute(hCore, 1));
+  const hubGlow = new THREE.Points(hGeo, ptMat);
+
+  // Lines
+  const cellSize = 0.15;
+  const grid = new Map();
+  function cellKey(x,y,z){return Math.floor(x/cellSize)+'|'+Math.floor(y/cellSize)+'|'+Math.floor(z/cellSize);}
+  for (let i=0;i<N;i++){const k=cellKey(positions[i][0],positions[i][1],positions[i][2]);
+    let arr=grid.get(k); if(!arr){arr=[];grid.set(k,arr);} arr.push(i);}
+  function neighbors(x,y,z,range){
+    const r=Math.ceil(range/cellSize);
+    const ix=Math.floor(x/cellSize), iy=Math.floor(y/cellSize), iz=Math.floor(z/cellSize);
+    const out=[];
+    for (let dx=-r;dx<=r;dx++) for (let dy=-r;dy<=r;dy++) for (let dz=-r;dz<=r;dz++){
+      const k=(ix+dx)+'|'+(iy+dy)+'|'+(iz+dz);
+      const arr=grid.get(k);
+      if (arr) for (let j=0;j<arr.length;j++) out.push(arr[j]);
+    } return out;
+  }
+  const lineV=[], lineC=[], lineCl=[], lineCo=[], lineSd=[];
+  const seen=new Set();
+  for (let i=0;i<N;i++){
+    const p1=positions[i];
+    const isH=isHub[i]===1;
+    const range=isH?0.42:0.165; const maxConn=isH?24:4;
+    const cands=neighbors(p1[0],p1[1],p1[2],range);
+    const dists=[];
+    for (let k=0;k<cands.length;k++){
+      const j=cands[k]; if (j===i) continue;
+      const p2=positions[j];
+      const dx=p1[0]-p2[0], dy=p1[1]-p2[1], dz=p1[2]-p2[2];
+      const d=Math.sqrt(dx*dx+dy*dy+dz*dz);
+      if (d<range) dists.push({j,d});
+    }
+    dists.sort((a,b)=>a.d-b.d);
+    const n=Math.min(dists.length, maxConn);
+    for (let k=0;k<n;k++){
+      const j=dists[k].j;
+      const ek=i<j?(i+','+j):(j+','+i);
+      if (seen.has(ek)) continue;
+      seen.add(ek);
+      const p2=positions[j];
+      const dr=dists[k].d/range;
+      let opa;
+      if (isH || isHub[j]===1) opa = 0.60*(1-dr*dr);
+      else if (clusterCore[i]>0 && clusterCore[j]>0 && clusterId[i]===clusterId[j]) opa = 0.45*(1-dr);
+      else if (clusterCore[i]>0 || clusterCore[j]>0) opa = 0.22*(1-dr);
+      else opa = 0.14*(1-dr);
+      const c1=cols[i], c2=cols[j];
+      lineV.push(p1[0],p1[1],p1[2], p2[0],p2[1],p2[2]);
+      lineC.push(c1[0]*opa,c1[1]*opa,c1[2]*opa, c2[0]*opa,c2[1]*opa,c2[2]*opa);
+      lineCl.push(clusterId[i], clusterId[j]);
+      lineCo.push(clusterCore[i], clusterCore[j]);
+      lineSd.push(seeds[i], seeds[j]);
+    }
+  }
+  const lineGeo = new THREE.BufferGeometry();
+  lineGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(lineV), 3));
+  lineGeo.setAttribute('aColor', new THREE.BufferAttribute(new Float32Array(lineC), 3));
+  lineGeo.setAttribute('aClusterId', new THREE.BufferAttribute(new Float32Array(lineCl), 1));
+  lineGeo.setAttribute('aClusterCore', new THREE.BufferAttribute(new Float32Array(lineCo), 1));
+  lineGeo.setAttribute('aSeed', new THREE.BufferAttribute(new Float32Array(lineSd), 1));
+
+  const lineMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uHoverCluster: { value: -1.0 }, uHoverStrength: { value: 0.0 },
+      uFocusCluster: { value: -1.0 }, uFocusStrength: { value: 0.0 }
+    },
+    vertexShader: `
+      attribute vec3 aColor;
+      attribute float aClusterId, aClusterCore, aSeed;
+      varying vec3 vColor;
+      uniform float uTime, uHoverCluster, uHoverStrength, uFocusCluster, uFocusStrength;
+      ${breathingGLSL}
+      void main() {
+        float cPhase = aClusterId * 2.3994;
+        float cBeat = 0.50 + 0.50 * sin(uTime * 0.55 + cPhase);
+        float cEnv  = 0.50 + 0.50 * sin(uTime * 0.17 + cPhase * 0.41 + 1.7);
+        float clusterAct = 0.78 + 0.14 * cBeat + 0.08 * cEnv;
+        float isCluster = step(0.5, aClusterCore);
+        float pulse = mix(0.95, clusterAct, isCluster);
+        float hoverMatch = 1.0 - step(0.5, abs(aClusterId - uHoverCluster));
+        float hover = uHoverStrength * hoverMatch * isCluster;
+        float hoverBoost = 1.0 + 0.70 * hover;
+        float focusMatch = 1.0 - step(0.5, abs(aClusterId - uFocusCluster));
+        float focusedBoost = 1.0 + 0.40 * uFocusStrength * focusMatch * isCluster;
+        float dimOther = 1.0 - 0.72 * uFocusStrength * (1.0 - focusMatch);
+        vColor = aColor * pulse * hoverBoost * focusedBoost * dimOther;
+        vec3 breathed = breathingDisp(position, aSeed, uTime);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(breathed, 1.0);
+      }
+    `,
+    fragmentShader: `varying vec3 vColor; void main(){gl_FragColor=vec4(vColor,1.0);}`,
+    transparent: true, blending: THREE.AdditiveBlending,
+    depthWrite: false, depthTest: false
+  });
+  const lines = new THREE.LineSegments(lineGeo, lineMat);
+
+  const root = new THREE.Group();
+  root.add(lines); root.add(hubGlow); root.add(points);
+  scene.add(root);
+
+  // ============================================================
+  // LABEL PILLS
+  // ============================================================
+  const labelsEl = document.getElementById('labels');
+  const hintEl = document.getElementById('hint');
+  const cardsEl = document.getElementById('cards');
+
+  const labelNodes = [];
+
+  function makePill(level, text, tone) {
+    const el = document.createElement('div');
+    el.className = 'pill ' + level;
+    const dot = document.createElement('span');
+    dot.className = 'dot';
+    dot.style.background = TONE_COLOR[tone];
+    dot.style.color = TONE_COLOR[tone];
+    el.appendChild(dot);
+    const txt = document.createElement('span');
+    txt.textContent = text;
+    el.appendChild(txt);
+    labelsEl.appendChild(el);
+    return el;
+  }
+
+  for (let pi=0; pi<principals.length; pi++) {
+    const principal = principals[pi];
+    const cat = CATEGORIES[principal.categoryIndex];
+    const el = makePill('l1', cat.name, cat.tone);
+    const node = {
+      level: 'l1', el,
+      text: cat.name, tone: cat.tone,
+      particleIndex: principal.particleIndex,
+      seed: seeds[principal.particleIndex],
+      principalIdx: pi,
+      screenX: 0, screenY: 0, opacity: 0, scale: 1
+    };
+    labelNodes.push(node);
+    principal._l1Node = node;
+
+    el.addEventListener('click', e => { e.stopPropagation(); handlePillClick(node); });
+    el.addEventListener('pointerenter', () => setHoverPrincipal(pi));
+    el.addEventListener('pointerleave', () => setHoverPrincipal(-1));
+
+    for (let li=0; li<principal.l2List.length; li++) {
+      const l2 = principal.l2List[li];
+      const l2Def = cat.l2[l2.defIdx];
+      const el2 = makePill('l2', l2Def.n, l2Def.t);
+      const n2 = {
+        level: 'l2', el: el2,
+        text: l2Def.n, tone: l2Def.t,
+        particleIndex: l2.particleIndex,
+        seed: seeds[l2.particleIndex],
+        principalIdx: pi, l2Idx: li,
+        screenX: 0, screenY: 0, opacity: 0, scale: 1
+      };
+      labelNodes.push(n2);
+      l2._l2Node = n2;
+      el2.addEventListener('click', e => { e.stopPropagation(); handlePillClick(n2); });
+      el2.addEventListener('pointerenter', () => setHoverPrincipal(pi));
+      el2.addEventListener('pointerleave', () => setHoverPrincipal(-1));
+
+      for (let l3i=0; l3i<l2.l3List.length; l3i++) {
+        const l3 = l2.l3List[l3i];
+        const l3Def = l2Def.l3[l3.defIdx];
+        if (!l3Def) continue;
+        const el3 = makePill('l3', l3Def.n, l2Def.t);
+        const n3 = {
+          level: 'l3', el: el3,
+          text: l3Def.n, tone: l2Def.t,
+          particleIndex: l3.particleIndex,
+          seed: seeds[l3.particleIndex],
+          principalIdx: pi, l2Idx: li, l3Idx: l3i,
+          screenX: 0, screenY: 0, opacity: 0, scale: 1
+        };
+        labelNodes.push(n3);
+        l3._l3Node = n3;
+        el3.addEventListener('click', e => { e.stopPropagation(); handlePillClick(n3); });
+      }
+    }
+  }
+
+  // ============================================================
+  // FOCUS STATE
+  // ============================================================
+  let focus = { level: 0 };
+  let hoveredPrincipal = -1;
+  let interacted = false;
+
+  let focalTargetX=0, focalTargetY=0, focalTargetZ=0;
+  let focalCurrentX=0, focalCurrentY=0, focalCurrentZ=0;
+
+  function setFocus(newFocus) {
+    focus = newFocus;
+    if (focus.level === 0) {
+      focalTargetX=0; focalTargetY=0; focalTargetZ=0;
+      targetCameraZ = LEVELS[0].home;
+    } else if (focus.level === 1) {
+      const pr = principals[focus.principalIdx];
+      const p = positions[pr.particleIndex];
+      focalTargetX=p[0]; focalTargetY=p[1]; focalTargetZ=p[2];
+      targetCameraZ = LEVELS[1].home;
+    } else if (focus.level === 2) {
+      const pr = principals[focus.principalIdx];
+      const l2 = pr.l2List[focus.l2Idx];
+      const p = positions[l2.particleIndex];
+      focalTargetX=p[0]; focalTargetY=p[1]; focalTargetZ=p[2];
+      targetCameraZ = LEVELS[2].home;
+    }
+    if (!interacted) { interacted = true; hintEl.classList.add('hidden'); }
+  }
+
+  function focusPrincipal(pi) { setFocus({ level: 1, principalIdx: pi }); }
+  function focusL2(pi, li)   { setFocus({ level: 2, principalIdx: pi, l2Idx: li }); }
+  function popFocus() {
+    if (focus.level === 2) setFocus({ level: 1, principalIdx: focus.principalIdx });
+    else if (focus.level === 1) setFocus({ level: 0 });
+  }
+  function setHoverPrincipal(pi) { hoveredPrincipal = pi; }
+
+  let focusStrength = 0;
+  let focusClusterSlot = -1;
+
+  // ============================================================
+  // CARD MORPH SYSTEM
+  //
+  // A card element starts at the clicked pill's rect, styled as a
+  // pill, then animates (via CSS transitions) to full card size &
+  // position. The pill fades while the card is open. On close,
+  // the card collapses back to the pill's *current* rect (pills
+  // breathe, so we re-measure at close time). Clicks outside and
+  // ESC close.
+  // ============================================================
+  let currentCard = null;   // { node, el }
+  let pendingOpen = null;   // { node, token } when waiting for focus anim
+  let openToken = 0;
+
+  function isMobile() { return window.innerWidth < 640; }
+
+  function buildCardInner(node) {
+    const pr = principals[node.principalIdx];
+    const cat = CATEGORIES[pr.categoryIndex];
+
+    let title, category, insight, triggers, origin, related, note;
+    if (node.level === 'l1') {
+      title = cat.name;
+      category = 'Region · Inner world';
+      insight  = cat.card.insight;
+      triggers = cat.card.triggers || [];
+      origin   = cat.card.origin;
+      related  = cat.card.related || [];
+      note     = cat.card.note;
+    } else if (node.level === 'l2') {
+      const l2Def = cat.l2[pr.l2List[node.l2Idx].defIdx];
+      title = l2Def.n;
+      category = cat.name + ' · Theme';
+      insight  = l2Def.card.insight;
+      triggers = l2Def.card.triggers || [];
+      origin   = l2Def.card.origin;
+      related  = l2Def.card.related || [];
+      note     = l2Def.card.note;
+    } else {
+      const l2Entry = pr.l2List[node.l2Idx];
+      const l2Def = cat.l2[l2Entry.defIdx];
+      const l3Def = l2Def.l3[l2Entry.l3List[node.l3Idx].defIdx];
+      title = l3Def.n;
+      category = cat.name + ' · ' + l2Def.n;
+      insight  = l3Def.insight;
+      triggers = l2Def.card.triggers || [];
+      origin   = l2Def.card.origin;
+      related  = l2Def.card.related || [];
+    }
+
+    const dotColor = TONE_COLOR[node.tone];
+    const esc = s => s == null ? '' : String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const tagsHTML = arr => arr.map(t => `<span class="card-tag">${esc(t)}</span>`).join('');
+
+    return `
+      <div class="card-inner">
+        <div class="card-header">
+          <span class="dot" style="background:${dotColor};color:${dotColor}"></span>
+          <span class="card-title">${esc(title)}</span>
+          <button class="card-close" aria-label="Close">×</button>
+        </div>
+        <div class="card-body">
+          <div class="card-category">${esc(category)}</div>
+          <div class="card-insight">${esc(insight)}</div>
+          ${triggers.length ? `
+            <div class="card-section">
+              <div class="card-section-label">Triggers</div>
+              <div class="card-tags">${tagsHTML(triggers)}</div>
+            </div>` : ''}
+          ${origin ? `
+            <div class="card-section">
+              <div class="card-section-label">Origin / context</div>
+              <div class="card-section-text">${esc(origin)}</div>
+            </div>` : ''}
+          ${related && related.length ? `
+            <div class="card-section">
+              <div class="card-section-label">Related themes</div>
+              <div class="card-tags">${tagsHTML(related)}</div>
+            </div>` : ''}
+          ${note ? `<div class="card-note">${esc(note)}</div>` : ''}
+        </div>
+      </div>
+    `;
+  }
+
+  function handlePillClick(node) {
+    // Clicking the pill whose card is open → close
+    if (currentCard && currentCard.node === node) {
+      closeCard();
+      return;
+    }
+
+    // Compute desired focus
+    let target = null;
+    if (node.level === 'l1') {
+      target = { level: 1, principalIdx: node.principalIdx };
+    } else if (node.level === 'l2') {
+      target = { level: 2, principalIdx: node.principalIdx, l2Idx: node.l2Idx };
+    } else if (node.level === 'l3') {
+      target = { level: 2, principalIdx: node.principalIdx, l2Idx: node.l2Idx };
+    }
+
+    const needsChange =
+      focus.level !== target.level ||
+      focus.principalIdx !== target.principalIdx ||
+      (target.level === 2 && focus.l2Idx !== target.l2Idx);
+
+    // Close any existing card before drilling
+    if (currentCard) closeCard();
+
+    openToken++;
+    const myToken = openToken;
+
+    if (needsChange) {
+      setFocus(target);
+      setTimeout(() => {
+        if (openToken !== myToken) return;
+        openCard(node);
+      }, 440);
+    } else {
+      // Small delay so the pill's rect is stable
+      setTimeout(() => {
+        if (openToken !== myToken) return;
+        openCard(node);
+      }, 20);
+    }
+  }
+
+  function openCard(node) {
+    if (currentCard) closeCard(true);
+
+    // The pill needs to be visible to measure it. If its current
+    // opacity is low, briefly show it at full opacity for measure.
+    const pillEl = node.el;
+    const prevOpacity = pillEl.style.opacity;
+    pillEl.style.opacity = '1';
+    pillEl.getBoundingClientRect(); // force reflow
+
+    const rect = pillEl.getBoundingClientRect();
+
+    // Create card element
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = buildCardInner(node);
+    cardsEl.appendChild(card);
+
+    // Start at pill rect
+    card.style.left   = rect.left + 'px';
+    card.style.top    = rect.top  + 'px';
+    card.style.width  = rect.width + 'px';
+    card.style.height = rect.height + 'px';
+    card.style.borderRadius = '100px';
+
+    // Hide the original pill — the card has inherited it
+    node._suppressOpacity = true;
+    pillEl.style.opacity = '0';
+
+    // Measure target dimensions
+    const mobile = isMobile();
+    let targetW, targetH, targetX, targetY;
+
+    if (mobile) {
+      targetW = window.innerWidth - 24;
+    } else {
+      targetW = 320;
+    }
+
+    // Temporarily set to target width to read scrollHeight
+    card.style.width = targetW + 'px';
+    card.style.height = 'auto';
+    const cardInner = card.firstElementChild;
+    const naturalH = Math.min(cardInner.offsetHeight, window.innerHeight - 40);
+    targetH = naturalH;
+
+    // Reset to pill dimensions before animation
+    card.style.width = rect.width + 'px';
+    card.style.height = rect.height + 'px';
+    // Force reflow so the browser registers the starting state
+    card.offsetHeight;
+
+    // Position target
+    if (mobile) {
+      targetX = 12;
+      targetY = window.innerHeight - targetH - 16;
+    } else {
+      // Prefer right of pill; fallback left; fallback below
+      const gap = 14;
+      targetX = rect.right + gap;
+      targetY = rect.top - 6;
+      if (targetX + targetW > window.innerWidth - 12) {
+        targetX = rect.left - targetW - gap;
+      }
+      if (targetX < 12) {
+        // fallback below pill
+        targetX = Math.min(rect.left, window.innerWidth - targetW - 12);
+        targetY = rect.bottom + gap;
+      }
+      if (targetY + targetH > window.innerHeight - 12) {
+        targetY = window.innerHeight - targetH - 12;
+      }
+      if (targetY < 12) targetY = 12;
+      if (targetX < 12) targetX = 12;
+      if (targetX + targetW > window.innerWidth - 12) {
+        targetX = window.innerWidth - targetW - 12;
+      }
+    }
+
+    // Animate to card form on next frame
+    requestAnimationFrame(() => {
+      card.classList.add('open');
+      card.style.left   = targetX + 'px';
+      card.style.top    = targetY + 'px';
+      card.style.width  = targetW + 'px';
+      card.style.height = targetH + 'px';
+      card.style.borderRadius = '20px';
+    });
+
+    // Wire up close button
+    const closeBtn = card.querySelector('.card-close');
+    if (closeBtn) closeBtn.addEventListener('click', () => closeCard());
+
+    currentCard = { node, el: card };
+  }
+
+  function closeCard(immediate) {
+    if (!currentCard) return;
+    const { node, el: card } = currentCard;
+    currentCard = null;
+
+    // Re-measure pill's current rect (it has drifted via breathing)
+    const pillEl = node.el;
+    // Temporarily show it to measure
+    pillEl.style.opacity = '1';
+    pillEl.getBoundingClientRect();
+    const rect = pillEl.getBoundingClientRect();
+    // Hide again until animation is done
+    pillEl.style.opacity = '0';
+
+    // Animate back to pill
+    card.classList.remove('open');
+    card.style.left   = rect.left + 'px';
+    card.style.top    = rect.top  + 'px';
+    card.style.width  = rect.width + 'px';
+    card.style.height = rect.height + 'px';
+    card.style.borderRadius = '100px';
+
+    const dur = immediate ? 0 : 540;
+    setTimeout(() => {
+      if (card.parentNode) card.parentNode.removeChild(card);
+      node._suppressOpacity = false;
+      pillEl.style.opacity = ''; // let the render loop control it again
+    }, dur);
+  }
+
+  // Click outside closes card
+  document.addEventListener('pointerdown', e => {
+    if (!currentCard) return;
+    if (currentCard.el.contains(e.target)) return;
+    if (e.target.closest && e.target.closest('.pill')) return; // pill handler runs
+    closeCard();
+  }, true);
+
+  // ESC closes card
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && currentCard) closeCard();
+  });
+
+  // ============================================================
+  // Interactions (drag, wheel, hover)
+  // ============================================================
+  let down=false, mx=0, my=0;
+  let tRotY=0, tRotX=0, rotY=0, rotX=0;
+  let lastClientX=0, lastClientY=0;
+  let mouseInside=false;
+  let pendingHover=-1, visibleHover=-1, visibleStrength=0;
+  const tmpV = new THREE.Vector3();
+
+  function recomputePendingHover() {
+    if (!mouseInside || focus.level > 0) { pendingHover = -1; return; }
+    const ndcX = (lastClientX / window.innerWidth) * 2 - 1;
+    const ndcY = -(lastClientY / window.innerHeight) * 2 + 1;
+    let closest=-1, closestSq=Infinity;
+    for (let pi=0; pi<principals.length; pi++) {
+      const idx = principals[pi].particleIndex;
+      const br = jsBreathing(seeds[idx], clock.getElapsedTime());
+      tmpV.set(positions[idx][0]+br.x, positions[idx][1]+br.y, positions[idx][2]+br.z);
+      tmpV.applyMatrix4(root.matrixWorld);
+      tmpV.project(camera);
+      const dx=tmpV.x-ndcX, dy=tmpV.y-ndcY;
+      const sd=dx*dx+dy*dy;
+      if (sd<closestSq){closestSq=sd; closest=pi;}
+    }
+    pendingHover = (Math.sqrt(closestSq) < 0.09) ? closest : -1;
+    hoveredPrincipal = pendingHover;
+  }
+
+  const dom = renderer.domElement;
+  dom.addEventListener('pointerdown', e => {
+    down = true; mx = e.clientX; my = e.clientY;
+    if (dom.setPointerCapture) dom.setPointerCapture(e.pointerId);
+  });
+  dom.addEventListener('pointerup', e => {
+    down = false;
+    if (dom.releasePointerCapture) dom.releasePointerCapture(e.pointerId);
+  });
+  dom.addEventListener('pointercancel', () => { down = false; });
+  dom.addEventListener('pointerleave',  () => { mouseInside = false; });
+  dom.addEventListener('pointerenter',  () => { mouseInside = true; });
+  dom.addEventListener('pointermove', e => {
+    lastClientX = e.clientX; lastClientY = e.clientY;
+    mouseInside = true;
+    if (down) {
+      tRotY += (e.clientX - mx) * 0.005;
+      tRotX += (e.clientY - my) * 0.005;
+      tRotX = Math.max(-1.2, Math.min(1.2, tRotX));
+      mx = e.clientX; my = e.clientY;
+    }
+  });
+
+  // Click on canvas (no drag): in overview, near a principal → drill
+  let downX=0, downY=0, isDrag=false;
+  dom.addEventListener('pointerdown', e => { downX=e.clientX; downY=e.clientY; isDrag=false; });
+  dom.addEventListener('pointermove', e => {
+    if (down) {
+      const dx=e.clientX-downX, dy=e.clientY-downY;
+      if (dx*dx+dy*dy > 16) isDrag = true;
+    }
+  });
+  dom.addEventListener('click', e => {
+    if (isDrag) return;
+    if (currentCard) { closeCard(); return; }
+    if (focus.level === 0 && pendingHover >= 0) {
+      handlePillClick(principals[pendingHover]._l1Node);
+    }
+  });
+
+  // Wheel: zoom + pop focus. Attached to window so scrolling works
+  // regardless of whether the cursor is over the canvas, a pill, or
+  // anything else. If the cursor is inside an open card, let the card
+  // handle its own scroll.
+  window.addEventListener('wheel', e => {
+    if (currentCard && currentCard.el && currentCard.el.contains(e.target)) {
+      return; // card scrolls internally
+    }
+    e.preventDefault();
+    const factor = Math.exp(e.deltaY * 0.0014);
+    const level = focus.level;
+    const range = LEVELS[level];
+    targetCameraZ *= factor;
+    if (level > 0 && targetCameraZ > range.popThreshold) {
+      popFocus();
+      targetCameraZ = LEVELS[focus.level].home * 1.05;
+    } else {
+      targetCameraZ = Math.max(range.min, Math.min(range.max, targetCameraZ));
+    }
+    if (!interacted) { interacted = true; hintEl.classList.add('hidden'); }
+  }, { passive: false });
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  // ============================================================
+  // Label visibility rules (slightly firmer)
+  // ============================================================
+  function desiredOpacityFor(node) {
+    const f = focus;
+    const p = node.principalIdx;
+    const lvl = node.level;
+    if (f.level === 0) {
+      if (lvl === 'l1') return hoveredPrincipal === -1 ? 1 : (p === hoveredPrincipal ? 1 : 0.62);
+      if (lvl === 'l2') {
+        // Only show L2s when their principal is hovered.
+        return p === hoveredPrincipal ? 1 : 0;
+      }
+      return 0; // L3 hidden in overview
+    }
+    if (f.level === 1) {
+      if (p !== f.principalIdx) {
+        if (lvl === 'l1') return 0.52;
+        return 0;
+      }
+      if (lvl === 'l1') return 0.95;
+      if (lvl === 'l2') return 1;
+      if (lvl === 'l3') return 0.68;
+    }
+    if (f.level === 2) {
+      if (p !== f.principalIdx) {
+        if (lvl === 'l1') return 0.42;
+        return 0;
+      }
+      if (lvl === 'l1') return 0.6;
+      if (lvl === 'l2') return node.l2Idx === f.l2Idx ? 1 : 0.58;
+      if (lvl === 'l3') return node.l2Idx === f.l2Idx ? 1 : 0;
+    }
+    return 0;
+  }
+  function desiredScaleFor(node) {
+    const f = focus;
+    if (f.level === 0) {
+      if (node.level === 'l1' && hoveredPrincipal >= 0 && node.principalIdx === hoveredPrincipal) return 1.08;
+      if (node.level === 'l2' && hoveredPrincipal >= 0 && node.principalIdx === hoveredPrincipal) return 1.06;
+      return 1;
+    }
+    if (f.level === 1 && node.principalIdx === f.principalIdx) {
+      if (node.level === 'l2') return 1.05;
+    }
+    if (f.level === 2 && node.principalIdx === f.principalIdx) {
+      if (node.level === 'l2' && node.l2Idx === f.l2Idx) return 1.10;
+      if (node.level === 'l3' && node.l2Idx === f.l2Idx) return 1.04;
+    }
+    return 1;
+  }
+  function spreadPushFor(node, hoverActiveForThisPrincipal) {
+    if (!hoverActiveForThisPrincipal) return { x: 0, y: 0 };
+    if (node.level === 'l1') return { x: 0, y: -4 };
+    const prNode = principals[node.principalIdx]._l1Node;
+    const dx = node.screenX - prNode.screenX;
+    const dy = node.screenY - prNode.screenY;
+    const len = Math.hypot(dx, dy) || 1;
+    const push = 10;
+    return { x: (dx/len)*push, y: (dy/len)*push };
+  }
+
+  // ============================================================
+  // Animate
+  // ============================================================
+  const clock = new THREE.Clock();
+  const halfW = () => window.innerWidth * 0.5;
+  const halfH = () => window.innerHeight * 0.5;
+
+  function tick() {
+    const t = clock.getElapsedTime();
+    rotY += (tRotY - rotY) * 0.08;
+    rotX += (tRotX - rotX) * 0.08;
+    root.rotation.y = rotY + Math.sin(t * 0.13) * 0.04;
+    root.rotation.x = rotX + Math.sin(t * 0.17) * 0.02;
+
+    focalCurrentX += (focalTargetX - focalCurrentX) * 0.08;
+    focalCurrentY += (focalTargetY - focalCurrentY) * 0.08;
+    focalCurrentZ += (focalTargetZ - focalCurrentZ) * 0.08;
+
+    const fv = tmpV.set(focalCurrentX, focalCurrentY, focalCurrentZ)
+      .applyQuaternion(root.quaternion);
+    root.position.set(-fv.x, -fv.y, -fv.z);
+
+    cameraZ += (targetCameraZ - cameraZ) * 0.10;
+    camera.position.z = cameraZ;
+
+    root.updateMatrixWorld();
+    recomputePendingHover();
+
+    if (pendingHover === visibleHover) {
+      const target = pendingHover >= 0 ? 1 : 0;
+      visibleStrength += (target - visibleStrength) * 0.10;
+    } else {
+      visibleStrength += (0 - visibleStrength) * 0.18;
+      if (visibleStrength < 0.04) visibleHover = pendingHover;
+    }
+
+    const targetFocusStrength = focus.level > 0 ? 1 : 0;
+    focusStrength += (targetFocusStrength - focusStrength) * 0.07;
+    const desiredFocusSlot = focus.level > 0 ? principals[focus.principalIdx].hubSlot : -1;
+    if (focusStrength < 0.05) focusClusterSlot = desiredFocusSlot;
+    if (focus.level > 0) focusClusterSlot = desiredFocusSlot;
+
+    ptMat.uniforms.uTime.value = t;
+    ptMat.uniforms.uHoverCluster.value = visibleHover >= 0 ? principals[visibleHover].hubSlot : -1;
+    ptMat.uniforms.uHoverStrength.value = visibleStrength;
+    ptMat.uniforms.uFocusCluster.value = focusClusterSlot;
+    ptMat.uniforms.uFocusStrength.value = focusStrength;
+    lineMat.uniforms.uTime.value = t;
+    lineMat.uniforms.uHoverCluster.value = visibleHover >= 0 ? principals[visibleHover].hubSlot : -1;
+    lineMat.uniforms.uHoverStrength.value = visibleStrength;
+    lineMat.uniforms.uFocusCluster.value = focusClusterSlot;
+    lineMat.uniforms.uFocusStrength.value = focusStrength;
+
+    const hW = halfW(), hH = halfH();
+
+    // Project all labels
+    for (let i=0; i<labelNodes.length; i++) {
+      const n = labelNodes[i];
+      const idx = n.particleIndex;
+      const br = jsBreathing(n.seed, t);
+      tmpV.set(positions[idx][0]+br.x, positions[idx][1]+br.y, positions[idx][2]+br.z);
+      tmpV.applyMatrix4(root.matrixWorld);
+      const worldToCam = tmpV.z - camera.position.z;
+      const inFront = worldToCam < 0;
+      tmpV.project(camera);
+      n.screenX = tmpV.x * hW + hW;
+      n.screenY = -tmpV.y * hH + hH;
+      n.inFront = inFront;
+      const depth = Math.min(1, Math.max(0, (tmpV.z + 1) * 0.5));
+      n._depthFade = Math.max(0.62, 1 - depth * 0.38);
+    }
+
+    // Apply opacity/scale/position
+    for (let i=0; i<labelNodes.length; i++) {
+      const n = labelNodes[i];
+
+      // If card for this pill is open, pill stays hidden at 0
+      if (n._suppressOpacity) {
+        n.opacity += (0 - n.opacity) * 0.2;
+      } else {
+        let op = desiredOpacityFor(n);
+        if (!n.inFront) op = 0;
+        op *= n._depthFade;
+        n.opacity += (op - n.opacity) * 0.18;
+      }
+
+      const scale = desiredScaleFor(n);
+      n.scale += (scale - n.scale) * 0.18;
+
+      const hoverActive = (focus.level === 0 && hoveredPrincipal === n.principalIdx);
+      const push = spreadPushFor(n, hoverActive);
+      const yOffsetByLevel = n.level === 'l1' ? -22 : n.level === 'l2' ? -16 : -12;
+
+      const el = n.el;
+      el.style.transform =
+        `translate3d(${n.screenX + push.x}px, ${n.screenY + push.y + yOffsetByLevel}px, 0) ` +
+        `translate(-50%, -50%) scale(${n.scale.toFixed(3)})`;
+      // Don't overwrite pill opacity while a card is bound to it
+      if (!n._suppressOpacity) {
+        el.style.opacity = n.opacity.toFixed(3);
+      }
+      el.style.pointerEvents = (n.opacity > 0.15 && !n._suppressOpacity) ? 'auto' : 'none';
+    }
+
+    renderer.render(scene, camera);
+    requestAnimationFrame(tick);
+  }
+  tick();
+})();
+</script>
+</body>
+</html>

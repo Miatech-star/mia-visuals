@@ -1,0 +1,11 @@
+{
+  "name": "mia-visuals",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "An index portal for Mia's HTML visual experiments.",
+  "scripts": {
+    "build": "node scripts/generate-visuals-manifest.mjs",
+    "dev": "node scripts/generate-visuals-manifest.mjs && npx --yes serve ."
+  }
+}
