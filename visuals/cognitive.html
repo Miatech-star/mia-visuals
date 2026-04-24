@@ -298,12 +298,12 @@
     left: 50%;
     transform: translateX(-50%);
     z-index: 11;
-    max-width: min(720px, 84vw);
+    max-width: min(820px, 88vw);
     padding: 0 24px;
     text-align: center;
-    font-family: var(--sans);
-    font-size: 17px;
-    font-weight: 300;
+    font-family: 'Utopia Std Subhead', 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
+    font-size: 22px;
+    font-weight: 400;
     letter-spacing: 0.005em;
     line-height: 1.4;
     color: var(--ink);
@@ -473,6 +473,7 @@
   let phase = 'idle';            // 'idle' | 'intro' | 'live'
   let introStartT = 0;           // wall-clock time when intro began
   const INTRO_DURATION = 11.0;   // covers all subtitles + brief settle
+  let smoothedAudioE = 0;        // smoothed audio amplitude 0..1 (drives reactivity)
 
   // ======================================================================
   // REGIONS
@@ -507,8 +508,10 @@
     region.activity = 0.5;
     region.targetActivity = 0.5;
     region.burstUntil = 0;
-    // Initial reveal: only Emotional Core barely visible at idle
-    region.revealT = (i === 0) ? 0.45 : 0.0;
+    // revealT is now a derived value driven by intro time + REGION_SCHEDULE.
+    // It controls label opacity and HUD readouts. Particle visibility is
+    // driven independently by per-particle aActivation in the shader.
+    region.revealT = 0;
     const n = region.subs.length;
     region.subPositions = region.subs.map((name, k) => {
       const angle = (k / n) * Math.PI * 2 + 0.6;
@@ -527,20 +530,28 @@
 
   const NUM_R = REGIONS.length;
 
-  // Reveal cascade — propagates outward from Emotional Core during the long
-  // "I have mapped..." subtitle. Each region eases from 0 to 1 over 1.6s.
-  const REVEAL_DURATION = 1.6;
-  const REVEAL_SCHEDULE = [
-    { idx: 2, start: 2.3 },  // Concept Layer (closest, ~12.4)
-    { idx: 9, start: 2.8 },  // Body Signal
-    { idx: 4, start: 3.3 },  // Conflict Map
-    { idx: 8, start: 3.8 },  // Identity Field
-    { idx: 6, start: 4.3 },  // Attachment Signal
-    { idx: 3, start: 4.8 },  // Narrative Engine
-    { idx: 7, start: 5.3 },  // Forecast Engine
-    { idx: 5, start: 5.9 },  // Pattern Detector
-    { idx: 1, start: 6.5 },  // Memory Center (furthest)
+  // Generative chain-reaction schedule. Each entry says "this cluster STARTS
+  // activating at this time"; particles within a cluster then activate
+  // inside-out over REGION_GROW_DURATION, with each particle taking
+  // PARTICLE_BIRTH_DURATION to fully ramp in (size + intensity).
+  // Core has a negative start time so a portion of it is already born at idle.
+  const REGION_GROW_DURATION   = 1.0;   // within-cluster activation spread
+  const PARTICLE_BIRTH_DURATION = 0.4;  // per-particle ramp-in
+  const REGION_SCHEDULE = [
+    { idx: 0, start: -0.5 }, // Emotional Core (partial at idle)
+    { idx: 2, start:  0.6 }, // Concept Layer
+    { idx: 9, start:  1.0 }, // Body Signal
+    { idx: 4, start:  1.4 }, // Conflict Map
+    { idx: 8, start:  1.8 }, // Identity Field
+    { idx: 6, start:  2.2 }, // Attachment Signal
+    { idx: 3, start:  2.6 }, // Narrative Engine
+    { idx: 7, start:  3.0 }, // Forecast Engine
+    { idx: 5, start:  3.4 }, // Pattern Detector
+    { idx: 1, start:  3.8 }, // Memory Center (last)
   ];
+  // Build a quick lookup: regionIdx -> startTime
+  const REGION_START = new Array(REGIONS.length).fill(99);
+  REGION_SCHEDULE.forEach(e => { REGION_START[e.idx] = e.start; });
 
   // ======================================================================
   // ACTIVITY DATA TEXTURE — R = activity (0..1.275), G = revealT (0..1)
@@ -593,6 +604,7 @@
   const sizes         = new Float32Array(TOTAL);
   const baseIntensity = new Float32Array(TOTAL);
   const driftSeeds    = new Float32Array(TOTAL);
+  const activation    = new Float32Array(TOTAL); // when this particle is "born"
 
   let p = 0;
   REGIONS.forEach((region, rIdx) => {
@@ -624,6 +636,14 @@
       sizes[p]         = 0.9 + Math.random() * 1.9;
       baseIntensity[p] = 0.35 + Math.random() * 0.65;
       driftSeeds[p]    = Math.random() * 100;
+
+      // Inside-out activation: particles closer to the cluster center
+      // activate earliest within the cluster's growth window. localT in [0,1]
+      // is the particle's normalized distance from cluster center, with a
+      // small jitter so the front isn't a clean shell.
+      const localT = Math.min(1, (rBase * rJit));
+      const jitter = (Math.random() - 0.5) * 0.18;
+      activation[p] = REGION_START[rIdx] + localT * REGION_GROW_DURATION + jitter;
       p++;
     }
   });
@@ -636,16 +656,20 @@
   geom.setAttribute('aSize',    new THREE.BufferAttribute(sizes, 1));
   geom.setAttribute('aBase',    new THREE.BufferAttribute(baseIntensity, 1));
   geom.setAttribute('aDrift',   new THREE.BufferAttribute(driftSeeds, 1));
+  geom.setAttribute('aActivation', new THREE.BufferAttribute(activation, 1));
 
   const particleMat = new THREE.ShaderMaterial({
     uniforms: {
-      uTime:        { value: 0 },
-      uActivityTex: { value: activityTex },
-      uTexW:        { value: ATEX_W },
-      uHover:       { value: -1 },
-      uFocus:       { value: 0 },
-      uFocusRegion: { value: -1 },
-      uPixelRatio:  { value: renderer.getPixelRatio() },
+      uTime:           { value: 0 },
+      uActivityTex:    { value: activityTex },
+      uTexW:           { value: ATEX_W },
+      uHover:          { value: -1 },
+      uFocus:          { value: 0 },
+      uFocusRegion:    { value: -1 },
+      uPixelRatio:     { value: renderer.getPixelRatio() },
+      uIntroT:         { value: 0 },          // intro elapsed (0 at idle, large in live)
+      uBirthDuration:  { value: PARTICLE_BIRTH_DURATION },
+      uAudioEnergy:    { value: 0 },          // smoothed mic-style level 0..1
     },
     vertexShader: `
       attribute vec3 aColor;
@@ -654,6 +678,7 @@
       attribute float aSize;
       attribute float aBase;
       attribute float aDrift;
+      attribute float aActivation;
 
       uniform float uTime;
       uniform sampler2D uActivityTex;
@@ -662,15 +687,24 @@
       uniform float uFocus;
       uniform float uFocusRegion;
       uniform float uPixelRatio;
+      uniform float uIntroT;
+      uniform float uBirthDuration;
+      uniform float uAudioEnergy;
 
       varying vec3 vColor;
       varying float vAlpha;
 
       void main() {
+        // Per-region activity (R channel only — revealT is no longer needed
+        // here since per-particle aActivation drives visibility)
         float u = (aRegion + 0.5) / uTexW;
-        vec4 sampled = texture2D(uActivityTex, vec2(u, 0.5));
-        float activity = sampled.r * (255.0 / 200.0);
-        float revealT  = sampled.g;  // already 0..1
+        float activity = texture2D(uActivityTex, vec2(u, 0.5)).r * (255.0 / 200.0);
+
+        // BORN factor: smooth ramp from 0 to 1 starting at this particle's
+        // activation time and lasting uBirthDuration. This is what creates
+        // the chain-reaction generative birth — particles literally come
+        // into existence one by one as uIntroT crosses each aActivation.
+        float born = smoothstep(aActivation, aActivation + uBirthDuration, uIntroT);
 
         vec3 pos = position;
         float t = uTime;
@@ -686,9 +720,17 @@
         float flicker = mix(0.65, 1.0, slow * fast);
 
         float hoverBoost = (uHover > -0.5 && abs(aRegion - uHover) < 0.5) ? 1.45 : 1.0;
-        float intensity = aBase * activity * flicker * hoverBoost * revealT;
 
-        float sizePx = aSize * intensity * 2.4;
+        // Audio reactivity: subtle global brightness boost on voice peaks.
+        // Kept restrained — max ~30% boost so it feels alive, not gimmicky.
+        float audioBoost = 1.0 + uAudioEnergy * 0.30;
+
+        float intensity = aBase * activity * flicker * hoverBoost * born * audioBoost;
+
+        // Size also ramps with born so newly-activating particles "pop"
+        // from a small seed into their full presence
+        float bornSize = mix(0.35, 1.0, born);
+        float sizePx = aSize * intensity * 2.4 * bornSize;
         gl_PointSize = sizePx * (230.0 / -mvPosition.z) * uPixelRatio;
 
         vColor = aColor * (0.5 + intensity * 0.9);
@@ -857,12 +899,14 @@
       }
       const env = Math.sin(prog * Math.PI);
       const focusDim = focusT > 0.1 ? (1 - focusT * 0.85) : 1;
-      s.lineMat.opacity = env * s.peak * focusDim;
+      // Audio-reactive luminance: connections breathe with voice
+      const audioBoost = 1.0 + smoothedAudioE * 0.45;
+      s.lineMat.opacity = env * s.peak * focusDim * audioBoost;
 
       const pPos = s.curve.getPoint(prog);
       s.pulseGeom.attributes.position.setXYZ(0, pPos.x, pPos.y, pPos.z);
       s.pulseGeom.attributes.position.needsUpdate = true;
-      s.pulseMat.opacity = env * 0.95 * focusDim;
+      s.pulseMat.opacity = env * 0.95 * focusDim * audioBoost;
     }
   }
 
@@ -1169,20 +1213,20 @@
     });
   }
 
-  function updateReveals(introT) {
-    // Emotional Core: ramp from 0.45 to 1.0 over the first 1.6s of intro
-    const coreRamp = Math.min(1, introT / 1.6);
-    REGIONS[0].revealT = 0.45 + coreRamp * 0.55;
-
-    for (const r of REVEAL_SCHEDULE) {
-      const local = (introT - r.start) / REVEAL_DURATION;
-      let v;
-      if (local <= 0) v = 0;
-      else if (local >= 1) v = 1;
-      else v = 1 - Math.pow(1 - local, 3); // ease-out cubic
-      REGIONS[r.idx].revealT = v;
+  function updateRegionGrowth(introT) {
+    // revealT is a *derived* per-region value used for label visibility and
+    // HUD readouts. The actual particle visibility is per-particle, driven
+    // by aActivation in the shader. We compute revealT as the fraction of
+    // the cluster's activation window that has elapsed.
+    const totalSpan = REGION_GROW_DURATION + PARTICLE_BIRTH_DURATION;
+    for (const e of REGION_SCHEDULE) {
+      const t = (introT - e.start) / totalSpan;
+      REGIONS[e.idx].revealT = Math.max(0, Math.min(1, t));
     }
   }
+
+  // Set initial revealT for idle state (before intro begins)
+  updateRegionGrowth(0);
 
   function updateActivity(dt) {
     const t = clock.getElapsedTime();
@@ -1236,11 +1280,20 @@
     subtitleEl.innerHTML = '';
     subtitleEl.classList.remove('fade-out');
 
-    const words = text.split(' ');
-    // Stagger word reveals across roughly the first half of the line so the
-    // line settles into full focus before the next one starts
-    const revealWindow = Math.min(duration * 0.55, 1.4);
-    const stagger = words.length > 1 ? revealWindow / (words.length - 1) : 0;
+    // Split on whitespace — preserves punctuation, numbers, and tokens like "Vito" / "3."
+    // (was previously fine, but the timing math below was clipping the last word
+    //  off short lines because it fired at the same instant fade-out began)
+    const words = text.split(/\s+/).filter(w => w.length > 0);
+    if (words.length === 0) return;
+
+    const fadeOutLead = 0.45;   // when fade-out begins, relative to line end
+    const settleTime  = 0.35;   // last word must be visible-in-focus this long
+    // Ensure the LAST word starts revealing this many seconds before line end:
+    const lastWordBy  = Math.max(0.05, duration - fadeOutLead - settleTime);
+    // Per-word stagger, capped so long lines don't drag
+    const stagger = words.length > 1
+      ? Math.min(0.32, lastWordBy / (words.length - 1))
+      : 0;
 
     words.forEach((word, i) => {
       const span = document.createElement('span');
@@ -1260,7 +1313,7 @@
     });
 
     // Start the fade-out a bit before the line's end
-    const fadeOutAt = Math.max(0, (duration - 0.45) * 1000);
+    const fadeOutAt = Math.max(0, (duration - fadeOutLead) * 1000);
     const tFade = setTimeout(() => {
       subtitleEl.classList.add('fade-out');
     }, fadeOutAt);
@@ -1277,12 +1330,107 @@
   }
 
   // ======================================================================
+  // WEB AUDIO — analyser drives audio-reactive brightness
+  // ======================================================================
+  let audioCtx = null;
+  let audioAnalyser = null;
+  let audioData = null;
+
+  function initAudioAnalyser() {
+    try {
+      const audio = document.getElementById('introAudio');
+      if (!audio) return;
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      audioCtx = new Ctx();
+      const source = audioCtx.createMediaElementSource(audio);
+      audioAnalyser = audioCtx.createAnalyser();
+      audioAnalyser.fftSize = 256;
+      audioAnalyser.smoothingTimeConstant = 0.4;
+      audioData = new Uint8Array(audioAnalyser.frequencyBinCount);
+      // Route source → analyser → speakers
+      source.connect(audioAnalyser);
+      audioAnalyser.connect(audioCtx.destination);
+    } catch (err) {
+      // CORS, unsupported codec, MediaElementSource already created on this
+      // element, etc. — fall back silently. Visuals still work.
+      audioAnalyser = null;
+      console.warn('Audio analyser unavailable:', err && err.message);
+    }
+  }
+
+  function readAudioEnergy() {
+    if (!audioAnalyser || !audioData) return 0;
+    audioAnalyser.getByteFrequencyData(audioData);
+    // Weighted toward low/mid frequencies — voice lives there
+    let sum = 0, weight = 0;
+    const N = audioData.length;
+    for (let i = 0; i < N; i++) {
+      const w = (i < N * 0.4) ? 1.4 : 0.6;
+      sum += audioData[i] * w;
+      weight += w;
+    }
+    return (sum / weight) / 255;
+  }
+
+  // ======================================================================
+  // INTRO CHAIN-REACTION SYNAPSES
+  // As each new cluster reaches mid-growth, fire a connection from a
+  // previously-active cluster to it — visual proof the network is propagating.
+  // ======================================================================
+  const introChainSpawned = new Set();
+
+  function updateIntroChainReaction(introT) {
+    for (let i = 0; i < REGION_SCHEDULE.length; i++) {
+      const entry = REGION_SCHEDULE[i];
+      if (introChainSpawned.has(entry.idx)) continue;
+      // Trigger when this cluster has grown ~half way
+      const triggerAt = entry.start + REGION_GROW_DURATION * 0.45;
+      if (introT < triggerAt) continue;
+      introChainSpawned.add(entry.idx);
+
+      // Skip Core (no parent to connect from)
+      if (i === 0) continue;
+
+      // Find nearest already-active region to act as the "parent" node
+      const here = REGIONS[entry.idx];
+      let bestIdx = -1, bestD = Infinity;
+      for (let k = 0; k < i; k++) {
+        const candIdx = REGION_SCHEDULE[k].idx;
+        const d = REGIONS[candIdx].position.distanceTo(here.position);
+        if (d < bestD) { bestD = d; bestIdx = candIdx; }
+      }
+      if (bestIdx === -1) continue;
+
+      // Primary connection from parent → new cluster
+      synapses.push(createSynapse(bestIdx, entry.idx, {
+        duration: 1.6,
+        peak: 0.65,
+      }));
+
+      // ~60% of activations also fire a secondary local connection to a
+      // different active region — gives the network a branching feel
+      if (Math.random() < 0.6 && i > 1) {
+        const altIdx = REGION_SCHEDULE[Math.floor(Math.random() * i)].idx;
+        if (altIdx !== bestIdx && altIdx !== entry.idx) {
+          synapses.push(createSynapse(altIdx, entry.idx, {
+            duration: 1.3,
+            peak: 0.4,
+          }));
+        }
+      }
+    }
+  }
+
+  // ======================================================================
   // INTRO → LIVE TRANSITION
   // ======================================================================
   function startIntro() {
     if (phase !== 'idle') return;
     phase = 'intro';
     introStartT = clock.getElapsedTime();
+    smoothedAudioE = 0;
+    introChainSpawned.clear();
 
     // Brand fades in early — system identifying itself
     document.getElementById('hud-brand').classList.add('show');
@@ -1290,9 +1438,13 @@
     // Schedule subtitles
     scheduleSubtitles();
 
-    // Try to play the audio (will silently fail if file missing — visuals
-    // are clock-driven so the sequence still runs)
+    // Initialize Web Audio analyser BEFORE play() — must be done in the same
+    // user-gesture stack for autoplay policy. Then play.
     const audio = document.getElementById('introAudio');
+    initAudioAnalyser();
+    if (audioCtx && audioCtx.state === 'suspended') {
+      audioCtx.resume().catch(() => {});
+    }
     if (audio) {
       const playPromise = audio.play();
       if (playPromise && playPromise.catch) {
@@ -1326,11 +1478,26 @@
 
     particleMat.uniforms.uTime.value = t;
 
-    if (phase === 'intro') {
+    // Phase-driven uIntroT: 0 at idle, counts up during intro, locked high
+    // in live so every particle stays born indefinitely.
+    if (phase === 'idle') {
+      particleMat.uniforms.uIntroT.value = 0;
+    } else if (phase === 'intro') {
       const introT = t - introStartT;
-      updateReveals(introT);
+      particleMat.uniforms.uIntroT.value = introT;
+      updateRegionGrowth(introT);
       updateIntroCamera(introT);
+      updateIntroChainReaction(introT);
+    } else {
+      // live: keep particles permanently born
+      particleMat.uniforms.uIntroT.value = 999;
     }
+
+    // Audio reactivity — smooth the energy reading so brightness pulses
+    // breathe with the voice rather than flicker on every frame
+    const rawE = readAudioEnergy();
+    smoothedAudioE += (rawE - smoothedAudioE) * Math.min(1, dt * 9);
+    particleMat.uniforms.uAudioEnergy.value = smoothedAudioE;
 
     updateActivity(dt);
     updateSynapses();
