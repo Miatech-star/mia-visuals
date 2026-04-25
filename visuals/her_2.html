@@ -1,0 +1,2955 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Inner Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --ink: rgba(255, 245, 235, 0.96);
+    --ink-soft: rgba(255, 240, 225, 0.78);
+    --ink-mute: rgba(255, 230, 210, 0.55);
+    --hair: rgba(255, 235, 215, 0.18);
+    --hair-strong: rgba(255, 235, 215, 0.32);
+    --warm-1: #b9402e;
+    --warm-2: #d05b3f;
+    --warm-3: #e07c5a;
+    --warm-4: #c44a35;
+    --pill-bg: rgba(255, 235, 215, 0.10);
+    --pill-bg-hover: rgba(255, 235, 215, 0.18);
+    /* Live ring radius in px — JS keeps this in sync with the canvas
+       so layout (hint, patterns, transcript) can hug the ring exactly. */
+    --ring-r: 160px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+    background: #b9402e;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    letter-spacing: -0.005em;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* === BACKGROUND ATMOSPHERE ============================================
+     Soft, painterly coral field. Two radial blooms layered over a base
+     warm tint, plus a barely-there grain. The whole thing animates with
+     a very slow drift so the field feels alive but never busy. */
+  .atmosphere {
+    position: fixed;
+    inset: -10%;
+    z-index: 0;
+    background:
+      radial-gradient(ellipse 70% 60% at 30% 35%, rgba(240, 130, 95, 0.55), transparent 60%),
+      radial-gradient(ellipse 75% 65% at 75% 70%, rgba(190, 60, 45, 0.45), transparent 55%),
+      radial-gradient(circle at 50% 50%, #d65a44 0%, #c14a35 45%, #a83826 100%);
+    filter: saturate(1.05);
+    animation: drift 32s ease-in-out infinite alternate;
+  }
+  .grain {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    opacity: 0.06;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' seed='3'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.65 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  }
+  @keyframes drift {
+    0%   { transform: translate(0, 0) scale(1.00); }
+    50%  { transform: translate(-1.5%, 1%) scale(1.04); }
+    100% { transform: translate(1%, -1%) scale(1.02); }
+  }
+
+  /* Particle stage. Sits above the atmosphere. */
+  #stage {
+    position: fixed;
+    inset: 0;
+    z-index: 2;
+    display: block;
+    cursor: pointer;
+  }
+  /* Cursor reflects what tapping does in each phase. */
+  body[data-phase="idle"]      #stage { cursor: pointer; }
+  body[data-phase="listening"] #stage,
+  body[data-phase="loading"]   #stage { cursor: default; }
+  body[data-phase="brain"]     #stage { cursor: grab; }
+  body[data-phase="brain"]     #stage.dragging { cursor: grabbing; }
+
+  /* === UI OVERLAY =====================================================
+     The UI is a thin layer above the canvas. It contains only what's
+     strictly needed: brand mark, hint, transcript, pattern chips, CTA.
+     Default is pointer-events:none on the layer; only explicitly
+     interactive elements re-enable them so background taps always
+     route to the canvas (and thus the ring). */
+  .ui {
+    position: fixed;
+    inset: 0;
+    z-index: 3;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .cta, .reset { pointer-events: auto; }
+
+  /* Brand mark — top-left, very quiet. */
+  .brand {
+    position: fixed;
+    top: 28px;
+    left: 32px;
+    font-family: 'Instrument Serif', serif;
+    font-size: 18px;
+    letter-spacing: 0.02em;
+    color: var(--ink-soft);
+    font-style: italic;
+    pointer-events: none;
+  }
+  .brand .dot {
+    display: inline-block;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--ink);
+    vertical-align: middle;
+    margin: 0 8px 3px 8px;
+    opacity: 0.6;
+  }
+
+  /* Quiet status pill — top-right. Mirrors brand weight. */
+  .status {
+    position: fixed;
+    top: 28px;
+    right: 32px;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    pointer-events: none;
+  }
+  .status .pulse {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--ink);
+    opacity: 0.5;
+    transition: background 0.4s, box-shadow 0.4s, opacity 0.4s;
+  }
+  .status[data-state="listening"] .pulse {
+    background: #ffe7d6;
+    box-shadow: 0 0 12px rgba(255, 230, 210, 0.8);
+    opacity: 1;
+    animation: statusPulse 1.6s ease-in-out infinite;
+  }
+  @keyframes statusPulse {
+    0%, 100% { opacity: 0.6; }
+    50%      { opacity: 1; }
+  }
+
+  /* Hint text — sits at the dead center of the ring, perfectly aligned
+     with it. Fades out as soon as we begin listening. */
+  .hint {
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 12px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    font-weight: 500;
+    transition: opacity 0.5s ease, transform 0.5s ease;
+    pointer-events: none;
+    text-align: center;
+    white-space: nowrap;
+  }
+  .hint.hidden {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.95);
+  }
+
+  /* Pattern chips row — anchored a comfortable gap above the ring's
+     top edge. Uses the live --ring-r CSS var so it tracks the ring
+     exactly across viewport sizes. */
+  .patterns {
+    position: fixed;
+    left: 50%;
+    top: calc(50% - var(--ring-r) - 72px);
+    transform: translate(-50%, -100%);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: center;
+    align-items: center;
+    width: min(720px, 92vw);
+    min-height: 36px;
+    transition: opacity 0.6s ease;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px 8px 14px;
+    border-radius: 999px;
+    background: var(--pill-bg);
+    border: 1px solid var(--hair);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.005em;
+    white-space: nowrap;
+    transform-origin: center;
+    animation: chipIn 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .chip .label { line-height: 1; }
+  .chip .count {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--ink-mute);
+    background: rgba(255, 235, 215, 0.10);
+    padding: 2px 7px;
+    border-radius: 999px;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .chip.bumped { animation: chipBump 0.5s cubic-bezier(0.22, 1, 0.36, 1); }
+  @keyframes chipIn {
+    0%   { opacity: 0; transform: translateY(6px) scale(0.92); }
+    100% { opacity: 1; transform: translateY(0)   scale(1); }
+  }
+  @keyframes chipBump {
+    0%   { transform: scale(1); }
+    40%  { transform: scale(1.07); }
+    100% { transform: scale(1); }
+  }
+
+  /* Live transcript — strictly one line. The container itself is
+     centered horizontally and sits in the visual midpoint between the
+     ring's bottom edge and the bottom of the viewport. The inner text
+     element is positioned by JS each render: when the text fits, it's
+     centered; once it overflows, it slides left so the LATEST word is
+     always visible at a constant inset from the right edge. The right
+     fade is intentionally narrow (24 px) so the latest word is fully
+     legible right up to its inset position; the left fade is wider so
+     older words trail off naturally under the mask. */
+  .transcript-wrap {
+    position: fixed;
+    left: 50%;
+    /* Vertical midpoint of the zone between ring bottom (50% + ring_r)
+       and viewport bottom (100%). That's: 50% + ring_r + (50% - ring_r)/2
+       = 75% + ring_r / 2 */
+    top: calc(75% + var(--ring-r) / 2);
+    transform: translate(-50%, -50%);
+    width: min(560px, 60vw);
+    height: 36px;
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(to right, transparent 0px, black 80px, black calc(100% - 24px), transparent 100%);
+            mask-image: linear-gradient(to right, transparent 0px, black 80px, black calc(100% - 24px), transparent 100%);
+    transition: opacity 0.6s ease;
+    pointer-events: none;
+  }
+  .transcript {
+    /* JS sets the transform every render so this single line stays
+       centered while it fits and shifts left once it doesn't. */
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+    font-family: 'Instrument Serif', serif;
+    font-size: 22px;
+    line-height: 1;
+    color: var(--ink);
+    white-space: nowrap;
+    text-align: left;
+    letter-spacing: 0.005em;
+  }
+  .transcript .word { opacity: 0.78; }
+  .transcript .interim { opacity: 0.45; font-style: italic; }
+  /* Highlighted word — clearly more prominent than the surrounding
+     text. Pure white core, layered warm glow, faint stroke for
+     additional weight (Instrument Serif italic has no true bold),
+     and a touch of letter-spacing to give it physical presence. */
+  .transcript .hi {
+    color: #ffffff;
+    font-style: italic;
+    letter-spacing: 0.018em;
+    text-shadow:
+      0 0 24px rgba(255, 220, 195, 0.95),
+      0 0 10px rgba(255, 235, 215, 0.95),
+      0 0 2px  rgba(255, 250, 240, 1.00);
+    -webkit-text-stroke: 0.45px rgba(255, 250, 240, 0.78);
+  }
+
+  /* Primary CTA — appears once enough patterns are captured. Quiet,
+     ghost-like; the ring is still the hero. */
+  .cta {
+    position: fixed;
+    left: 50%;
+    bottom: 56px;
+    transform: translate(-50%, 12px);
+    padding: 13px 26px 13px 26px;
+    border-radius: 999px;
+    background: rgba(255, 235, 215, 0.08);
+    border: 1px solid var(--hair-strong);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    color: var(--ink);
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.6s ease, transform 0.6s ease, background 0.3s ease, border 0.3s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .cta::after {
+    content: '';
+    width: 14px;
+    height: 1px;
+    background: currentColor;
+    opacity: 0.7;
+    transition: width 0.3s ease;
+  }
+  .cta.show {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translate(-50%, 0);
+  }
+  .cta:hover {
+    background: rgba(255, 235, 215, 0.14);
+    border-color: rgba(255, 235, 215, 0.45);
+  }
+  .cta:hover::after { width: 22px; }
+
+  /* Brain-mode caption — replaces the transcript area when we transform.
+     Title sits high, subtitle below. */
+  /* Brain title — sits above the brain volume, premium and quiet.
+     Sized to feel intentional but not announce itself too loudly. */
+  .brain-title {
+    position: fixed;
+    left: 50%;
+    top: 56px;
+    transform: translate(-50%, -8px);
+    text-align: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.8s ease 0.4s, transform 0.8s ease 0.4s;
+    width: min(640px, 90vw);
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    font-size: clamp(24px, 3.4vw, 36px);
+    line-height: 1.1;
+    color: var(--ink);
+    letter-spacing: -0.005em;
+  }
+  .brain-title.show {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+
+  /* Brain hint — tiny instruction line under the title. Quiet,
+     fades in once the brain has formed. */
+  .brain-hint {
+    position: fixed;
+    left: 50%;
+    bottom: 80px;
+    transform: translate(-50%, 8px);
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    font-weight: 500;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.6s ease 0.8s, transform 0.6s ease 0.8s;
+    text-align: center;
+    white-space: nowrap;
+  }
+  .brain-hint.show { opacity: 1; transform: translate(-50%, 0); }
+
+  /* === Brain labels =====================================
+     Each detected pattern category gets a label anchored to a
+     fixed 3D point on the brain. A small JS routine projects each
+     anchor every frame and writes its screen position into the
+     element's transform. The labels are clickable — click rotates
+     the brain to face that anchor and marks it as selected. */
+  .brain-labels {
+    position: fixed;
+    inset: 0;
+    z-index: 4;
+    pointer-events: none;
+    /* Children opt in below */
+  }
+  .brain-label {
+    position: absolute;
+    top: 0; left: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px 6px 10px;
+    background: rgba(20, 6, 4, 0.55);
+    border: 1px solid rgba(255, 235, 215, 0.18);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-radius: 999px;
+    color: var(--ink);
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    cursor: pointer;
+    pointer-events: auto;
+    transition: opacity 0.25s ease, background 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.25s ease;
+    white-space: nowrap;
+    will-change: transform, opacity;
+    user-select: none;
+    /* Center the label on its anchor; JS adds the screen translate */
+    transform: translate(-50%, -50%);
+  }
+  /* Secondary labels (subtopics) are quieter and smaller — they
+     orbit their parent group as supporting ideas. */
+  .brain-label.secondary {
+    padding: 4px 9px 4px 8px;
+    font-size: 10.5px;
+    font-weight: 400;
+    background: rgba(15, 4, 3, 0.40);
+    border-color: rgba(255, 235, 215, 0.10);
+    color: var(--ink-soft);
+    letter-spacing: 0.005em;
+  }
+  .brain-label.secondary .dot { width: 4px; height: 4px; }
+  /* Tertiary labels (the actual matched phrases from the user's
+     speech). Hidden in the overview, materialise around their
+     subtopic when its parent group is focused. They read as quiet
+     ghost pills — italic, tiny, only there to show *which words*
+     drove the detection. */
+  .brain-label.tertiary {
+    padding: 2px 7px;
+    font-size: 9.5px;
+    font-weight: 400;
+    font-style: italic;
+    background: rgba(8, 2, 1, 0.30);
+    border: 1px solid rgba(255, 235, 215, 0.07);
+    color: rgba(255, 235, 215, 0.78);
+    letter-spacing: 0;
+  }
+  .brain-label.tertiary .label-count { display: none; }
+  .brain-label:hover {
+    background: rgba(50, 18, 12, 0.78);
+    border-color: rgba(255, 235, 215, 0.40);
+  }
+  .brain-label.selected {
+    background: rgba(255, 240, 220, 0.94);
+    border-color: rgba(255, 250, 240, 1.0);
+    color: #8a2c1d;
+  }
+  /* The focused primary pill grows considerably: the user has just
+     "entered" this group, so it should read as the centre of
+     attention from across the screen. */
+  .brain-label.primary.selected {
+    padding: 14px 28px 14px 20px;
+    font-size: 19px;
+    font-weight: 500;
+    letter-spacing: 0.025em;
+    box-shadow: 0 0 48px rgba(255, 220, 195, 0.42), 0 0 16px rgba(255, 240, 220, 0.22);
+  }
+  .brain-label.primary.selected .dot {
+    width: 9px;
+    height: 9px;
+  }
+  .brain-label.primary.selected .label-count {
+    font-size: 13px;
+    padding: 3px 10px;
+  }
+  /* When ANY group is focused, non-focused labels recede so the
+     focused cluster reads clearly. JS toggles the body attr.
+     The IN-FOCUS labels (those NOT dimmed) get a strong legibility
+     boost so reading them is comfortable at the deeper zoom. */
+  body[data-focus] .brain-label.dimmed { opacity: 0.10 !important; }
+  body[data-focus] .brain-label.dimmed:hover { opacity: 0.45 !important; }
+  body[data-focus] .brain-label.secondary:not(.dimmed) {
+    font-size: 13px;
+    padding: 7px 14px 7px 12px;
+    background: rgba(35, 13, 9, 0.82);
+    border-color: rgba(255, 235, 215, 0.32);
+    color: #fff5e8;
+    font-weight: 500;
+    letter-spacing: 0.012em;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+  }
+  body[data-focus] .brain-label.secondary:not(.dimmed) .dot {
+    width: 6px;
+    height: 6px;
+    opacity: 0.95;
+  }
+  body[data-focus] .brain-label.tertiary:not(.dimmed) {
+    font-size: 12px;
+    padding: 5px 12px;
+    background: rgba(24, 8, 5, 0.74);
+    border-color: rgba(255, 235, 215, 0.24);
+    color: rgba(255, 248, 234, 1);
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.30);
+  }
+  .brain-label .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 8px currentColor;
+    opacity: 0.8;
+    flex-shrink: 0;
+  }
+  .brain-label .label-count {
+    font-size: 10px;
+    font-weight: 500;
+    opacity: 0.55;
+    font-variant-numeric: tabular-nums;
+    background: rgba(255, 235, 215, 0.10);
+    padding: 1px 6px;
+    border-radius: 999px;
+    line-height: 1.4;
+  }
+  .brain-label.selected .label-count {
+    background: rgba(138, 44, 29, 0.12);
+    opacity: 0.7;
+  }
+
+  /* Reset (return to listening) — appears in brain mode, bottom-right. */
+  .reset {
+    position: fixed;
+    bottom: 32px;
+    right: 32px;
+    padding: 10px 18px;
+    background: rgba(255, 235, 215, 0.08);
+    border: 1px solid var(--hair);
+    border-radius: 999px;
+    color: var(--ink-soft);
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.6s ease 0.5s, background 0.3s ease;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+  .reset.show { opacity: 1; pointer-events: auto; }
+  .reset:hover { background: rgba(255, 235, 215, 0.14); }
+
+  /* Phase classes on body let CSS hide/show the right pieces. */
+  body[data-phase="idle"]      .patterns,
+  body[data-phase="idle"]      .transcript-wrap { opacity: 0; }
+  body[data-phase="loading"]   .transcript-wrap { opacity: 0.35; }
+  body[data-phase="brain"]     .patterns,
+  body[data-phase="brain"]     .transcript-wrap,
+  body[data-phase="brain"]     .cta,
+  body[data-phase="brain"]     .hint { opacity: 0 !important; pointer-events: none; }
+  body[data-phase="loading"]   .cta { opacity: 0; pointer-events: none; }
+  /* Brain labels only matter in brain phase. */
+  body:not([data-phase="brain"]) .brain-labels { display: none; }
+
+  /* No-mic notice */
+  .notice {
+    position: fixed;
+    left: 50%;
+    bottom: 32px;
+    transform: translateX(-50%);
+    color: var(--ink-mute);
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    text-align: center;
+    max-width: 88vw;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+    pointer-events: none;
+  }
+  .notice.show { opacity: 1; }
+
+  /* Mobile tweaks */
+  @media (max-width: 600px) {
+    .brand { top: 18px; left: 18px; font-size: 16px; }
+    .status { top: 20px; right: 18px; font-size: 10px; }
+    .patterns { width: 92vw; }
+    .transcript-wrap { width: min(86vw, 360px); }
+    .transcript { font-size: 18px; }
+    .cta { bottom: 36px; padding: 12px 22px; font-size: 13px; }
+    .reset { bottom: 22px; right: 18px; }
+  }
+</style>
+</head>
+<body data-phase="idle">
+
+<!-- Painterly warm field that lives behind everything -->
+<div class="atmosphere"></div>
+<div class="grain" aria-hidden="true"></div>
+
+<!-- The particle ring + brain map render here -->
+<canvas id="stage"></canvas>
+
+<!-- Static UI overlays -->
+<div class="brand">Inner Map<span class="dot"></span><em>By Mia</em></div>
+<div class="status" id="status" data-state="idle">
+  <span class="pulse"></span>
+  <span class="label" id="statusLabel">Ready</span>
+</div>
+
+<div class="ui">
+  <div class="hint" id="hint">Tap to start talking</div>
+
+  <div class="patterns" id="patterns" aria-live="polite"></div>
+
+  <div class="transcript-wrap" id="transcriptWrap">
+    <div class="transcript" id="transcript"></div>
+  </div>
+
+  <button class="cta" id="cta" type="button">Make it clear</button>
+
+  <div class="brain-title" id="brainTitle">Your mind, made visible</div>
+
+  <div class="brain-hint" id="brainHint">Drag to rotate · scroll to zoom · click an area to explore</div>
+
+  <button class="reset" id="reset" type="button">Begin again</button>
+</div>
+
+<!-- Labels are positioned absolutely; JS writes their transform each frame. -->
+<div class="brain-labels" id="brainLabels"></div>
+
+<div class="notice" id="notice"></div>
+
+<script>
+"use strict";
+
+/* ============================================================
+   INNER MAP — voice-first, particle-native
+   ============================================================
+   Architecture:
+     - One <canvas> renders everything visual: the living ring,
+       voice-reactive deformation, the loading morph, and the
+       brain map. Same particle pool the whole way.
+     - Web Speech API drives transcription + interim text.
+     - Web Audio API (AnalyserNode) drives the ring's amplitude
+       response. If the mic isn't available, we fall back to a
+       gentle simulated amplitude so the ring still feels alive.
+     - Pattern detection is a rule-based scan over the running
+       transcript, mapping word matches to higher-level human
+       categories (Relationships, Overthinking, Self-Protection,
+       etc.). Each new match either creates a chip or bumps its
+       count.
+   Phases: idle → listening → loading → brain → (reset → idle)
+*/
+
+/* === DOM refs ============================================== */
+const stage           = document.getElementById('stage');
+const ctx             = stage.getContext('2d', { alpha: true });
+const hintEl          = document.getElementById('hint');
+const statusEl        = document.getElementById('status');
+const statusLabel     = document.getElementById('statusLabel');
+const patternsEl      = document.getElementById('patterns');
+const transcriptEl    = document.getElementById('transcript');
+const transcriptWrap  = document.getElementById('transcriptWrap');
+const ctaEl           = document.getElementById('cta');
+const brainTitleEl    = document.getElementById('brainTitle');
+const brainHintEl     = document.getElementById('brainHint');
+const brainLabelsEl   = document.getElementById('brainLabels');
+const resetEl         = document.getElementById('reset');
+const noticeEl        = document.getElementById('notice');
+
+/* === Pattern categories ====================================
+   Human, evocative names. Each maps to a list of triggers.
+   Triggers can be single words or short multi-word phrases.
+   We compile one regex per category and scan the running
+   transcript on every speech event. */
+/* === Pattern dictionary ====================================
+   The detector is structured as 10 top-level life-area GROUPS,
+   each containing several SUBTOPICS, each of which carries a
+   list of trigger phrases. This three-level structure is what
+   lets the experience feel intelligent without any AI: the
+   transcript highlights every individual phrase, the live
+   chips show the parent groups (so the user sees "Career"
+   instead of "burnout"), and the brain visualisation displays
+   primary group labels with their triggered subtopics
+   clustered around them as secondary supporting pills.
+
+   Triggers are intentionally written to look like natural
+   speech rather than buzzwords ("my mom", "can't sleep",
+   "burnt out", "broke up") so a real conversation produces
+   meaningful matches rather than no matches at all. */
+const GROUPS = {
+  career: {
+    label: 'Career & Work',
+    short: 'Career',
+    color: '#e8a17a',
+    subtopics: [
+      { id: 'burnout', label: 'Burnout', triggers: [
+        "burned out","burnt out","burnout","exhausted at work","fried",
+        "drained at work","dead inside at work","going through the motions",
+        "phoning it in","checked out at work","over it","numb at work"
+      ]},
+      { id: 'workload', label: 'Workload', triggers: [
+        "too much on my plate","on my plate","pile of work","piling up","piled up",
+        "backlog","deadline","deadlines","crunch","crunch time","sprint",
+        "release week","fire drill","putting out fires","never enough time",
+        "falling behind","behind at work","overworked","understaffed","overtime",
+        "long hours","late nights at work","working weekends"
+      ]},
+      { id: 'boss', label: 'Boss & Manager', triggers: [
+        "my boss","my manager","new manager","old manager","micromanage",
+        "micromanaged","micromanaging","leadership","upper management","higher ups",
+        "one-on-one","performance review","review at work","my review"
+      ]},
+      { id: 'coworkers', label: 'Coworkers & Team', triggers: [
+        "coworker","coworkers","colleague","colleagues","my team","teammates",
+        "office politics","difficult coworker","toxic coworker","toxic workplace",
+        "toxic culture","drama at work"
+      ]},
+      { id: 'direction', label: 'Career Direction', triggers: [
+        "career","career change","career path","next step in my career","next move",
+        "promotion","got promoted","passed over","raise at work","stuck in my career",
+        "plateau","leveling up","where i'm going","where i want to be","my trajectory"
+      ]},
+      { id: 'jobSearch', label: 'Job Search', triggers: [
+        "job search","job hunt","job hunting","looking for a new job","applying",
+        "applications","interviews","interviewing","recruiter","recruiters",
+        "got an offer","an offer","rejected","rejection","quit","quitting",
+        "resign","resigning","leave my job","two weeks","laid off","layoff",
+        "layoffs","got fired","unemployed","between jobs"
+      ]},
+      { id: 'meetings', label: 'Meetings & Time', triggers: [
+        "meeting","meetings","back-to-back","back to back meetings",
+        "calendar is full","calendar full","no time to think","always in meetings",
+        "standup","standups"
+      ]},
+      { id: 'identityWork', label: 'Identity at Work', triggers: [
+        "meaningful work","meaningless","imposter syndrome","feel like a fraud",
+        "don't belong here","why am i doing this","is this what i want",
+        "my purpose at work","my purpose"
+      ]},
+      { id: 'whereIWork', label: 'Where I Work', triggers: [
+        "remote work","work from home","wfh","return to office","rto","hybrid",
+        "commute to work","my commute","the office"
+      ]}
+    ]
+  },
+
+  money: {
+    label: 'Money & Finances',
+    short: 'Money',
+    color: '#d8a060',
+    subtopics: [
+      { id: 'tight', label: 'Tight on Money', triggers: [
+        "broke","broke right now","tight on money","money is tight",
+        "paycheck to paycheck","can't afford","cant afford","can't really afford",
+        "short on cash","short on rent","behind on rent","making ends meet",
+        "scraping by","barely making it","ramen","living lean"
+      ]},
+      { id: 'bills', label: 'Bills & Rent', triggers: [
+        "rent is due","my rent","the bills","bills are piling up","utilities",
+        "electric bill","my bills","overdraft","overdrafted","my bank account"
+      ]},
+      { id: 'debt', label: 'Debt', triggers: [
+        "in debt","my debt","credit card debt","credit cards","student loans",
+        "my loans","mortgage","minimum payment","collections","interest rate",
+        "high interest"
+      ]},
+      { id: 'saving', label: 'Saving', triggers: [
+        "saving","savings","my savings","emergency fund","saving up",
+        "trying to save","cutting back","saving for"
+      ]},
+      { id: 'investing', label: 'Investing', triggers: [
+        "investing","my investments","stocks","the market","my portfolio",
+        "retirement","my 401k","401k","roth","ira","index fund","crypto","bitcoin"
+      ]},
+      { id: 'income', label: 'Income', triggers: [
+        "my salary","my paycheck","my income","make more","made more","make less",
+        "got a raise","pay cut","side hustle","side income","freelance","commission"
+      ]},
+      { id: 'spending', label: 'Spending', triggers: [
+        "budget","budgeting","tracking expenses","spending too much","overspending",
+        "my spending","subscriptions","cancel subscriptions"
+      ]},
+      { id: 'moneyAnxiety', label: 'Money Anxiety', triggers: [
+        "money stress","financial stress","worried about money","money worries",
+        "anxious about money","scared about money","money keeps me up"
+      ]},
+      { id: 'bigPurchases', label: 'Big Purchases', triggers: [
+        "buying a house","down payment","new car","car payment","wedding cost",
+        "wedding budget","saving for a trip","saving for vacation"
+      ]}
+    ]
+  },
+
+  personalGrowth: {
+    label: 'Personal Growth',
+    short: 'Growth',
+    color: '#e0b070',
+    subtopics: [
+      { id: 'awareness', label: 'Self-Awareness', triggers: [
+        "i realized","i'm realizing","i realize","i'm noticing","i started noticing",
+        "aha moment","a lightbulb","made me realize","becoming aware",
+        "starting to see","i see now"
+      ]},
+      { id: 'doubt', label: 'Self-Doubt', triggers: [
+        "doubt myself","self-doubt","not good enough","not enough","never enough",
+        "insecure","insecurity","my inner critic","inner critic",
+        "who do i think i am","second-guessing myself","question myself"
+      ]},
+      { id: 'confidence', label: 'Confidence', triggers: [
+        "more confident","feel confident","stand my ground","trust myself",
+        "backing myself","i believe in myself"
+      ]},
+      { id: 'goals', label: 'Goals & Discipline', triggers: [
+        "my goals","setting goals","discipline","more disciplined",
+        "staying consistent","consistency","showing up","building habits",
+        "new habit","my routine","morning routine","evening routine",
+        "work on myself","working on myself","getting better","self-improvement",
+        "improving"
+      ]},
+      { id: 'therapy', label: 'Therapy & Coaching', triggers: [
+        "therapy","my therapist","in therapy","therapy session","coach","my coach",
+        "inner work","the work","doing the work"
+      ]},
+      { id: 'learning', label: 'Reading & Learning', triggers: [
+        "reading a book","i'm reading","listening to a podcast","podcast i love",
+        "this audiobook","taking a course","class i'm taking","this workshop",
+        "studying","learning about myself"
+      ]},
+      { id: 'becoming', label: 'Identity & Becoming', triggers: [
+        "who i am","who i'm becoming","becoming someone","next chapter",
+        "new chapter","new version of myself","old version of me",
+        "letting go of who i was","evolving","my growth","growing into"
+      ]},
+      { id: 'setbacks', label: 'Setbacks', triggers: [
+        "setback","i failed","feel like a failure","fell off","starting over",
+        "starting again","try again","keep going","want to give up","gave up"
+      ]},
+      { id: 'patterns', label: 'Patterns & Triggers', triggers: [
+        "my patterns","old patterns","this pattern","triggered","i was triggered",
+        "my trigger","reactive","my reaction"
+      ]}
+    ]
+  },
+
+  spiritual: {
+    label: 'Spiritual & Emotional',
+    short: 'Inner life',
+    color: '#c89cd8',
+    subtopics: [
+      { id: 'anxiety', label: 'Anxiety', triggers: [
+        "anxious","anxiety","panicking","panic attack","panic","worried","worrying",
+        "scared","afraid","fearful","fear","dread","nervous","tense","on edge",
+        "jittery","racing heart","tight chest","chest is tight","shortness of breath",
+        "can't breathe"
+      ]},
+      { id: 'sadness', label: 'Sadness & Grief', triggers: [
+        "sad","sadness","crying","i cried","in tears","tears","grief","grieving",
+        "mourning","heartbroken","heartbreak","devastated","aching","i ache"
+      ]},
+      { id: 'anger', label: 'Anger', triggers: [
+        "angry","anger","pissed","pissed off","furious","rage","raging","resentful",
+        "resentment","bitter","bitterness","frustrated","frustration","fed up",
+        "sick of it"
+      ]},
+      { id: 'overwhelm', label: 'Overwhelm', triggers: [
+        "overwhelmed","overwhelming","crushing","drowning","heavy","too much",
+        "it's too much","weight of it"
+      ]},
+      { id: 'numb', label: 'Numb & Disconnected', triggers: [
+        "numb","numbness","disconnected","detached","feel empty","feel flat",
+        "autopilot","on autopilot","depressed","depression","down","feel down"
+      ]},
+      { id: 'loneliness', label: 'Loneliness', triggers: [
+        "lonely","loneliness","feel alone","so alone","isolated",
+        "no one understands","feel invisible"
+      ]},
+      { id: 'hope', label: 'Hope & Lightness', triggers: [
+        "hopeful","hope","lighter","softer","feel softer","a little better",
+        "gratitude","grateful","thankful","small wins","small win"
+      ]},
+      { id: 'spirituality', label: 'Spirituality', triggers: [
+        "meditation","meditate","meditating","pray","praying","my prayer","faith",
+        "trust the universe","the universe","spiritual","my soul","my purpose",
+        "meaning in this","connected to something","higher self"
+      ]},
+      { id: 'overthinking', label: 'Overthinking', triggers: [
+        "overthinking","overthink","ruminating","rumination","racing thoughts",
+        "stuck in my head","in my head","spiraling","i'm spiraling","replaying",
+        "replay","keep replaying"
+      ]},
+      { id: 'shame', label: 'Shame & Guilt', triggers: [
+        "ashamed","shame","feel guilty","guilt","embarrassed","mortified","cringed"
+      ]},
+      { id: 'stress', label: 'Stress & Pressure', triggers: [
+        "stressed","stress","under pressure","the pressure","so much pressure"
+      ]},
+      { id: 'calm', label: 'Calm & Breath', triggers: [
+        "just want to breathe","need to breathe","exhale","just exhale","calmer",
+        "grounded","centered","at peace"
+      ]}
+    ]
+  },
+
+  health: {
+    label: 'Physical Health',
+    short: 'Health',
+    color: '#a8d088',
+    subtopics: [
+      { id: 'sleep', label: 'Sleep', triggers: [
+        "can't sleep","cant sleep","insomnia","awake at night",
+        "tossing and turning","wake up at 3am","up at 3am","wake up in the night",
+        "3am","nightmare","nightmares","my dreams","weird dreams","unrested",
+        "restless sleep","poor sleep","bad sleep","sleep is off"
+      ]},
+      { id: 'energy', label: 'Energy & Fatigue', triggers: [
+        "tired","exhausted","no energy","low energy","running on empty","drained",
+        "wiped out","wiped","fatigue","fatigued","weary","worn out"
+      ]},
+      { id: 'pain', label: 'Pain', triggers: [
+        "back pain","my back","headache","headaches","migraine","migraines","sore",
+        "achy","my body aches","in pain","my shoulder","my neck","tension headache",
+        "stiff"
+      ]},
+      { id: 'eating', label: 'Eating & Diet', triggers: [
+        "eating habits","my diet","junk food","too much sugar","sugar crash",
+        "too much coffee","caffeine","cutting caffeine","meal prep",
+        "cooking at home","skipping meals","no appetite","emotional eating",
+        "stress eating","binge eating"
+      ]},
+      { id: 'exercise', label: 'Exercise', triggers: [
+        "my workout","work out","working out","exercise","the gym","at the gym",
+        "running again","start running","walking more","my walks","yoga",
+        "stretching","lifting","strength training","training again"
+      ]},
+      { id: 'body', label: 'Body & Weight', triggers: [
+        "my weight","lost weight","gained weight","in shape","out of shape",
+        "body image","how i look","the mirror","not happy with my body"
+      ]},
+      { id: 'doctors', label: 'Doctors & Medical', triggers: [
+        "my doctor","appointment","specialist","my symptoms","diagnosis",
+        "medication","my meds","prescription","blood work","test results",
+        "physical therapy","pt"
+      ]},
+      { id: 'sickness', label: 'Sickness', triggers: [
+        "getting sick","feeling sick","caught the flu","a cold","i have covid",
+        "fever","not feeling well"
+      ]},
+      { id: 'substances', label: 'Substances', triggers: [
+        "drinking too much","drinking a lot","cut back on drinking","sober",
+        "sobriety","quit drinking","smoking again","quit smoking","weed","edibles",
+        "using too much"
+      ]}
+    ]
+  },
+
+  fun: {
+    label: 'Fun & Recreation',
+    short: 'Fun',
+    color: '#88c4d8',
+    subtopics: [
+      { id: 'hobbies', label: 'Hobbies', triggers: [
+        "my hobby","my hobbies","side project","creative project","my project",
+        "painting","drawing","writing again","my writing","playing music","my guitar",
+        "piano","photography","gardening","cooking for fun","baking"
+      ]},
+      { id: 'entertainment', label: 'Entertainment', triggers: [
+        "video games","gaming","playing games","watching a movie","this movie",
+        "this show","new show","binge watching","binging","netflix","my watchlist",
+        "reading for fun"
+      ]},
+      { id: 'travel', label: 'Travel', triggers: [
+        "travel","traveling","my trip","this trip","vacation","need a vacation",
+        "getaway","weekend trip","road trip","roadtrip","flight","flying out",
+        "destination"
+      ]},
+      { id: 'outdoors', label: 'Outdoors & Nature', triggers: [
+        "go outside","get outside","being outside","nature","a hike","hiking",
+        "the beach","the mountains","the park","the forest","sunshine","fresh air"
+      ]},
+      { id: 'play', label: 'Play & Joy', triggers: [
+        "having fun","just for fun","play","laughing","laughed","felt joy",
+        "felt lighter","pleasure","light hearted","silly","goofy"
+      ]},
+      { id: 'boredom', label: 'Boredom', triggers: [
+        "bored","boredom","nothing to do","need something new","same old",
+        "same routine"
+      ]},
+      { id: 'rest', label: 'Rest & Leisure', triggers: [
+        "lazy day","lazy weekend","doing nothing","rest day","this weekend",
+        "slow weekend","staycation","my day off"
+      ]}
+    ]
+  },
+
+  environment: {
+    label: 'Physical Environment',
+    short: 'Space',
+    color: '#a0d0c8',
+    subtopics: [
+      { id: 'home', label: 'Home', triggers: [
+        "my apartment","my home","my house","my place","my room","living situation"
+      ]},
+      { id: 'clutter', label: 'Clutter & Order', triggers: [
+        "cluttered","the mess","everything's a mess","messy","pile of stuff",
+        "piles everywhere","declutter","decluttering","organize","organizing",
+        "clean up","tidy up","tidying","spring cleaning"
+      ]},
+      { id: 'moving', label: 'Moving', triggers: [
+        "moving","new place","apartment hunting","house hunting","relocate",
+        "relocating","my lease","my landlord"
+      ]},
+      { id: 'neighborhood', label: 'Neighborhood', triggers: [
+        "my neighborhood","this city","this town","city life","small town",
+        "feel safe here","don't feel safe"
+      ]},
+      { id: 'workspace', label: 'Workspace', triggers: [
+        "my desk","my workspace","home office","my setup","my workstation"
+      ]},
+      { id: 'atmosphere', label: 'Atmosphere', triggers: [
+        "cozy","feels cozy","sunlight","sunny room","dark apartment","plants",
+        "my plants","candles","comfortable","feels like home",
+        "doesn't feel like home"
+      ]},
+      { id: 'commute', label: 'Commute', triggers: [
+        "my commute","long commute","traffic","stuck in traffic","the subway",
+        "train ride","driving in"
+      ]},
+      { id: 'climate', label: 'Climate', triggers: [
+        "the weather","gloomy","cold weather","the snow","the rain","hot here",
+        "humid","grey skies"
+      ]}
+    ]
+  },
+
+  social: {
+    label: 'Friends & Social',
+    short: 'Friends',
+    color: '#f0b8a0',
+    subtopics: [
+      { id: 'closeFriends', label: 'Close Friends', triggers: [
+        "best friend","my best friend","close friend","my friends","friend group",
+        "friend circle","inner circle","my crew","my people"
+      ]},
+      { id: 'hangingOut', label: 'Hanging Out', triggers: [
+        "hang out","hanging out","hung out","meeting up","met up","grab a drink",
+        "grabbed a drink","grab coffee","grabbed coffee","dinner with","brunch",
+        "plans tonight","plans this weekend","make plans"
+      ]},
+      { id: 'drift', label: 'Drift & Distance', triggers: [
+        "drifted","drifting apart","lost touch","haven't seen","havent seen",
+        "haven't talked","havent talked","not close anymore","falling out",
+        "fell out","ghosted","ghosted me"
+      ]},
+      { id: 'making', label: 'Making Friends', triggers: [
+        "no one to talk to","few friends","no friends here","making friends",
+        "making friends as an adult","hard to make friends","trying to make friends"
+      ]},
+      { id: 'groupChats', label: 'Group Chats', triggers: [
+        "group chat","group text","my group chat","the group chat"
+      ]},
+      { id: 'callsTexts', label: 'Calls & Texts', triggers: [
+        "text her","texted him","texted her","text him","call her","call him",
+        "phone call","facetime"
+      ]},
+      { id: 'events', label: 'Social Events', triggers: [
+        "a party","wedding","this wedding","birthday","gathering","reunion",
+        "going out tonight","staying in tonight","the event"
+      ]},
+      { id: 'socialAnxiety', label: 'Social Anxiety', triggers: [
+        "social anxiety","felt awkward","awkward","small talk",
+        "didn't know what to say","don't know what to say at parties"
+      ]}
+    ]
+  },
+
+  romance: {
+    label: 'Romance & Intimacy',
+    short: 'Romance',
+    color: '#e896a8',
+    subtopics: [
+      { id: 'partner', label: 'Partner', triggers: [
+        "my partner","my girlfriend","my boyfriend","my husband","my wife",
+        "my fiance","my fiancé","my fiancée","my spouse","my person",
+        "we've been together","weve been together"
+      ]},
+      { id: 'dating', label: 'Dating', triggers: [
+        "dating","first date","second date","third date","dating apps","tinder",
+        "hinge","bumble","got a match","we matched","my crush","have a crush",
+        "crushing on","flirting","flirted","meeting someone","seeing someone",
+        "someone new"
+      ]},
+      { id: 'connection', label: 'Connection', triggers: [
+        "intimacy","intimate","feel close","feel connected","our connection",
+        "real connection","chemistry","real spark","the spark"
+      ]},
+      { id: 'distance', label: 'Distance', triggers: [
+        "we feel distant","we've been distant","weve been distant",
+        "feel distant from","drifted apart","losing the spark","lost the spark",
+        "cold lately"
+      ]},
+      { id: 'conflict', label: 'Conflict', triggers: [
+        "fought with my partner","fight with my partner","we argued","we fought",
+        "tension between us","silent treatment","cold shoulder","arguing again"
+      ]},
+      { id: 'communication', label: 'Communication', triggers: [
+        "we don't talk","we dont talk","we never talk","open up","shut down on me",
+        "shut me out","tried to talk","tried talking","communicate better"
+      ]},
+      { id: 'physical', label: 'Physical Intimacy', triggers: [
+        "our sex life","sex life","physical intimacy","no affection","sex drive",
+        "my libido","not in the mood","wanting more"
+      ]},
+      { id: 'trust', label: 'Trust', triggers: [
+        "i don't trust","i dont trust","feel insecure with","jealous","jealousy",
+        "cheated","cheated on me","they cheated"
+      ]},
+      { id: 'breakup', label: 'Breakup & Ex', triggers: [
+        "breakup","broke up","broken up","my ex","getting over","over my ex",
+        "still hurts","missing my ex","reaching out to my ex"
+      ]},
+      { id: 'future', label: 'Future Together', triggers: [
+        "future together","engaged","engagement","getting married","newlyweds",
+        "forever person","soulmate","kids together","build a life"
+      ]}
+    ]
+  },
+
+  family: {
+    label: 'Family',
+    short: 'Family',
+    color: '#f0a890',
+    subtopics: [
+      { id: 'parents', label: 'Parents', triggers: [
+        "my mom","my mother","my dad","my father","my parents","their expectations",
+        "my parents' expectations"
+      ]},
+      { id: 'siblings', label: 'Siblings', triggers: [
+        "my sister","my brother","my siblings","my older brother","my older sister",
+        "my younger brother","my younger sister","my twin"
+      ]},
+      { id: 'children', label: 'Children', triggers: [
+        "my kid","my kids","my son","my daughter","my child","my children","my baby",
+        "newborn","parenting","being a parent","as a parent","pregnant","pregnancy",
+        "trying to conceive","ttc"
+      ]},
+      { id: 'extended', label: 'Extended Family', triggers: [
+        "my grandma","my grandmother","my grandpa","my grandfather","my aunt",
+        "my uncle","my cousin","my cousins","my in-laws","mother in law",
+        "father in law"
+      ]},
+      { id: 'familyConflict', label: 'Family Conflict', triggers: [
+        "family drama","family conflict","fight with my mom","fight with my dad",
+        "fight with my brother","fight with my sister","tension at home",
+        "haven't spoken to","havent spoken to","estranged","cut them off",
+        "no contact","family always","my mom always","my dad always"
+      ]},
+      { id: 'upbringing', label: 'Upbringing', triggers: [
+        "my childhood","as a child","my upbringing","how i was raised",
+        "family history","generational","family patterns"
+      ]},
+      { id: 'caregiving', label: 'Caregiving', triggers: [
+        "taking care of my mom","taking care of my dad","caregiving","aging parents",
+        "my mom's health","my dad's health"
+      ]},
+      { id: 'familyEvents', label: 'Family Events', triggers: [
+        "family gathering","family dinner","family holidays","family reunion",
+        "visiting family","going home for","thanksgiving with family",
+        "christmas with family"
+      ]},
+      { id: 'loss', label: 'Loss', triggers: [
+        "lost my mom","lost my dad","lost my grandma","lost my grandpa",
+        "death in the family","passed away","passed last year","funeral",
+        "my grief over"
+      ]}
+    ]
+  }
+};
+
+/* Compile triggers → regexes once. We build a regex per subtopic
+   (for counting), per group (used by chip rendering as a fast
+   fallback path), and one big union regex for transcript
+   highlighting. Word boundaries via lookarounds so apostrophes
+   ("can't") and multi-word phrases match cleanly. Longest first
+   so multi-word phrases beat single-word substrings. */
+function _compilePatterns(triggers) {
+  const alts = triggers
+    .slice()
+    .sort((a, b) => b.length - a.length)
+    .map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|');
+  return new RegExp(`(?<![A-Za-z0-9'])(?:${alts})(?![A-Za-z0-9])`, 'gi');
+}
+const SUBTOPIC_PATTERNS = {};   // 'career.burnout' → regex
+const GROUP_PATTERNS    = {};   // 'career'         → regex
+for (const [groupKey, group] of Object.entries(GROUPS)) {
+  const allInGroup = [];
+  for (const sub of group.subtopics) {
+    SUBTOPIC_PATTERNS[`${groupKey}.${sub.id}`] = _compilePatterns(sub.triggers);
+    allInGroup.push(...sub.triggers);
+  }
+  GROUP_PATTERNS[groupKey] = _compilePatterns(allInGroup);
+}
+
+/* Flat trigger list for transcript highlighting. */
+const HIGHLIGHT_REGEX = (() => {
+  const all = [];
+  for (const group of Object.values(GROUPS)) {
+    for (const sub of group.subtopics) all.push(...sub.triggers);
+  }
+  return _compilePatterns(all);
+})();
+
+/* === App state ============================================== */
+const APP = {
+  phase: 'idle',                      // idle | listening | loading | brain
+  recognition: null,
+  recognitionDead: false,             // set true if mic is denied/unavailable, prevents restart loop
+  finalText: '',                      // committed transcript
+  interimText: '',                    // live unconfirmed words
+  patternCounts: Object.fromEntries(Object.keys(GROUPS).map(k => [k, 0])),
+  patternFirstSeen: {},               // groupKey → timestamp (for ordering chips)
+  subtopicCounts: {},                 // 'groupKey.subtopicId' → count
+  matchedPhrases: {},                 // 'groupKey.subtopicId' → [unique phrases as they appeared]
+  // We deliberately do NOT request a separate mic stream via
+  // getUserMedia — that would prompt for microphone permission a
+  // second time on top of SpeechRecognition's own request. Instead,
+  // the ring's "voice reactivity" is driven by speech-event activity:
+  // we boost `speechActivity` whenever new transcribed characters
+  // arrive, then decay it each frame. Same visual feel, one prompt.
+  speechActivity: 0,                  // 0..1, decays toward 0
+  lastTotalLen: 0,                    // last seen transcript length (final + interim)
+  amplitude: 0,                       // smoothed reactivity used by render
+  // Loading state — driven by a real-seconds timer so the morph
+  // and spin always proceed at predictable physical speeds, no
+  // matter how variable the frame rate is.
+  loadingElapsed: 0,                  // seconds since loading began
+  loadingMorphT: 0,                   // 0..1 torsion progress
+  loadingSpinAngle: 0,                // accumulated rigid-rotation angle (rad)
+  // Initial appearance: instead of particles flying in from the
+  // canvas origin (which used to cause a noticeable bounce), they
+  // start at the ring's centre point and the ring radius gently
+  // eases out from 0 to its normal value over INTRO_DURATION
+  // seconds. Once introT reaches 1 it stays there for the rest of
+  // the session — this only affects the very first appearance.
+  introInit: false,                   // have we snapped particles to centre yet?
+  introT: 0,                          // 0..1 grow-from-centre progress
+  startedAt: 0
+};
+
+const INTRO_DURATION = 1.4;           // seconds for the initial grow
+
+/* === Canvas sizing (HiDPI) ================================== */
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth;
+  H = window.innerHeight;
+  stage.width  = Math.floor(W * DPR);
+  stage.height = Math.floor(H * DPR);
+  stage.style.width  = W + 'px';
+  stage.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  // Keep the layout CSS variable in sync with the canvas's ring radius
+  // so hint/patterns/transcript track the ring exactly. Function is
+  // declared further down so guard the call.
+  if (typeof updateLayoutVars === 'function') updateLayoutVars();
+}
+window.addEventListener('resize', resize);
+resize();
+
+/* === Glow sprite ============================================
+   Pre-render a soft warm-white glow once. We then drawImage it
+   for every particle — orders of magnitude faster than calling
+   shadowBlur per draw. */
+function makeGlowSprite(size, inner, outer) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const cx = c.getContext('2d');
+  const r = size / 2;
+  const g = cx.createRadialGradient(r, r, 0, r, r, r);
+  g.addColorStop(0.00, inner);
+  g.addColorStop(0.35, outer);
+  g.addColorStop(1.00, 'rgba(255,255,255,0)');
+  cx.fillStyle = g;
+  cx.fillRect(0, 0, size, size);
+  return c;
+}
+const GLOW = makeGlowSprite(48, 'rgba(255, 248, 235, 1.00)', 'rgba(255, 200, 170, 0.32)');
+const GLOW_HOT = makeGlowSprite(64, 'rgba(255, 252, 244, 1.00)', 'rgba(255, 215, 180, 0.45)');
+
+/* === Particles ===============================================
+   We carry a single particle pool through the whole experience.
+   Each particle has:
+     - a "home" angle on the ring (0..2π) plus tiny jitter for
+       organic feel, kept very small so the idle ring reads as
+       a clean circle
+     - a 3D target position inside the brain volume, sampled
+       once when we enter the brain phase
+   The same particles slide from ring → twist → trefoil → brain
+   without ever being destroyed or replaced. */
+const N = 2400;
+const particles = [];
+
+class Particle {
+  constructor(i) {
+    this.i = i;
+    this.homeAngle = (i / N) * Math.PI * 2;
+    // KEEP THIS SMALL — large jitter is what made the idle ring look
+    // wobbly before. A clean circle wants near-zero per-particle
+    // angular noise; the organic feel comes from the shape's own
+    // breathing, not from the particles being in random places.
+    this.jitterR   = (Math.random() - 0.5) * 1.2;
+    this.jitterA   = (Math.random() - 0.5) * 0.003;
+    this.phase     = Math.random() * Math.PI * 2;
+    this.sizeBase  = 0.85 + Math.random() * 0.55;
+    this.brightness= 0.55 + Math.random() * 0.45;
+
+    // Current/target screen-space position
+    this.x = 0; this.y = 0;
+    this.tx = 0; this.ty = 0;
+    this.vx = 0; this.vy = 0;
+
+    // 3D brain target (in normalized brain space, ~[-1.7, 1.7])
+    // Populated when the brain is generated.
+    this.bx = 0; this.by = 0; this.bz = 0;
+    // Cached projected screen position + depth for the current frame
+    // (used for size/alpha modulation and depth sorting).
+    this.depth = 0;
+  }
+}
+for (let i = 0; i < N; i++) particles.push(new Particle(i));
+
+/* === Shape parametric definitions =========================
+   Every shape is a function (theta, R, t, ...) → (x, y) in
+   ring-relative coordinates centered on (0,0). The ring radius
+   adapts to viewport size. */
+
+function ringRadius() {
+  return Math.max(120, Math.min(W, H) * 0.20);
+}
+
+/* Pure circle. Pristine, no deformation. */
+function shapeCircle(theta, R) {
+  return { x: Math.cos(theta) * R, y: Math.sin(theta) * R };
+}
+
+/* IDLE — a near-perfect circle with the gentlest radial breath.
+   The cleaner the silhouette here, the more the listening state
+   feels like it's coming alive. */
+function shapeIdle(theta, R, t) {
+  const breath = 1 + 0.010 * Math.sin(t * 0.55);
+  const r = R * breath;
+  return { x: Math.cos(theta) * r, y: Math.sin(theta) * r };
+}
+
+/* LISTENING — multi-octave organic radial deformation. The amp
+   parameter (0..1) opens up the deformation amplitude AND adds a
+   broad radial pulse, so the ring is restful when quiet and
+   visibly alive when the user speaks. */
+function shapeListening(theta, R, t, amp) {
+  // Three smooth harmonics at different spatial frequencies and
+  // time speeds — together they produce flowing, never-repeating
+  // deformation that reads as organic rather than mechanical.
+  const o1 = Math.sin(theta * 2  + t * 0.55);
+  const o2 = Math.sin(theta * 3  - t * 0.42 + 1.7) * 0.55;
+  const o3 = Math.sin(theta * 5  + t * 0.31 + 3.1) * 0.30;
+  const o4 = Math.sin(theta * 7  - t * 0.22 + 0.8) * 0.18;
+  const flow = (o1 + o2 + o3 + o4) / 2.03;     // ~[-1, 1]
+
+  // Quiet-state deformation: ±1.2% of R. Loud-state: up to ±9% of R.
+  const deformAmt = 0.012 + amp * 0.075;
+  // Radial pulse on top — the whole ring expands slightly with voice.
+  const pulse     = 1 + amp * 0.20;
+  const r         = R * (1 + flow * deformAmt) * pulse;
+
+  return { x: Math.cos(theta) * r, y: Math.sin(theta) * r };
+}
+
+/* Smooth easing helpers — used across the whole app */
+function smooth(a, b, k)  { return a + (b - a) * k; }
+function lerp(a, b, k)    { return a + (b - a) * k; }
+function easeInOut(x)     { return x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2; }
+function easeOutCubic(x)  { return 1 - Math.pow(1 - x, 3); }
+function easeInCubic(x)   { return x * x * x; }
+function clamp(x, a, b)   { return Math.max(a, Math.min(b, x)); }
+
+/* Returns 2D target (x,y) in ring-relative coordinates for the
+   non-3D phases (idle, listening). The 3D loading and brain phases
+   compute their target positions directly inside the render loop. */
+function getRingTarget2D(theta, t, amp) {
+  const R = ringRadius();
+  if (APP.phase === 'idle')      return shapeIdle(theta, R, t);
+  if (APP.phase === 'listening') return shapeListening(theta, R, t, amp);
+  // Fallback: clean circle
+  return shapeCircle(theta, R);
+}
+
+/* === Loading shape: a 3D twisted closed loop ==============
+   The loop is one closed parametric curve. Each particle keeps
+   its own home angle θ; the mapping θ → (x, y, z) evolves with
+   a single deformation parameter u ∈ [0, 1]:
+
+     r(θ, u) = R + a₂(u) cos(2θ) + a₃(u) cos(3θ)
+     z(θ, u) =     b₂(u) sin(2θ) + b₃(u) sin(3θ)
+     x(θ, u) = r(θ, u) cos(θ)
+     y(θ, u) = r(θ, u) sin(θ)
+
+   The 2-fold mode rises first, peaks (the first stable twisted
+   state), then fades out as the 3-fold mode rises into the
+   final twisted geometry. After u reaches 1 the coefficients
+   are frozen — only rigid rotation runs.
+
+   Because the radial AND z components use the SAME harmonic
+   frequency at a 90° phase offset (cos vs sin), each mode is
+   genuinely 3D — a twisted loop, not a flat in-plane flower
+   silhouette. The b coefficients (z amplitudes) are kept large
+   relative to the a coefficients so projection always shows the
+   loop's depth. */
+function smoothstep01(a, b, x) {
+  if (x <= a) return 0;
+  if (x >= b) return 1;
+  const t = (x - a) / (b - a);
+  return t * t * (3 - 2 * t);
+}
+
+/* The loader is two physical motions running side-by-side from
+   t = 0:
+
+   1. TORSION — an actual 3D twist of the ring, not a planar
+      morph. Imagine grabbing the ring at θ = 0 and θ = π (the
+      two horizontal "ends") and rotating each grab point about
+      the line between them. The grab points stay pinned at
+      (±1, 0, 0) for the entire animation. As u goes 0 → 1 the
+      top half of the ring rolls forward (out of the page) and
+      the bottom half rolls backward, and the ring gradually
+      collapses through itself into a 3D figure-eight whose long
+      axis is the twist axis (the x-axis).
+
+   2. RIGID ROTATION — the entire 3D shape spins around the
+      twist axis at a steady rate, starting from frame zero.
+      Because both motions share the same axis, the rotation
+      never adds to the torsion: it simply re-orients whatever
+      shape the torsion has produced at any given moment.
+
+   At u = 0 the formula degenerates exactly to a flat circle in
+   the xy plane. At u = 1 it produces a clean 3D figure-eight
+   whose xy projection is the lemniscate (sin θ cos θ scaled).
+   Beyond u = 1 the coefficients are frozen — only the rigid
+   rotation continues, until the brain transition begins. */
+function loadingShape3D(theta, u) {
+  // Easing on the morph: fast start, gentle settle into the final
+  // figure-8. Keeps the twist looking deliberate rather than
+  // mechanical. The rotation is unaffected by this easing.
+  const e = easeOutCubic(u);
+
+  const sinT = Math.sin(theta);
+  const cosT = Math.cos(theta);
+
+  // x stays at cos(θ) — this PINS the grab points at (±1, 0, 0)
+  // for the entire animation. They are fixed by construction.
+  const x = cosT;
+  // y lerps from sin(θ) (circle) to -sin(θ)cos(θ) (lemniscate).
+  // The factor (1 - e(1+cosθ)) interpolates between the two ends
+  // continuously; at θ = 0 and θ = π the bracket is 1 - 0 = 1
+  // (preserving the grab points at y = 0) and at θ = ±π/2 it
+  // contracts the ring's vertical extent.
+  const y = sinT * (1 - e * (1 + cosT));
+  // z is what makes the morph a real 3D torsion rather than a flat
+  // squash. The top half of the ring (sin θ > 0) lifts forward and
+  // the bottom half (sin θ < 0) drops backward, exactly as a wire
+  // ring would deform under opposite torsion at its two ends.
+  const z = e * 0.5 * sinT;
+
+  return { x, y, z };
+}
+
+/* === Loading timeline ===================================
+   Two animations run in parallel from t = 0:
+     • the torsion morph completes in TORSION_DURATION seconds;
+     • the rigid axial rotation runs continuously through the
+       full LOADING_SECONDS window.
+   Beyond TORSION_DURATION the geometry is locked and only the
+   rotation keeps going, until the brain transition begins. */
+const TORSION_DURATION = 2.0;       // circle → 3D figure-eight
+const LOADING_SECONDS  = 4.5;       // total loader window
+const SPIN_RATE        = Math.PI * 2 / 2.0;  // one revolution every 2.0s
+
+/* The view tilt applied during loading and brain phases. Without
+   tilt, a flat ring projects as a flat 2D shape and the spin
+   axis (x-axis) reads as flat-on; a moderate forward pitch makes
+   the torsion and spin legible in 3D without disorienting the
+   brain that follows. */
+const VIEW_TILT_LOADING = 0.42;
+
+/* === Brain volume (SDF approach) ==========================
+   The brain is approximated as a union of overlapping ellipsoids,
+   following the same blob model as the reference experience.
+   We sample particle positions inside this volume by rejection
+   sampling, then keep them stable forever — every particle
+   maps to a fixed 3D point in brain space, and rendering just
+   rotates and projects each frame.
+
+   Coordinate system: the blobs live in a normalized space roughly
+   bounded by [-1.7, 1.7] in x, [-1.4, 1.4] in y, [-1.35, 1.35] in z.
+   We map this to screen pixels via BRAIN_SCREEN_SCALE. */
+const BRAIN_BLOBS = [
+  { cx:  0.00, cy:  0.20, cz: 0, rx: 1.18, ry: 0.72, rz: 1.08, w: 1.0 },
+  { cx: -0.95, cy:  0.15, cz: 0, rx: 0.55, ry: 0.62, rz: 0.92, w: 1.0 },
+  { cx: -0.55, cy:  0.62, cz: 0, rx: 0.50, ry: 0.32, rz: 0.85, w: 0.9 },
+  { cx:  0.00, cy:  0.78, cz: 0, rx: 0.55, ry: 0.25, rz: 0.85, w: 0.9 },
+  { cx:  0.50, cy:  0.65, cz: 0, rx: 0.45, ry: 0.30, rz: 0.85, w: 0.9 },
+  { cx:  1.00, cy:  0.10, cz: 0, rx: 0.50, ry: 0.55, rz: 0.92, w: 1.0 },
+  { cx: -0.55, cy: -0.42, cz: 0, rx: 0.50, ry: 0.40, rz: 0.92, w: 0.95 },
+  { cx:  0.05, cy: -0.50, cz: 0, rx: 0.55, ry: 0.30, rz: 0.82, w: 0.9 },
+  { cx:  0.85, cy: -0.55, cz: 0, rx: 0.42, ry: 0.35, rz: 0.72, w: 1.0 },
+  { cx:  0.60, cy: -0.60, cz: 0, rx: 0.28, ry: 0.25, rz: 0.58, w: 0.9 },
+  { cx:  0.48, cy: -0.85, cz: 0, rx: 0.17, ry: 0.20, rz: 0.22, w: 1.2 },
+  { cx:  0.48, cy: -1.05, cz: 0, rx: 0.13, ry: 0.18, rz: 0.18, w: 1.2 }
+];
+
+function inBrain(x, y, z) {
+  for (let i = 0; i < BRAIN_BLOBS.length; i++) {
+    const b = BRAIN_BLOBS[i];
+    const dx = (x - b.cx) / b.rx;
+    const dy = (y - b.cy) / b.ry;
+    const dz = (z - b.cz) / b.rz;
+    if (dx*dx + dy*dy + dz*dz < 1) return true;
+  }
+  return false;
+}
+
+/* Brain rotation + interaction state. Drag updates target rotation;
+   actual rotation lerps toward target each frame for smooth motion.
+   Wheel/pinch updates the zoom. The same rotation is also used
+   during loading so the 3D twisted ring is legible (otherwise a
+   flat-circle projection hides the torsion). */
+const BRAIN = {
+  ready: false,           // brain targets have been generated
+  formT: 0,               // 0..1 transition progress from loading shape → brain volume
+  rotX: 0, rotY: 0,       // current rotation
+  tRotX: 0, tRotY: 0,     // target rotation (drag updates this)
+  zoom: 1.0, tZoom: 1.0,  // current/target zoom (wheel + pinch update target)
+  dragging: false,
+  lastDragX: 0, lastDragY: 0,
+  pinchDist: 0, pinchActive: false,
+  lastInteraction: 0,     // timestamp of last user interaction (gates auto-rotate)
+  selectedLabel: null     // currently selected label key, or null
+};
+
+/* === Label anchors ============================================
+   Each of the 10 life-area GROUPS has a fixed 3D anchor on the
+   brain. Subtopic anchors are generated per session in a small
+   ring on the tangent plane around their parent group's anchor,
+   so the brain reads as primary nodes with smaller supporting
+   pills clustered around each one. */
+const GROUP_ANCHORS = {
+  career:         { x:  0.65, y:  0.55, z:  0.50 },   // upper-right-front
+  money:          { x:  0.95, y:  0.05, z:  0.30 },   // mid-right-front
+  personalGrowth: { x:  0.20, y:  0.85, z:  0.45 },   // top-right-front
+  spiritual:      { x: -0.20, y:  0.85, z:  0.45 },   // top-left-front
+  health:         { x: -0.05, y:  0.45, z:  0.85 },   // top-mid-front
+  fun:            { x:  0.45, y: -0.45, z:  0.65 },   // lower-right-front
+  environment:    { x: -0.45, y: -0.40, z:  0.65 },   // lower-left-front
+  social:         { x: -0.95, y:  0.10, z:  0.30 },   // mid-left
+  romance:        { x: -0.65, y: -0.40, z:  0.40 },   // lower-left
+  family:         { x:  0.75, y: -0.55, z:  0.20 }    // lower-right
+};
+
+/* Generate a ring of anchor positions in the tangent plane to the
+   brain at the parent's location. Used twice: once to lay out a
+   group's subtopics around its primary anchor, and again to lay out
+   the matched-phrase tokens around each subtopic anchor. */
+function generateRingAnchors(parent, count, radius, startAngle) {
+  const out = [];
+  if (count <= 0) return out;
+  // Outward normal at the parent (away from origin)
+  const len = Math.hypot(parent.x, parent.y, parent.z) || 1;
+  const nx = parent.x / len, ny = parent.y / len, nz = parent.z / len;
+  // Pick a reference vector not parallel to n, then build an
+  // orthonormal basis (u, v) for the tangent plane.
+  let upx = 0, upy = 1, upz = 0;
+  if (Math.abs(ny) > 0.92) { upx = 1; upy = 0; upz = 0; }
+  let ux = upy * nz - upz * ny;
+  let uy = upz * nx - upx * nz;
+  let uz = upx * ny - upy * nx;
+  const ulen = Math.hypot(ux, uy, uz) || 1;
+  ux /= ulen; uy /= ulen; uz /= ulen;
+  const vx = ny * uz - nz * uy;
+  const vy = nz * ux - nx * uz;
+  const vz = nx * uy - ny * ux;
+  for (let i = 0; i < count; i++) {
+    const a = startAngle + (i / count) * Math.PI * 2;
+    const ca = Math.cos(a), sa = Math.sin(a);
+    out.push({
+      x: parent.x + radius * (ca * ux + sa * vx),
+      y: parent.y + radius * (ca * uy + sa * vy),
+      z: parent.z + radius * (ca * uz + sa * vz)
+    });
+  }
+  return out;
+}
+
+/* Convenience wrapper preserving the old call site for subtopic
+   anchors. Radius scales gently with count so a group with seven
+   subtopics doesn't crowd its ring. */
+function generateSubtopicAnchors(parent, count) {
+  const R = 0.30 + Math.max(0, count - 4) * 0.022;
+  return generateRingAnchors(parent, count, R, -Math.PI / 2);
+}
+
+/* Generate the N brain target positions by rejection-sampling the
+   ellipsoid union. Stamps each particle's bx/by/bz. Kept stable for
+   the lifetime of the session — the brain doesn't shuffle once
+   formed, just rotates and scales. */
+function generateBrainTargets() {
+  const positions = [];
+  let attempts = 0;
+  const cap = N * 120;
+  while (positions.length < N && attempts < cap) {
+    attempts++;
+    const x = (Math.random() * 2 - 1) * 1.7;
+    const y = (Math.random() * 2 - 1) * 1.4;
+    const z = (Math.random() * 2 - 1) * 1.35;
+    if (!inBrain(x, y, z)) continue;
+    positions.push([x, y, z]);
+  }
+
+  // Shuffle so adjacent ring particles don't end up adjacent in the
+  // brain — that gives a more dispersed, organic-feeling release.
+  for (let i = positions.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = positions[i]; positions[i] = positions[j]; positions[j] = tmp;
+  }
+
+  // Stamp onto particles. Note the y-flip: in our normalized brain
+  // space, +y is up; on screen, +y is down. Doing the flip here once
+  // keeps the rest of the projection math clean.
+  for (let i = 0; i < N; i++) {
+    const pos = positions[i % positions.length] || [0, 0, 0];
+    particles[i].bx = pos[0];
+    particles[i].by = -pos[1];
+    particles[i].bz = pos[2];
+  }
+
+  BRAIN.ready = true;
+}
+
+/* Apply current view rotation (yaw then pitch) to a normalized
+   3D point and return rotated coords. The same rotation matrix is
+   used everywhere — particles, label anchors, connector lines —
+   so they all transform together. */
+function rotatePoint3D(x, y, z) {
+  const cy = Math.cos(BRAIN.rotY), sy = Math.sin(BRAIN.rotY);
+  const x1 =  x * cy + z * sy;
+  const z1 = -x * sy + z * cy;
+  const cx = Math.cos(BRAIN.rotX), sx = Math.sin(BRAIN.rotX);
+  const y2 =  y * cx - z1 * sx;
+  const z2 =  y * sx + z1 * cx;
+  return { x: x1, y: y2, z: z2 };
+}
+
+/* Project a normalized 3D point to screen coordinates using the
+   given pixel scale. Returns sx/sy (pixels) and sz (rotated z,
+   normalized — used for depth shading and label fading). */
+function project3D(x, y, z, scale) {
+  const r = rotatePoint3D(x, y, z);
+  return {
+    sx: W / 2 + r.x * scale,
+    sy: H / 2 + r.y * scale,
+    sz: r.z
+  };
+}
+
+/* Brain pixel scale at default zoom. Smaller than the viewport so
+   the brain reads at a comfortable size. Multiplied by BRAIN.zoom
+   for user-driven zooming. */
+function brainScreenScaleBase() {
+  return Math.min(W * 0.26, H * 0.32);
+}
+function brainScreenScale() {
+  return brainScreenScaleBase() * BRAIN.zoom;
+}
+
+/* === Main render loop ====================================== */
+let tStart = performance.now();
+let lastT  = tStart;
+
+function tick(now) {
+  const t  = (now - tStart) / 1000;
+  const dt = Math.max(0.001, Math.min(0.05, (now - lastT) / 1000));
+  lastT = now;
+
+  // --- Intro: gentle grow from the centre ------------------
+  // The very first time we have a sized canvas, snap every
+  // particle to the screen centre with zero velocity. This
+  // replaces the old behaviour where particles started at
+  // (0, 0) and got pulled in by the spring — that pull caused
+  // the bounce on page load. From there the introT timer
+  // advances smoothly, and the per-particle target computation
+  // below scales the ring's radius by easeOutCubic(introT) so
+  // the loop expands quietly outward instead of springing in.
+  if (!APP.introInit && W > 0 && H > 0) {
+    const ix = W / 2, iy = H / 2;
+    for (let i = 0; i < N; i++) {
+      const p = particles[i];
+      p.x = ix; p.y = iy;
+      p.tx = ix; p.ty = iy;
+      p.vx = 0; p.vy = 0;
+    }
+    APP.introInit = true;
+  }
+  if (APP.introT < 1) {
+    APP.introT = Math.min(1, APP.introT + dt / INTRO_DURATION);
+  }
+
+  // --- Reactivity ------------------------------------------
+  // Speech-event-driven amplitude (no second mic permission).
+  // Slightly slower decay than before, so each word "rings" longer
+  // and the listening animation has more visible expression.
+  const decay = Math.pow(0.5, dt * 3.0);  // ~230 ms half-life
+  APP.speechActivity *= decay;
+  let raw = 0;
+  if (APP.phase === 'listening') {
+    raw = 0.10 + 0.04 * Math.abs(Math.sin(t * 1.6)) + APP.speechActivity * 1.05;
+  } else if (APP.phase === 'loading') {
+    raw = 0.30 + 0.18 * Math.abs(Math.sin(t * 2.6));
+  }
+  APP.amplitude = smooth(APP.amplitude, Math.min(1, raw), 0.18);
+
+  // --- Loading timeline ------------------------------------
+  // The morph (circle → infinity) completes in TORSION_DURATION
+  // seconds. The continuous axial rotation runs in parallel from
+  // the very first frame and never stops — there is no ramp-in,
+  // no gate on morph progress. After the morph completes the
+  // shape is locked at its infinity geometry and only the
+  // rotation keeps advancing. The full loader window is
+  // LOADING_SECONDS; once it elapses we hand off to the brain.
+  if (APP.phase === 'loading') {
+    APP.loadingElapsed += dt;
+    APP.loadingMorphT = Math.min(1, APP.loadingElapsed / TORSION_DURATION);
+    APP.loadingSpinAngle += dt * SPIN_RATE;
+
+    if (APP.loadingElapsed >= LOADING_SECONDS) enterBrain();
+  }
+
+  // --- Brain transition + global rotation/zoom lerp --------
+  // Rotation and zoom always lerp toward target so they animate
+  // smoothly whether driven by drag, click-to-focus, wheel zoom,
+  // pinch zoom, or auto-rotation.
+  BRAIN.rotX = smooth(BRAIN.rotX, BRAIN.tRotX, 0.12);
+  BRAIN.rotY = smooth(BRAIN.rotY, BRAIN.tRotY, 0.12);
+  BRAIN.zoom = smooth(BRAIN.zoom, BRAIN.tZoom, 0.15);
+
+  if (APP.phase === 'brain') {
+    BRAIN.formT = Math.min(1, BRAIN.formT + dt / 2.0);  // ~2s release+gather
+    // Continue accumulating the loading-side rotation so the source
+    // half of the lerp keeps spinning during the transition — no
+    // visual freeze on the loop while particles peel off into the
+    // brain volume.
+    APP.loadingSpinAngle += dt * SPIN_RATE;
+
+    // Subtle auto-rotation when the user isn't dragging or recently
+    // interacting. Sits on top of the target rotation so any drag
+    // immediately overrides it.
+    const sinceInteract = (performance.now() - BRAIN.lastInteraction) / 1000;
+    if (!BRAIN.dragging && !BRAIN.pinchActive && sinceInteract > 2.0
+        && BRAIN.formT > 0.5 && !BRAIN.selectedLabel) {
+      BRAIN.tRotY += dt * 0.04;
+    }
+  }
+
+  // --- Compute screen positions and integrate motion --------
+  const cx = W / 2, cy = H / 2;
+
+  // Render scale: smoothly grows from ringRadius (loading) to
+  // brainScreenScale (brain) during the transition. Both source
+  // and target sides of the lerp use a single scale per frame so
+  // there are no scale discontinuities.
+  const ringR  = ringRadius();
+  const brainS = brainScreenScale();
+  const sceneScale = (APP.phase === 'brain')
+    ? lerp(ringR, brainS, easeOutCubic(BRAIN.formT))
+    : ringR;
+
+  for (let i = 0; i < N; i++) {
+    const p = particles[i];
+    const angle = p.homeAngle + p.jitterA;
+    let target;
+
+    if (APP.phase === 'idle' || APP.phase === 'listening') {
+      // 2D shapes — no projection needed. The intro scale eases
+      // the radius out from 0 to its normal value on first load,
+      // so particles appear to grow gently from the centre.
+      const introScale = easeOutCubic(APP.introT);
+      const r = getRingTarget2D(angle, t, APP.amplitude);
+      target = {
+        x: r.x * introScale + cx + p.jitterR * 0.5 * introScale,
+        y: r.y * introScale + cy + p.jitterR * 0.5 * introScale
+      };
+      p.depth = 0;
+    } else {
+      // 3D shapes (loading and brain). Compute the loop's 3D point
+      // from the torsion morph, then apply the continuous rigid
+      // rotation around the twist axis (x-axis) — the same axis
+      // the grab points sit on. Both halves of the loader animation
+      // (torsion and rotation) share this axis by design, so the
+      // rotation never adds to the twist; it only re-orients the
+      // already-formed shape.
+      const loop = loadingShape3D(angle, APP.loadingMorphT);
+      const cs = Math.cos(APP.loadingSpinAngle), sn = Math.sin(APP.loadingSpinAngle);
+      let nx = loop.x;                          // x is on the spin axis
+      let ny = loop.y * cs - loop.z * sn;       // rotate yz around x
+      let nz = loop.y * sn + loop.z * cs;
+
+      if (APP.phase === 'brain') {
+        const u = easeOutCubic(BRAIN.formT);
+        // Brain target in normalized brain space (already y-flipped
+        // for screen coords during generateBrainTargets). The loop
+        // is in unit-ish coords (~[-1.4, 1.4]); the brain targets
+        // are in similar range (~[-1.7, 1.7]). Same coordinate
+        // system, so the lerp is meaningful.
+        nx = lerp(nx, p.bx, u);
+        // Loop's y is +up in math, but our brain targets are already
+        // y-down (screen-space). Flip the loop side of the lerp so
+        // both ends agree on screen orientation before mixing.
+        ny = lerp(-ny, p.by, u);
+        nz = lerp(nz, p.bz, u);
+      } else {
+        // Loading phase: flip y for screen orientation (math-y up → screen-y down).
+        ny = -ny;
+      }
+
+      const proj = project3D(nx, ny, nz, sceneScale);
+      target = {
+        x: proj.sx + p.jitterR * 0.4,
+        y: proj.sy + p.jitterR * 0.4
+      };
+      p.depth = proj.sz;
+    }
+
+    p.tx = target.x;
+    p.ty = target.y;
+
+    // Spring-damper integration. Stiffness varies by phase so the
+    // ring is responsive but the brain release feels softer/longer.
+    let stiffness, damping;
+    if (APP.phase === 'loading')      { stiffness = 0.22; damping = 0.78; }
+    else if (APP.phase === 'brain')   { stiffness = 0.10; damping = 0.82; }
+    else                              { stiffness = 0.18; damping = 0.78; }
+    const ax = (p.tx - p.x) * stiffness;
+    const ay = (p.ty - p.y) * stiffness;
+    p.vx = (p.vx + ax) * damping;
+    p.vy = (p.vy + ay) * damping;
+    p.x += p.vx;
+    p.y += p.vy;
+  }
+
+  // --- Render ----------------------------------------------
+  ctx.clearRect(0, 0, W, H);
+  ctx.globalCompositeOperation = 'lighter';
+
+  if (APP.phase === 'brain') {
+    drawBrainParticles(t);
+    // Subtle interconnections between active groups, then label
+    // pills positioned over the projected anchors. Both depend on
+    // the labels' projected positions; updateBrainLabels writes
+    // those positions onto BRAIN_LABELS, so we run it first.
+    ctx.globalCompositeOperation = 'source-over';
+    updateBrainLabels();
+    drawGroupConnections();
+  } else {
+    drawRingParticles(t);
+  }
+
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+/* === Ring/loading particle rendering ====================== */
+function drawRingParticles(t) {
+  // During the page-load intro the alpha eases up alongside the
+  // radius, so the ring doesn't appear at full brightness from
+  // a single bright dot at the centre — it materialises softly.
+  const introAlpha = easeOutCubic(APP.introT);
+  for (let i = 0; i < N; i++) {
+    const p = particles[i];
+    let bright = p.brightness;
+    if (APP.phase === 'listening') bright += APP.amplitude * 0.55;
+    if (APP.phase === 'loading')   bright += 0.20 + 0.20 * Math.sin(t * 4 + p.phase);
+    bright = clamp(bright, 0.20, 1.4);
+
+    const sizeMult = APP.phase === 'loading' ? 1.10
+                   : 1.0 + APP.amplitude * 0.45;
+    const sz = (7 + p.sizeBase * 11) * sizeMult;
+
+    const sprite = (APP.phase === 'loading' || APP.amplitude > 0.55) ? GLOW_HOT : GLOW;
+    ctx.globalAlpha = bright * 0.55 * introAlpha;
+    ctx.drawImage(sprite, p.x - sz / 2, p.y - sz / 2, sz, sz);
+
+    // Bright core dot
+    ctx.globalAlpha = Math.min(1, bright) * introAlpha;
+    ctx.fillStyle = 'rgba(255, 250, 240, 1)';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 0.85 * p.sizeBase, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+/* === Focus dust ============================================
+   When the user dives into a group, this pool of ambient
+   particles fills the focused volume with extra "internal
+   structure" — soft warm motes that orbit the focus anchor with
+   gentle wobble and breathing. They give the focused cluster
+   density and dimensionality so the area never reads as empty
+   when the rest of the brain has receded off-screen. */
+const FOCUS_DUST_COUNT = 110;
+const FOCUS_DUST = (() => {
+  const arr = [];
+  // Box–Muller-ish sampling so the cloud is densest near the
+  // anchor and tapers smoothly outward.
+  const sample = (sigma) => {
+    let u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return sigma * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  };
+  for (let i = 0; i < FOCUS_DUST_COUNT; i++) {
+    arr.push({
+      rx:    sample(0.18),
+      ry:    sample(0.18),
+      rz:    sample(0.16),
+      phase: Math.random() * Math.PI * 2,
+      speed: 0.20 + Math.random() * 0.45,
+      size:  0.45 + Math.random() * 0.95,
+      bright: 0.55 + Math.random() * 0.45,
+      // Inner motes hold steady; outer motes drift more visibly.
+      drift: 0.01 + Math.random() * 0.025
+    });
+  }
+  return arr;
+})();
+
+/* === Brain particle rendering ==============================
+   Volumetric look from a flat 2D canvas: depth (z) modulates
+   per-particle size, alpha, and warm color saturation. Particles
+   in front render brighter/larger; those behind soften and dim,
+   which is what gives the silhouette its volume. */
+function drawBrainParticles(t) {
+  const u = easeOutCubic(BRAIN.formT);
+  // Crossfade from "ring-style" rendering to "depth-style" rendering
+  // as the brain forms. Before u=0.4 we render with the ring style
+  // (uniform brightness) so the release phase feels luminous; after
+  // u=0.4 we ramp depth shading in for the volumetric look.
+  const depthBlend = clamp((u - 0.35) / 0.65, 0, 1);
+
+  // Particle size scales with zoom so when the user dives into a
+  // group the cluster reads as DENSE rather than dispersed.
+  const zoomBoost = Math.pow(BRAIN.zoom, 0.55);
+
+  // Focus spotlight: when a group is selected, particles within
+  // FOCUS_RADIUS of its anchor brighten and grow strongly; particles
+  // far from the anchor dim hard. Stronger contrast than the overview
+  // gives the "stepping inside" feel.
+  let fa = null;
+  if (BRAIN.selectedLabel && GROUP_ANCHORS[BRAIN.selectedLabel]) {
+    fa = GROUP_ANCHORS[BRAIN.selectedLabel];
+  }
+  // How "in" the focus we are (lerps with BRAIN.zoom 1.0 → 3.0).
+  const focusT = clamp((BRAIN.zoom - 1.0) / (3.0 - 1.0), 0, 1);
+  // Anchors store y in the same screen-down convention as
+  // particle.by (set in generateBrainTargets), so distance can be
+  // computed directly without flipping y.
+  const FOCUS_RADIUS_SQ = 0.55 * 0.55;
+  // Spotlight strength ramps in with focusT so the change feels
+  // continuous with the camera move rather than a hard cut.
+  const FAR_DIM_BASE     = 1.0;
+  const FAR_DIM_DEEP     = 0.32;            // far particles dim deeper at full focus
+  const NEAR_BRIGHT_GAIN = 1.40 * focusT;   // additional brightness gain at the centre
+  const NEAR_GROW_GAIN   = 0.75 * focusT;   // additional size gain at the centre
+  const farDim = lerp(FAR_DIM_BASE, FAR_DIM_DEEP, focusT);
+
+  for (let i = 0; i < N; i++) {
+    const p = particles[i];
+
+    // Depth-shaped brightness/size (only fully active once formed)
+    const dn = clamp((p.depth + 1.4) / 2.8, 0, 1);  // 0=back, 1=front
+    const depthBright = 0.30 + dn * 0.95;
+    const depthSize   = 0.55 + dn * 0.65;
+
+    const flatBright = clamp(p.brightness + 0.15 * Math.sin(t * 0.8 + p.phase), 0.4, 1.2);
+    const flatSize   = 1.0;
+
+    let bright = lerp(flatBright, depthBright, depthBlend);
+    let sizeM  = lerp(flatSize,   depthSize,   depthBlend);
+
+    if (fa) {
+      const dx = p.bx - fa.x;
+      const dy = p.by - fa.y;
+      const dz = p.bz - fa.z;
+      const d2 = dx * dx + dy * dy + dz * dz;
+      const focus = Math.exp(-d2 / FOCUS_RADIUS_SQ);  // 1 at centre → 0 far
+      bright = bright * (farDim + focus * NEAR_BRIGHT_GAIN);
+      sizeM  = sizeM  * (1 + focus * NEAR_GROW_GAIN);
+    }
+
+    const sz = (6 + p.sizeBase * 10) * sizeM * zoomBoost;
+
+    // Glow halo
+    ctx.globalAlpha = bright * 0.45;
+    ctx.drawImage(GLOW, p.x - sz / 2, p.y - sz / 2, sz, sz);
+
+    // Core dot — very small, slightly warm-tinted for the depth shading
+    ctx.globalAlpha = Math.min(1, bright);
+    // Front particles read warmer (cream); back particles cooler/dimmer
+    const r = 255;
+    const g = Math.round(245 - (1 - dn) * 18);
+    const b = Math.round(225 - (1 - dn) * 30);
+    ctx.fillStyle = `rgba(${r},${g},${b},1)`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 0.9 * p.sizeBase * sizeM * zoomBoost, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // ---- Focused-state extras: dust + multi-layer aura ----------
+  // Drawn AFTER the main particles so they sit on top, with the
+  // additive 'lighter' composite already active from tick.
+  if (fa && BRAIN.formT > 0.7 && focusT > 0.05) {
+    const scale = brainScreenScale();
+
+    // 1) Focus dust — fixed seeded pool of soft warm motes drifting
+    // around the anchor in 3D. Each mote wobbles gently for a
+    // sense of life. Together they thicken the focused cluster.
+    for (let i = 0; i < FOCUS_DUST_COUNT; i++) {
+      const fp = FOCUS_DUST[i];
+      const wobX = Math.sin(t * fp.speed + fp.phase) * fp.drift;
+      const wobY = Math.cos(t * fp.speed * 0.9 + fp.phase * 1.3) * fp.drift;
+      const wobZ = Math.sin(t * fp.speed * 1.1 + fp.phase * 0.7) * fp.drift;
+      const dustX = fa.x + fp.rx + wobX;
+      const dustY = fa.y + fp.ry + wobY;
+      const dustZ = fa.z + fp.rz + wobZ;
+      const proj = project3D(dustX, dustY, dustZ, scale);
+      // Distance-based density falloff (denser near anchor)
+      const dxa = fp.rx, dya = fp.ry, dza = fp.rz;
+      const dust2 = dxa * dxa + dya * dya + dza * dza;
+      const density = Math.exp(-dust2 / 0.18);
+      const breathe = 0.85 + 0.15 * Math.sin(t * 0.5 + fp.phase);
+      const op = focusT * density * fp.bright * breathe;
+      if (op < 0.02) continue;
+      // Subtle depth fade — back-side motes recede
+      const depthN = clamp((proj.sz + 0.6) / 1.2, 0, 1);
+      const dustSize = (4 + fp.size * 7) * zoomBoost * (0.65 + depthN * 0.55);
+      ctx.globalAlpha = op * 0.55 * (0.6 + depthN * 0.4);
+      ctx.drawImage(GLOW, proj.sx - dustSize / 2, proj.sy - dustSize / 2, dustSize, dustSize);
+      ctx.globalAlpha = op * (0.6 + depthN * 0.35);
+      ctx.fillStyle = 'rgba(255, 246, 230, 1)';
+      ctx.beginPath();
+      ctx.arc(proj.sx, proj.sy, 0.9 * fp.size * zoomBoost * (0.55 + depthN * 0.45), 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 2) Multi-layer aura — a slow breathing warm glow that gives
+    // the focused area a sense of inner light. Three concentric
+    // gradients: a wide outer halo, a mid-range bloom, and an
+    // intense core. The pulse modulates intensity gently.
+    const proj = project3D(fa.x, fa.y, fa.z, scale);
+    const pulse = 0.85 + 0.15 * Math.sin(t * 0.7);
+    const aFocus = focusT * pulse;
+
+    // Outer wide halo
+    const outerR = 220 * zoomBoost;
+    let grad = ctx.createRadialGradient(proj.sx, proj.sy, 0, proj.sx, proj.sy, outerR);
+    grad.addColorStop(0.0, 'rgba(255, 215, 185, 0.16)');
+    grad.addColorStop(0.55, 'rgba(255, 195, 165, 0.05)');
+    grad.addColorStop(1.0, 'rgba(255, 195, 165, 0)');
+    ctx.globalAlpha = aFocus;
+    ctx.fillStyle = grad;
+    ctx.fillRect(proj.sx - outerR, proj.sy - outerR, outerR * 2, outerR * 2);
+
+    // Mid bloom
+    const midR = 110 * zoomBoost;
+    grad = ctx.createRadialGradient(proj.sx, proj.sy, 0, proj.sx, proj.sy, midR);
+    grad.addColorStop(0.0, 'rgba(255, 230, 200, 0.30)');
+    grad.addColorStop(1.0, 'rgba(255, 230, 200, 0)');
+    ctx.globalAlpha = aFocus * 0.85;
+    ctx.fillStyle = grad;
+    ctx.fillRect(proj.sx - midR, proj.sy - midR, midR * 2, midR * 2);
+
+    // Tight inner core
+    const coreR = 38 * zoomBoost;
+    grad = ctx.createRadialGradient(proj.sx, proj.sy, 0, proj.sx, proj.sy, coreR);
+    grad.addColorStop(0.0, 'rgba(255, 245, 225, 0.55)');
+    grad.addColorStop(1.0, 'rgba(255, 245, 225, 0)');
+    ctx.globalAlpha = aFocus;
+    ctx.fillStyle = grad;
+    ctx.fillRect(proj.sx - coreR, proj.sy - coreR, coreR * 2, coreR * 2);
+  }
+}
+
+/* === Brain labels: anchored DOM elements with canvas connectors ====
+   For every detected pattern category we create a tappable pill
+   with the category name and count. Each frame we project its 3D
+   anchor through the current view rotation and write the resulting
+   screen position into the element's transform — so labels follow
+   the brain when the user rotates it. A short connector line is
+   drawn on canvas from each anchor's projected dot to its label's
+   pill, anchoring the label visually to the brain.
+
+   Visibility: anchors with z > 0 (front) are fully visible; anchors
+   with z < 0 (back) fade out. Labels also fade with BRAIN.formT so
+   they materialise as the brain forms rather than popping in. */
+
+// Active labels for the current brain session. Each entry tracks
+// either a primary (group) or secondary (subtopic) pill.
+const BRAIN_LABELS = [];
+
+function buildBrainLabels(orderedGroupKeys) {
+  // Tear down any previous labels.
+  brainLabelsEl.innerHTML = '';
+  BRAIN_LABELS.length = 0;
+  document.body.removeAttribute('data-focus');
+
+  for (const groupKey of orderedGroupKeys) {
+    const anchor = GROUP_ANCHORS[groupKey];
+    const group  = GROUPS[groupKey];
+    if (!anchor || !group) continue;
+    const groupCount = APP.patternCounts[groupKey] || 0;
+
+    // ---- Primary label: the life-area group --------------------
+    const primaryEl = document.createElement('button');
+    primaryEl.type = 'button';
+    primaryEl.className = 'brain-label primary';
+    primaryEl.dataset.key = groupKey;
+    primaryEl.dataset.kind = 'primary';
+    primaryEl.innerHTML =
+      '<span class="dot" style="background:' + group.color + ';box-shadow:0 0 8px ' + group.color + '99;"></span>' +
+      '<span class="label-text">' + group.label + '</span>' +
+      '<span class="label-count">' + groupCount + '</span>';
+    primaryEl.style.opacity = '0';
+    primaryEl.addEventListener('click', () => onLabelClick(groupKey));
+    brainLabelsEl.appendChild(primaryEl);
+    BRAIN_LABELS.push({
+      kind: 'primary',
+      groupKey, anchor, el: primaryEl,
+      sx: 0, sy: 0, sz: 0, lx: 0, ly: 0, opacity: 0
+    });
+
+    // ---- Secondary labels: triggered subtopics in this group ----
+    const triggeredSubs = group.subtopics
+      .map(sub => ({
+        sub,
+        count: APP.subtopicCounts[`${groupKey}.${sub.id}`] || 0
+      }))
+      .filter(x => x.count > 0)
+      .sort((a, b) => b.count - a.count);
+
+    const subAnchors = generateSubtopicAnchors(anchor, triggeredSubs.length);
+    for (let i = 0; i < triggeredSubs.length; i++) {
+      const { sub, count } = triggeredSubs[i];
+      const sa = subAnchors[i];
+
+      const subEl = document.createElement('div');
+      subEl.className = 'brain-label secondary';
+      subEl.dataset.key = `${groupKey}.${sub.id}`;
+      subEl.dataset.kind = 'secondary';
+      subEl.dataset.parent = groupKey;
+      subEl.innerHTML =
+        '<span class="dot" style="background:' + group.color + ';opacity:0.55;"></span>' +
+        '<span class="label-text">' + sub.label + '</span>' +
+        '<span class="label-count">' + count + '</span>';
+      subEl.style.opacity = '0';
+      brainLabelsEl.appendChild(subEl);
+      BRAIN_LABELS.push({
+        kind: 'secondary',
+        groupKey,
+        subId: sub.id,
+        anchor: sa,
+        el: subEl,
+        sx: 0, sy: 0, sz: 0, lx: 0, ly: 0, opacity: 0
+      });
+
+      // ---- Tertiary labels: the actual matched phrases -----------
+      // These are the literal words the user said that triggered
+      // this subtopic. Hidden in the overview, fade in around
+      // their subtopic when the parent group is focused. We cap
+      // them at six per subtopic so the focused state stays
+      // readable rather than cluttered.
+      const phrases = (APP.matchedPhrases[`${groupKey}.${sub.id}`] || []).slice(0, 6);
+      if (phrases.length > 0) {
+        const tokenAnchors = generateRingAnchors(sa, phrases.length, 0.15, Math.PI / 2);
+        for (let j = 0; j < phrases.length; j++) {
+          const phrase = phrases[j];
+          const safe = phrase
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          const tokEl = document.createElement('div');
+          tokEl.className = 'brain-label tertiary';
+          tokEl.dataset.kind = 'tertiary';
+          tokEl.dataset.parent = groupKey;
+          tokEl.innerHTML =
+            '<span class="label-text">"' + safe + '"</span>';
+          tokEl.style.opacity = '0';
+          brainLabelsEl.appendChild(tokEl);
+          BRAIN_LABELS.push({
+            kind: 'tertiary',
+            groupKey,
+            subId: sub.id,
+            phrase: phrase,
+            anchor: tokenAnchors[j],
+            parentSubAnchor: sa,
+            el: tokEl,
+            sx: 0, sy: 0, sz: 0, lx: 0, ly: 0, opacity: 0
+          });
+        }
+      }
+    }
+  }
+}
+
+/* Project all anchors and update DOM transforms each frame. We
+   also offset each label OFF the brain along the (anchor → screen
+   centre) direction so labels visibly hang outside the silhouette
+   instead of overlapping particles. Primary labels push out
+   slightly farther than secondary ones so the hierarchy reads. */
+function updateBrainLabels() {
+  if (!BRAIN_LABELS.length) return;
+  const scale = brainScreenScale();
+  const cx = W / 2, cy = H / 2;
+
+  // Focus state lerp [0..1] — soft transition so offsets and
+  // sizes don't snap when entering/leaving focus.
+  const focused = BRAIN.selectedLabel;  // null = overview, else groupKey
+  const focusT = clamp((BRAIN.zoom - 1.0) / (3.0 - 1.0), 0, 1);
+
+  // Pill offsets grow when focused so the bigger focused pills
+  // don't overlap their 3D anchors at the deep zoom.
+  const PRIMARY_OFFSET   = 90  + 32 * focusT;
+  const SECONDARY_OFFSET = 38  + 18 * focusT;
+  const TERTIARY_OFFSET  = 14  + 12 * focusT;
+
+  // Form-fade: labels materialise as the brain finishes forming.
+  const formFade = clamp((BRAIN.formT - 0.55) / 0.40, 0, 1);
+
+  for (const lab of BRAIN_LABELS) {
+    const proj = project3D(lab.anchor.x, lab.anchor.y, lab.anchor.z, scale);
+    lab.sx = proj.sx;
+    lab.sy = proj.sy;
+    lab.sz = proj.sz;
+
+    // Push the label outward from the projected anchor along the
+    // direction from screen centre to anchor.
+    let dx = proj.sx - cx;
+    let dy = proj.sy - cy;
+    const len = Math.hypot(dx, dy);
+    if (len < 1) { dx = 0; dy = -1; } else { dx /= len; dy /= len; }
+    const offset =
+      lab.kind === 'primary'   ? PRIMARY_OFFSET   :
+      lab.kind === 'secondary' ? SECONDARY_OFFSET :
+                                  TERTIARY_OFFSET;
+    lab.lx = proj.sx + dx * offset;
+    lab.ly = proj.sy + dy * offset;
+
+    // Depth fade: anchors on the back of the brain fade out.
+    let depthFade = clamp((proj.sz + 0.6) / 0.8, 0, 1);
+
+    // Focus shaping. Tertiary labels are bound to their parent
+    // group: they're hidden in the overview and only appear when
+    // their group is focused. Secondary labels are quiet by default
+    // and brighten when their group is focused.
+    let focusMult = 1;
+    if (focused) {
+      if (lab.kind === 'tertiary') {
+        focusMult = (lab.groupKey === focused) ? 1.0 : 0;
+      } else if (lab.groupKey === focused) {
+        focusMult = 1.0;
+        lab.el.classList.remove('dimmed');
+      } else {
+        focusMult = 0.40;
+        lab.el.classList.add('dimmed');
+      }
+    } else {
+      lab.el.classList.remove('dimmed');
+      if (lab.kind === 'tertiary')      focusMult = 0;     // hidden in overview
+      else if (lab.kind === 'secondary') focusMult = 0.65;  // quiet by default
+    }
+
+    const op = formFade * depthFade * focusMult;
+    lab.opacity = op;
+
+    lab.el.style.transform =
+      'translate3d(' + lab.lx.toFixed(1) + 'px, ' + lab.ly.toFixed(1) + 'px, 0) translate(-50%, -50%)';
+    lab.el.style.opacity = op.toFixed(3);
+    lab.el.style.pointerEvents = op > 0.18 ? 'auto' : 'none';
+  }
+}
+
+/* Subtle interconnections between active group anchors — drawn on
+   the canvas during the brain phase between updateBrainLabels and
+   the next frame. Lines fade with depth and overall form progress
+   so they materialise alongside the labels. */
+function drawGroupConnections() {
+  // Collect labels by kind. updateBrainLabels just wrote each
+  // label's projected position into the BRAIN_LABELS entries this
+  // frame, so we can read sx/sy/sz directly here.
+  const primaries   = BRAIN_LABELS.filter(l => l.kind === 'primary');
+  const secondaries = BRAIN_LABELS.filter(l => l.kind === 'secondary');
+  const tertiaries  = BRAIN_LABELS.filter(l => l.kind === 'tertiary');
+  const formFade = clamp((BRAIN.formT - 0.65) / 0.35, 0, 1);
+  if (formFade <= 0) return;
+
+  const focused = BRAIN.selectedLabel;
+  ctx.save();
+
+  // ---- Group-to-group lattice (overview & background) ----------
+  // Subtle interconnections between every pair of active group
+  // anchors, so the user sees that their detected areas of life
+  // form one connected map rather than disconnected dots. When a
+  // group is focused, lines that don't touch it fade further so
+  // the focused cluster stands out.
+  if (primaries.length >= 2) {
+    ctx.lineWidth = 0.7;
+    ctx.strokeStyle = 'rgba(255, 230, 205, 1)';
+    for (let i = 0; i < primaries.length; i++) {
+      for (let j = i + 1; j < primaries.length; j++) {
+        const a = primaries[i], b = primaries[j];
+        const avgDepth = (a.sz + b.sz) / 2;
+        const depthFade = clamp((avgDepth + 0.4) / 0.9, 0, 1);
+        let focusFade = 1;
+        if (focused) {
+          focusFade = (a.groupKey === focused || b.groupKey === focused) ? 0.55 : 0.10;
+        }
+        const alpha = formFade * depthFade * focusFade * 0.18;
+        if (alpha < 0.02) continue;
+        ctx.globalAlpha = alpha;
+        ctx.beginPath();
+        ctx.moveTo(a.sx, a.sy);
+        ctx.lineTo(b.sx, b.sy);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // ---- Focus connections: group → its subtopics → its tokens ---
+  // Only drawn when a group is focused. They give the focused
+  // cluster a clear hierarchy: a heavier line from the primary
+  // out to each subtopic, and softer hairlines from each subtopic
+  // out to its keyword tokens. Both are noticeably bolder than the
+  // background lattice so the structure reads at a glance.
+  if (focused) {
+    const primary = primaries.find(p => p.groupKey === focused);
+    if (primary) {
+      // primary → secondaries
+      ctx.lineWidth = 1.3;
+      for (const s of secondaries) {
+        if (s.groupKey !== focused) continue;
+        const depthFade = clamp((Math.min(primary.sz, s.sz) + 0.5) / 0.9, 0, 1);
+        ctx.globalAlpha = formFade * depthFade * 0.78;
+        ctx.strokeStyle = 'rgba(255, 232, 208, 1)';
+        ctx.beginPath();
+        ctx.moveTo(primary.sx, primary.sy);
+        ctx.lineTo(s.sx, s.sy);
+        ctx.stroke();
+      }
+      // secondary → tertiaries (its matched phrases)
+      ctx.lineWidth = 0.75;
+      for (const t of tertiaries) {
+        if (t.groupKey !== focused) continue;
+        // Find the parent secondary's projected position
+        const parentSec = secondaries.find(s => s.groupKey === t.groupKey && s.subId === t.subId);
+        if (!parentSec) continue;
+        const depthFade = clamp((Math.min(parentSec.sz, t.sz) + 0.4) / 0.9, 0, 1);
+        ctx.globalAlpha = formFade * depthFade * 0.55;
+        ctx.strokeStyle = 'rgba(255, 240, 220, 1)';
+        ctx.beginPath();
+        ctx.moveTo(parentSec.sx, parentSec.sy);
+        ctx.lineTo(t.sx, t.sy);
+        ctx.stroke();
+      }
+    }
+  }
+
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+
+/* Click on a primary group label: focus it, dim other groups,
+   rotate the brain to bring its anchor to the front, and zoom
+   DEEPLY in so the user feels they've stepped inside that area's
+   internal world. Click again (or click empty canvas) to return
+   to the overview. */
+function onLabelClick(groupKey) {
+  BRAIN.lastInteraction = performance.now();
+  if (BRAIN.selectedLabel === groupKey) {
+    // Deselect → return to overview
+    BRAIN.selectedLabel = null;
+    BRAIN.tZoom = 1.0;
+    document.body.removeAttribute('data-focus');
+    for (const lab of BRAIN_LABELS) lab.el.classList.remove('selected');
+    return;
+  }
+  BRAIN.selectedLabel = groupKey;
+  document.body.dataset.focus = groupKey;
+  for (const lab of BRAIN_LABELS) {
+    const isFocusedPrimary = (lab.kind === 'primary' && lab.groupKey === groupKey);
+    lab.el.classList.toggle('selected', isFocusedPrimary);
+  }
+  // Deep dive-in zoom: the user is "stepping inside" the group's
+  // interior, so the selected cluster fills the viewport and the
+  // rest of the brain recedes off-screen entirely. The spotlight
+  // effect in drawBrainParticles + the focus-dust pool + the
+  // multi-layer aura together give the cluster a sense of being
+  // populated, dimensional, and meaningful rather than empty.
+  BRAIN.tZoom = 3.0;
+  // Rotate brain so the anchor faces front-centre.
+  const a = GROUP_ANCHORS[groupKey];
+  if (!a) return;
+  const len = Math.hypot(a.x, a.y, a.z) || 1;
+  BRAIN.tRotY = -Math.atan2(a.x, a.z);
+  BRAIN.tRotX = Math.asin(clamp(a.y / len, -1, 1));
+  BRAIN.tRotX = clamp(BRAIN.tRotX, -1.0, 1.0);
+}
+
+/* ============================================================
+   SPEECH RECOGNITION
+   ============================================================ */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+function buildRecognition() {
+  if (!SR) return null;
+  const r = new SR();
+  r.continuous     = true;
+  r.interimResults = true;
+  r.lang           = (navigator.language && /^en/i.test(navigator.language))
+                     ? navigator.language : 'en-US';
+  r.onresult = onSpeechResult;
+  r.onerror  = (e) => {
+    // CRITICAL: if permission was denied or the mic isn't available,
+    // mark recognition dead and revert to idle. Without this flag, the
+    // onend handler below would call start() again, the browser would
+    // re-prompt for permission, and we'd be stuck in a permission loop
+    // that the user can't escape from. (This is what was causing the
+    // "it never closes" behavior.)
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+      APP.recognitionDead = true;
+      showNotice('Microphone access was blocked. Allow it in your browser settings, then refresh to try again.');
+      setPhase('idle');
+    } else if (e.error === 'audio-capture') {
+      APP.recognitionDead = true;
+      showNotice('No microphone was detected on this device.');
+      setPhase('idle');
+    }
+    // 'no-speech' and 'aborted' are normal lifecycle events — ignore them.
+  };
+  r.onend = () => {
+    // Auto-resume if we're still in listening phase AND recognition is healthy.
+    // The dead-flag guard prevents the permission-prompt loop on denial.
+    // The setTimeout gives the browser room to settle between sessions
+    // (some Chrome versions throw 'InvalidStateError' on immediate restart).
+    if (APP.phase !== 'listening' || APP.recognitionDead) return;
+    setTimeout(() => {
+      if (APP.phase !== 'listening' || APP.recognitionDead) return;
+      try { r.start(); } catch (_) { /* already started or transitioning */ }
+    }, 250);
+  };
+  return r;
+}
+
+function onSpeechResult(ev) {
+  let interim = '';
+  let newFinal = '';
+  for (let i = ev.resultIndex; i < ev.results.length; i++) {
+    const res = ev.results[i];
+    if (res.isFinal) newFinal += res[0].transcript + ' ';
+    else interim += res[0].transcript + ' ';
+  }
+  if (newFinal) {
+    APP.finalText = (APP.finalText + ' ' + newFinal).replace(/\s+/g, ' ').trim();
+  }
+  APP.interimText = interim.replace(/\s+/g, ' ').trim();
+
+  // Drive the ring's reactivity from how much new text just arrived.
+  // This replaces what would otherwise need a separate mic stream.
+  const totalNow = APP.finalText.length + APP.interimText.length;
+  const delta = Math.max(0, totalNow - APP.lastTotalLen);
+  APP.lastTotalLen = totalNow;
+  if (delta > 0) {
+    APP.speechActivity = Math.min(1, APP.speechActivity + delta * 0.06 + 0.08);
+  }
+
+  detectPatterns(APP.finalText);
+  renderTranscript();
+}
+
+/* ============================================================
+   PATTERN DETECTION
+   ============================================================ */
+function detectPatterns(text) {
+  if (!text) return;
+
+  // Re-scan the entire text each time. Reset counts so deletions
+  // (interim → revised final) decrement properly. We track THREE
+  // levels: per-subtopic for the brain's secondary pills, the
+  // unique matched phrases per subtopic (for the keyword tokens
+  // shown when a group is focused), and a group-level total
+  // (sum of its subtopic hits) for the chips.
+  for (const k of Object.keys(APP.patternCounts)) APP.patternCounts[k] = 0;
+  APP.subtopicCounts = {};
+  APP.matchedPhrases = {};
+
+  for (const [groupKey, group] of Object.entries(GROUPS)) {
+    let groupTotal = 0;
+    for (const sub of group.subtopics) {
+      const rx = SUBTOPIC_PATTERNS[`${groupKey}.${sub.id}`];
+      rx.lastIndex = 0;
+      let count = 0;
+      let m;
+      const seen = new Set();   // de-dupe by lowercase form
+      const phrases = [];
+      while ((m = rx.exec(text)) !== null) {
+        count++;
+        const phrase = m[0];
+        const key = phrase.toLowerCase();
+        if (!seen.has(key)) {
+          seen.add(key);
+          phrases.push(phrase);
+        }
+      }
+      if (count > 0) {
+        APP.subtopicCounts[`${groupKey}.${sub.id}`] = count;
+        APP.matchedPhrases[`${groupKey}.${sub.id}`] = phrases;
+        groupTotal += count;
+      }
+    }
+    const prev = APP.patternCounts[groupKey] || 0;
+    if (groupTotal !== prev) {
+      APP.patternCounts[groupKey] = groupTotal;
+      if (groupTotal > 0 && !APP.patternFirstSeen[groupKey]) {
+        APP.patternFirstSeen[groupKey] = performance.now();
+      }
+      renderChip(groupKey, groupTotal, groupTotal > prev && prev > 0);
+    }
+  }
+
+  // Show CTA once we have signal: 2+ different groups OR 4+ total hits
+  const distinct = Object.values(APP.patternCounts).filter(v => v > 0).length;
+  const total    = Object.values(APP.patternCounts).reduce((s, v) => s + v, 0);
+  if ((distinct >= 2 || total >= 4) && APP.phase === 'listening') {
+    ctaEl.classList.add('show');
+  }
+}
+
+/* ============================================================
+   UI RENDERING
+   ============================================================ */
+function renderChip(key, count, bump) {
+  const id = 'chip-' + key;
+  let el = document.getElementById(id);
+  if (count <= 0) {
+    if (el) el.remove();
+    return;
+  }
+  const group = GROUPS[key];
+  if (!group) return;
+  if (!el) {
+    el = document.createElement('div');
+    el.className = 'chip';
+    el.id = id;
+    el.innerHTML = `
+      <span class="dot" style="width:6px;height:6px;border-radius:50%;background:${group.color};box-shadow:0 0 8px ${group.color}99;"></span>
+      <span class="label">${group.short}</span>
+      <span class="count">${count}</span>`;
+    patternsEl.appendChild(el);
+  } else {
+    el.querySelector('.count').textContent = count;
+    if (bump) {
+      el.classList.remove('bumped');
+      // force reflow
+      void el.offsetWidth;
+      el.classList.add('bumped');
+    }
+  }
+}
+
+/* Single-line transcript render. We keep only the tail of the
+   text — older words simply scroll out under the left mask. */
+function renderTranscript() {
+  const fullText = (APP.finalText + ' ' + APP.interimText).trim();
+  if (!fullText) {
+    transcriptEl.innerHTML = '';
+    transcriptEl.style.transform = 'translate(-50%, -50%)';
+    return;
+  }
+  // Highlight matches inline (escape HTML first)
+  const safe = fullText
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  HIGHLIGHT_REGEX.lastIndex = 0;
+  const html = safe.replace(HIGHLIGHT_REGEX, m => `<span class="hi">${m}</span>`);
+  // Mark interim portion (style it lighter)
+  let finalHtml = html;
+  if (APP.interimText) {
+    // Re-escape interim for safety
+    const safeInterim = APP.interimText
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    HIGHLIGHT_REGEX.lastIndex = 0;
+    const interimHtml = safeInterim.replace(HIGHLIGHT_REGEX, m => `<span class="hi">${m}</span>`);
+    const safeFinal = APP.finalText
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    HIGHLIGHT_REGEX.lastIndex = 0;
+    const finalOnly = safeFinal.replace(HIGHLIGHT_REGEX, m => `<span class="hi">${m}</span>`);
+    finalHtml = `<span class="word">${finalOnly}</span> <span class="interim">${interimHtml}</span>`;
+  } else {
+    finalHtml = `<span class="word">${html}</span>`;
+  }
+  transcriptEl.innerHTML = finalHtml;
+
+  // Re-anchor the line so the latest word is always visible. When the
+  // rendered text fits inside the wrap, it stays centred; once it
+  // overflows the wrap's width, it slides left so the trailing word
+  // sits at a fixed inset from the right edge (just inside the right
+  // fade) and older words scroll off behind the left fade. CSS
+  // transitions the transform, so the slide is smooth.
+  // Use rAF so we measure AFTER the browser has laid out the new HTML.
+  requestAnimationFrame(() => {
+    const wrapW = transcriptWrap.clientWidth;
+    const textW = transcriptEl.scrollWidth;
+    const RIGHT_INSET = 22;     // matches the right fade band
+    let tx;
+    if (textW + RIGHT_INSET * 2 > wrapW) {
+      // Right-aligned: text's right edge sits at (wrapW - RIGHT_INSET).
+      // transcriptEl is anchored at left: 50% (= wrapW/2 in absolute),
+      // so we translate by (right edge - text width - wrapW/2).
+      tx = (wrapW - RIGHT_INSET) - textW - (wrapW / 2);
+    } else {
+      // Centred: shift back by half its own width.
+      tx = -textW / 2;
+    }
+    transcriptEl.style.transform = `translate(${tx.toFixed(1)}px, -50%)`;
+  });
+}
+
+/* === Notice helper === */
+let noticeTimer = null;
+function showNotice(msg) {
+  noticeEl.textContent = msg;
+  noticeEl.classList.add('show');
+  clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(() => noticeEl.classList.remove('show'), 4500);
+}
+
+/* ============================================================
+   PHASE TRANSITIONS
+   ============================================================ */
+function setPhase(next) {
+  APP.phase = next;
+  document.body.dataset.phase = next;
+  if (next === 'listening') {
+    statusEl.dataset.state = 'listening';
+    statusLabel.textContent = 'Listening';
+    hintEl.classList.add('hidden');
+  } else if (next === 'idle') {
+    statusEl.dataset.state = 'idle';
+    statusLabel.textContent = 'Ready';
+    hintEl.classList.remove('hidden');
+  } else if (next === 'loading') {
+    statusEl.dataset.state = 'idle';
+    statusLabel.textContent = 'Forming';
+    hintEl.classList.add('hidden');
+  } else if (next === 'brain') {
+    statusEl.dataset.state = 'idle';
+    statusLabel.textContent = 'Inner Map';
+  }
+}
+
+/* Tap on canvas (or anywhere outside controls) toggles listening */
+function startListening() {
+  if (APP.phase !== 'idle') return;
+
+  // Reset per-session state
+  APP.recognitionDead = false;
+  APP.lastTotalLen   = APP.finalText.length + APP.interimText.length;
+
+  setPhase('listening');
+  APP.startedAt = performance.now();
+
+  // ONE permission request: the SpeechRecognition API. We do NOT also
+  // call getUserMedia — that would prompt for the mic a second time
+  // (browsers treat the two APIs as distinct permissions even though
+  // physically it's the same microphone). The ring's voice reactivity
+  // is driven from speech-event activity instead.
+  if (!APP.recognition) APP.recognition = buildRecognition();
+  if (APP.recognition) {
+    try { APP.recognition.start(); }
+    catch (e) { /* already started, ignore */ }
+  } else {
+    showNotice('Voice recognition isn\'t supported in this browser. Try Chrome or Edge on desktop.');
+    setPhase('idle');
+  }
+}
+
+function stopListening() {
+  if (APP.recognition) {
+    // Detach onend before stopping so the auto-restart doesn't fight us.
+    try { APP.recognition.onend = null; APP.recognition.stop(); } catch (_) {}
+    // Drop the recognition instance entirely; we'll build a fresh one on
+    // the next session. This is safer than reusing across phase changes.
+    APP.recognition = null;
+  }
+}
+
+function enterLoading() {
+  if (APP.phase !== 'listening') return;
+  stopListening();
+  APP.loadingElapsed = 0;
+  APP.loadingMorphT = 0;
+  APP.loadingSpinAngle = 0;
+  // Tilt the view so the 3D torsion is legible. From idle/listening
+  // (rotX = 0) the camera tilts forward to ~24° during loading. Both
+  // the loading shape and the brain that follows share this view, so
+  // there is no rotation jump between the two phases.
+  BRAIN.tRotX = VIEW_TILT_LOADING;
+  BRAIN.tRotY = 0;
+  setPhase('loading');
+  ctaEl.classList.remove('show');
+}
+
+function enterBrain() {
+  generateBrainTargets();
+  BRAIN.formT = 0;
+  BRAIN.zoom = 1.0;
+  BRAIN.tZoom = 1.0;
+  BRAIN.selectedLabel = null;
+  // The view inherited from loading already faces the brain — we
+  // keep the same orientation so particles arrive with no rotation
+  // discontinuity. The user can drag from here.
+  BRAIN.lastInteraction = performance.now();
+
+  // Build label DOM elements for every category that was actually
+  // detected, ordered by count (most frequent first) so visually
+  // dominant labels render last (on top of their connectors).
+  const ordered = Object.entries(APP.patternCounts)
+    .filter(([, v]) => v > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(([k]) => k);
+  buildBrainLabels(ordered);
+
+  setPhase('brain');
+  brainTitleEl.classList.add('show');
+  brainHintEl.classList.add('show');
+  resetEl.classList.add('show');
+}
+
+function reset() {
+  brainTitleEl.classList.remove('show');
+  brainHintEl.classList.remove('show');
+  resetEl.classList.remove('show');
+  brainLabelsEl.innerHTML = '';
+  BRAIN_LABELS.length = 0;
+  patternsEl.innerHTML = '';
+  transcriptEl.innerHTML = '';
+  APP.finalText = '';
+  APP.interimText = '';
+  APP.lastTotalLen = 0;
+  APP.speechActivity = 0;
+  APP.recognitionDead = false;
+  APP.loadingElapsed = 0;
+  APP.loadingMorphT = 0;
+  APP.loadingSpinAngle = 0;
+  APP.patternCounts = Object.fromEntries(Object.keys(GROUPS).map(k => [k, 0]));
+  APP.patternFirstSeen = {};
+  APP.subtopicCounts = {};
+  APP.matchedPhrases = {};
+  document.body.removeAttribute('data-focus');
+  // Reset brain transition state. We keep brain target positions on
+  // particles so the pool itself stays continuous, but the next time
+  // we enter the brain phase we'll regenerate fresh ones anyway.
+  BRAIN.ready = false;
+  BRAIN.formT = 0;
+  BRAIN.rotX = 0; BRAIN.rotY = 0;
+  BRAIN.tRotX = 0; BRAIN.tRotY = 0;
+  BRAIN.zoom = 1.0; BRAIN.tZoom = 1.0;
+  BRAIN.dragging = false;
+  BRAIN.pinchActive = false;
+  BRAIN.selectedLabel = null;
+  setPhase('idle');
+}
+
+/* ============================================================
+   INPUT
+   ============================================================ */
+
+/* Tap behavior depends on phase:
+     - idle:  begin listening
+     - brain: nothing on plain click; drag rotates (handled below)
+   We avoid attaching click handlers that would steal the drag start. */
+stage.addEventListener('click', (e) => {
+  if (APP.phase === 'idle') {
+    startListening();
+  }
+});
+
+ctaEl.addEventListener('click', () => {
+  enterLoading();
+});
+
+resetEl.addEventListener('click', () => {
+  reset();
+});
+
+/* === Brain rotation: pointer drag on canvas =================
+   Active only in brain phase. We track pointer down/move/up/cancel
+   on the canvas itself; capturing the pointer means we receive
+   events even if the cursor leaves the window. Rotation is updated
+   incrementally based on movement deltas. */
+stage.addEventListener('pointerdown', (e) => {
+  if (APP.phase !== 'brain') return;
+  BRAIN.dragging = true;
+  BRAIN.lastDragX = e.clientX;
+  BRAIN.lastDragY = e.clientY;
+  BRAIN.lastInteraction = performance.now();
+  stage.classList.add('dragging');
+  if (stage.setPointerCapture) {
+    try { stage.setPointerCapture(e.pointerId); } catch (_) {}
+  }
+});
+stage.addEventListener('pointermove', (e) => {
+  if (!BRAIN.dragging || APP.phase !== 'brain') return;
+  const dx = e.clientX - BRAIN.lastDragX;
+  const dy = e.clientY - BRAIN.lastDragY;
+  BRAIN.lastDragX = e.clientX;
+  BRAIN.lastDragY = e.clientY;
+  BRAIN.lastInteraction = performance.now();
+  // Sensitivity tuned so a full screen-width drag is roughly one full revolution.
+  BRAIN.tRotY += dx * 0.005;
+  BRAIN.tRotX += dy * 0.005;
+  // Clamp pitch so the brain never flips upside down — keeps the
+  // silhouette readable.
+  BRAIN.tRotX = clamp(BRAIN.tRotX, -1.0, 1.0);
+});
+function endDrag(e) {
+  if (!BRAIN.dragging) return;
+  BRAIN.dragging = false;
+  stage.classList.remove('dragging');
+  if (e && stage.releasePointerCapture && e.pointerId !== undefined) {
+    try { stage.releasePointerCapture(e.pointerId); } catch (_) {}
+  }
+}
+stage.addEventListener('pointerup',     endDrag);
+stage.addEventListener('pointercancel', endDrag);
+stage.addEventListener('pointerleave',  endDrag);
+
+/* Wheel / trackpad zoom. ctrlKey is set for pinch gestures on
+   Mac trackpads (the browser synthesises ctrl+wheel events for
+   pinch-to-zoom), so the same handler covers both. We update the
+   zoom TARGET — the per-frame lerp toward target gives smooth
+   easing without spring overshoot. */
+stage.addEventListener('wheel', (e) => {
+  if (APP.phase !== 'brain') return;
+  e.preventDefault();
+  BRAIN.lastInteraction = performance.now();
+  // Normalize delta across mice (large lines) and trackpads (tiny pixels).
+  const d = e.deltaY * (e.deltaMode === 1 ? 18 : 1);
+  // Multiplicative zoom feels more natural than additive.
+  const factor = Math.exp(-d * 0.0018);
+  BRAIN.tZoom = clamp(BRAIN.tZoom * factor, 0.5, 2.5);
+}, { passive: false });
+
+/* Touch pinch zoom for mobile. Uses the native Touch API rather
+   than gestures so it works on Android too. */
+stage.addEventListener('touchstart', (e) => {
+  if (APP.phase !== 'brain') return;
+  if (e.touches.length === 2) {
+    BRAIN.pinchActive = true;
+    BRAIN.dragging = false;          // pinch overrides any in-flight drag
+    const t1 = e.touches[0], t2 = e.touches[1];
+    BRAIN.pinchDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY) || 1;
+    BRAIN.lastInteraction = performance.now();
+  }
+}, { passive: true });
+stage.addEventListener('touchmove', (e) => {
+  if (APP.phase !== 'brain') return;
+  if (BRAIN.pinchActive && e.touches.length === 2) {
+    e.preventDefault();
+    const t1 = e.touches[0], t2 = e.touches[1];
+    const d = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY) || 1;
+    const factor = d / BRAIN.pinchDist;
+    BRAIN.tZoom = clamp(BRAIN.tZoom * factor, 0.5, 2.5);
+    BRAIN.pinchDist = d;
+    BRAIN.lastInteraction = performance.now();
+  }
+}, { passive: false });
+function endPinch() {
+  if (BRAIN.pinchActive) BRAIN.pinchActive = false;
+}
+stage.addEventListener('touchend',    endPinch);
+stage.addEventListener('touchcancel', endPinch);
+
+/* Clicking the empty canvas in brain phase deselects any selected
+   label. Pointer-down → up with negligible movement counts as a
+   click; bigger movement is a drag and shouldn't deselect. */
+let downX = 0, downY = 0;
+stage.addEventListener('pointerdown', (e) => {
+  downX = e.clientX; downY = e.clientY;
+}, true);
+stage.addEventListener('click', (e) => {
+  if (APP.phase !== 'brain') return;
+  const moved = Math.hypot(e.clientX - downX, e.clientY - downY);
+  if (moved < 4 && BRAIN.selectedLabel) {
+    BRAIN.selectedLabel = null;
+    BRAIN.tZoom = 1.0;
+    document.body.removeAttribute('data-focus');
+    for (const lab of BRAIN_LABELS) lab.el.classList.remove('selected');
+  }
+});
+
+/* Keyboard nicety: space toggles, esc resets */
+window.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if (e.code === 'Space') {
+    e.preventDefault();
+    if (APP.phase === 'idle') startListening();
+    else if (APP.phase === 'listening') enterLoading();
+  } else if (e.code === 'Escape') {
+    if (APP.phase === 'brain' || APP.phase === 'loading') reset();
+  }
+});
+
+/* Keep the --ring-r CSS variable in sync with the canvas's ring
+   radius so layout (hint, patterns, transcript) tracks the ring
+   exactly across viewport sizes. Called on resize. */
+function updateLayoutVars() {
+  document.documentElement.style.setProperty('--ring-r', `${ringRadius()}px`);
+}
+window.addEventListener('resize', updateLayoutVars);
+updateLayoutVars();
+
+/* Initial state */
+setPhase('idle');
+
+</script>
+</body>
+</html>

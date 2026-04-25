@@ -1,0 +1,2177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Listen</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300;1,400&family=Inter+Tight:wght@200;300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --o-1:#ffb27a;
+    --o-2:#ff8a55;
+    --o-3:#ee6a3a;
+    --o-4:#c94c2a;
+    --ink:#fff7ec;
+    --ink-soft:rgba(255,247,236,0.78);
+    --ink-faint:rgba(255,247,236,0.42);
+    --chip-bg:rgba(255,247,236,0.10);
+    --chip-border:rgba(255,247,236,0.22);
+    --kw-glow:rgba(255,236,210,0.98);
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{
+    width:100%;height:100%;overflow:hidden;
+    background:#ff7a4c;
+    color:var(--ink);
+    font-family:'Inter Tight','Helvetica Neue',sans-serif;
+    font-weight:300;
+    letter-spacing:0.01em;
+    user-select:none;
+    -webkit-user-select:none;
+  }
+  body{
+    position:fixed;inset:0;
+    background:
+      radial-gradient(ellipse 110% 80% at 50% 38%, var(--o-1) 0%, var(--o-2) 38%, var(--o-3) 72%, var(--o-4) 100%);
+  }
+  body::after{
+    content:"";
+    position:fixed;inset:0;
+    pointer-events:none;
+    background-image:
+      radial-gradient(rgba(255,210,170,0.05) 1px, transparent 1px),
+      radial-gradient(rgba(120,40,20,0.04) 1px, transparent 1px);
+    background-size: 3px 3px, 5px 5px;
+    background-position: 0 0, 1px 2px;
+    mix-blend-mode:overlay;
+    opacity:0.45;
+    z-index:1;
+  }
+  body::before{
+    content:"";
+    position:fixed;inset:0;
+    pointer-events:none;
+    background:
+      radial-gradient(ellipse 80% 70% at 50% 50%, transparent 50%, rgba(180,60,30,0.20) 100%);
+    z-index:2;
+  }
+  #stage{
+    position:fixed;inset:0;
+    width:100%;height:100%;
+    z-index:3;
+    background:transparent;
+  }
+  #stage.draggable{ cursor:grab; }
+  #stage.dragging{ cursor:grabbing; }
+
+  /* HINT — centered inside the ring with gentle breath */
+  #hint{
+    position:fixed;
+    left:50%;top:42%;
+    transform:translate(-50%, -50%);
+    font-family:'Cormorant Garamond', serif;
+    font-style:italic;
+    font-weight:300;
+    font-size:clamp(13px, 1.45vw, 17px);
+    letter-spacing:0.18em;
+    color:var(--ink);
+    z-index:6;
+    pointer-events:none;
+    white-space:nowrap;
+    text-align:center;
+    opacity:0;
+    animation: hintFadeIn 1.6s 0.4s ease forwards, hintBreath 4.2s 2s ease-in-out infinite;
+    text-shadow:0 0 28px rgba(255,200,160,0.5);
+  }
+  #hint.hide{ animation:hintFadeOut 1.0s ease forwards; }
+  @keyframes hintFadeIn{
+    from{opacity:0; letter-spacing:0.32em;}
+    to{opacity:0.85; letter-spacing:0.18em;}
+  }
+  @keyframes hintBreath{
+    0%,100%{opacity:0.5;}
+    50%{opacity:0.95;}
+  }
+  @keyframes hintFadeOut{
+    to{opacity:0; transform:translate(-50%,-50%) scale(1.04);}
+  }
+
+  /* tap target */
+  #tapTarget{
+    position:fixed;
+    left:50%;top:42%;
+    width:min(50vmin, 500px);
+    height:min(50vmin, 500px);
+    transform:translate(-50%,-50%);
+    border-radius:50%;
+    background:transparent;
+    border:none;
+    cursor:pointer;
+    z-index:7;
+    pointer-events:auto;
+  }
+  #tapTarget:focus{outline:none;}
+
+  /* Pattern chips strip */
+  #patterns{
+    position:fixed;
+    left:50%;
+    top:74%;
+    transform:translate(-50%, -100%);
+    display:flex;
+    flex-wrap:wrap;
+    justify-content:center;
+    gap:7px 9px;
+    max-width:min(700px, 84vw);
+    z-index:5;
+    pointer-events:none;
+    min-height:30px;
+    margin-bottom:22px;
+  }
+  .chip{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    padding:5px 13px 6px 13px;
+    border-radius:999px;
+    background:var(--chip-bg);
+    border:1px solid var(--chip-border);
+    backdrop-filter: blur(10px) saturate(120%);
+    -webkit-backdrop-filter: blur(10px) saturate(120%);
+    color:var(--ink);
+    font-size:11.5px;
+    font-weight:400;
+    letter-spacing:0.05em;
+    line-height:1;
+    opacity:0;
+    transform:translateY(6px) scale(0.94);
+    animation:chipIn 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+    transition:transform 0.4s ease, background 0.4s ease, border-color 0.4s ease;
+    white-space:nowrap;
+  }
+  .chip .dot{
+    width:5px;height:5px;border-radius:50%;
+    background:currentColor;
+    box-shadow:0 0 10px currentColor;
+    flex-shrink:0;
+  }
+  .chip .count{
+    font-variant-numeric:tabular-nums;
+    color:var(--ink-faint);
+    font-size:10.5px;
+  }
+  .chip.bumped{
+    transform:translateY(0) scale(1.08);
+    background:rgba(255,247,236,0.16);
+    border-color:rgba(255,247,236,0.38);
+  }
+  @keyframes chipIn{
+    to{opacity:1;transform:translateY(0) scale(1);}
+  }
+
+  /* TRANSCRIPT — single line, centered, soft fade edges */
+  #transcriptWrap{
+    position:fixed;
+    top:74%;
+    left:0;right:0;
+    height:48px;
+    z-index:5;
+    pointer-events:none;
+    -webkit-mask-image: linear-gradient(to right, transparent 0%, black 18%, black 82%, transparent 100%);
+            mask-image: linear-gradient(to right, transparent 0%, black 18%, black 82%, transparent 100%);
+    overflow:hidden;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  #transcript{
+    white-space:nowrap;
+    font-family:'Cormorant Garamond', serif;
+    font-weight:300;
+    font-style:italic;
+    font-size:clamp(19px, 2.3vw, 28px);
+    letter-spacing:0.018em;
+    color:var(--ink);
+    line-height:1;
+    will-change:transform, opacity;
+    text-align:center;
+    padding:0 24px;
+  }
+  #transcript .word{
+    display:inline-block;
+    margin-right:0.34em;
+    opacity:0;
+    filter:blur(8px);
+    transform:translateY(2px);
+    animation:wordEmerge 0.85s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+  }
+  #transcript .word.kw{
+    color:var(--kw-glow);
+    text-shadow:0 0 16px rgba(255,230,200,0.55);
+  }
+  #transcript .word.interim{
+    color:var(--ink-soft);
+    animation-duration:0.5s;
+  }
+  @keyframes wordEmerge{
+    0%{ opacity:0; filter:blur(10px); transform:translateY(3px); }
+    100%{ opacity:1; filter:blur(0); transform:translateY(0); }
+  }
+
+  /* main action button */
+  #action{
+    position:fixed;
+    left:50%;
+    bottom:7vh;
+    transform:translateX(-50%) translateY(20px);
+    background:transparent;
+    color:var(--ink);
+    border:1px solid rgba(255,247,236,0.40);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    padding:13px 30px 14px 30px;
+    border-radius:999px;
+    font-family:'Cormorant Garamond', serif;
+    font-style:italic;
+    font-size:16px;
+    font-weight:400;
+    letter-spacing:0.10em;
+    cursor:pointer;
+    z-index:6;
+    opacity:0;
+    pointer-events:none;
+    transition:opacity 0.7s ease, transform 0.7s ease, background 0.3s ease, border-color 0.3s ease, letter-spacing 0.3s ease;
+  }
+  #action.show{
+    opacity:1;
+    transform:translateX(-50%) translateY(0);
+    pointer-events:auto;
+  }
+  #action:hover{
+    background:rgba(255,247,236,0.10);
+    border-color:rgba(255,247,236,0.60);
+    letter-spacing:0.13em;
+  }
+  #action:active{ transform:translateX(-50%) translateY(0) scale(0.97); }
+  #action .arrow{ display:inline-block; margin-left:10px; transition:transform 0.4s ease; }
+  #action:hover .arrow{ transform:translateX(4px); }
+
+  #whisper{
+    position:fixed;
+    left:50%;
+    top:74%;
+    transform:translate(-50%, 0);
+    font-family:'Cormorant Garamond', serif;
+    font-style:italic;
+    font-weight:300;
+    font-size:clamp(15px, 1.7vw, 19px);
+    letter-spacing:0.10em;
+    color:var(--ink-soft);
+    z-index:5;
+    opacity:0;
+    transition:opacity 0.8s ease;
+    pointer-events:none;
+    text-align:center;
+    white-space:nowrap;
+  }
+  #whisper.show{opacity:1;}
+
+  #mapTitle{
+    position:fixed;
+    top:7vh;
+    left:50%;
+    transform:translateX(-50%);
+    text-align:center;
+    z-index:5;
+    opacity:0;
+    transition:opacity 1.4s ease;
+    pointer-events:none;
+  }
+  #mapTitle .eyebrow{
+    font-family:'Inter Tight', sans-serif;
+    font-size:11px;
+    letter-spacing:0.36em;
+    text-transform:uppercase;
+    color:var(--ink-faint);
+    margin-bottom:14px;
+  }
+  #mapTitle .h{
+    font-family:'Cormorant Garamond', serif;
+    font-style:italic;
+    font-weight:300;
+    font-size:clamp(26px, 3.8vw, 46px);
+    color:var(--ink);
+    line-height:1.1;
+  }
+  #mapTitle.show{opacity:1;}
+
+  /* Pattern labels rendered over the sphere */
+  #patternLabels{
+    position:fixed;
+    inset:0;
+    z-index:5;
+    pointer-events:none;
+  }
+  .pNode{
+    position:absolute;
+    left:0;top:0;
+    display:inline-flex;
+    align-items:center;
+    gap:10px;
+    padding:7px 14px 8px 12px;
+    border-radius:999px;
+    background:rgba(58, 18, 8, 0.42);
+    backdrop-filter: blur(12px) saturate(135%);
+    -webkit-backdrop-filter: blur(12px) saturate(135%);
+    border:1px solid rgba(255, 240, 215, 0.18);
+    box-shadow: 0 6px 22px rgba(50, 14, 6, 0.42), 0 0 1px rgba(0,0,0,0.25), inset 0 0 0 1px rgba(255,235,210,0.04);
+    font-family:'Cormorant Garamond', serif;
+    font-style:italic;
+    font-weight:400;
+    font-size:14.5px;
+    letter-spacing:0.03em;
+    color:var(--ink);
+    pointer-events:auto;
+    cursor:pointer;
+    white-space:nowrap;
+    transition:opacity 0.45s ease, background 0.30s ease, border-color 0.30s ease, box-shadow 0.30s ease, color 0.30s ease;
+    opacity:0;
+  }
+  .pNode:hover{
+    background:rgba(80, 28, 14, 0.55);
+    border-color:rgba(255, 240, 215, 0.34);
+    box-shadow: 0 8px 28px rgba(50, 14, 6, 0.55), 0 0 0 1px rgba(255,235,210,0.10);
+  }
+  .pNode.focused{
+    background:rgba(255, 247, 232, 0.26);
+    border-color:rgba(255, 247, 232, 0.68);
+    color:var(--ink);
+    box-shadow: 0 16px 44px rgba(50, 14, 6, 0.58), 0 0 0 1px rgba(255,247,232,0.42), 0 0 36px rgba(255,210,170,0.22);
+    padding: 9px 18px 10px 16px;
+    font-size: 17px;
+    letter-spacing: 0.05em;
+  }
+  .pNode.dim{
+    opacity:0.28 !important;
+  }
+  .pNode .pdot{
+    width:6px;height:6px;border-radius:50%;
+    background:currentColor;
+    box-shadow:0 0 14px currentColor, 0 0 4px currentColor;
+    flex-shrink:0;
+    transition: width 0.30s ease, height 0.30s ease;
+  }
+  .pNode.focused .pdot{ width:9px; height:9px; box-shadow:0 0 22px currentColor, 0 0 8px currentColor; }
+  .pNode .pname{ font-style:italic; }
+  .pNode .pcount{
+    font-style:normal;
+    font-family:'Inter Tight', sans-serif;
+    font-size:10px;
+    color:var(--ink-faint);
+    letter-spacing:0.16em;
+    transition: font-size 0.30s ease, color 0.30s ease;
+  }
+  .pNode.focused .pcount{ color:var(--ink); font-size:11.5px; }
+
+  /* Sub-pattern pills — always visible, faded in overview, much larger
+     and clearly readable on focus so the deeper layer is comfortable to read. */
+  .pSub{
+    position:absolute;
+    left:0;top:0;
+    padding:3px 10px 4px 10px;
+    border-radius:999px;
+    background:rgba(40, 12, 5, 0.32);
+    backdrop-filter: blur(8px) saturate(120%);
+    -webkit-backdrop-filter: blur(8px) saturate(120%);
+    border:1px solid rgba(255, 240, 215, 0.10);
+    box-shadow: 0 2px 10px rgba(50, 14, 6, 0.22);
+    font-family:'Cormorant Garamond', serif;
+    font-style:italic;
+    font-weight:300;
+    font-size:11.5px;
+    letter-spacing:0.04em;
+    color:var(--ink-soft);
+    pointer-events:auto;
+    cursor:pointer;
+    white-space:nowrap;
+    opacity:0;
+    transition:opacity 0.55s ease, background 0.30s ease, border-color 0.30s ease, color 0.30s ease, box-shadow 0.30s ease, padding 0.30s ease, font-size 0.30s ease, font-weight 0.30s ease;
+  }
+  .pSub.focused{
+    background:rgba(255, 247, 232, 0.20);
+    border-color:rgba(255, 247, 232, 0.56);
+    color:var(--ink);
+    font-weight:400;
+    box-shadow: 0 8px 28px rgba(50, 14, 6, 0.50), 0 0 0 1px rgba(255,247,232,0.32);
+    padding:6px 16px 7px 16px;
+    font-size:15px;
+  }
+  .pSub.dim{ opacity:0.14 !important; }
+
+  /* Tertiary "matched term" chips that fan below a focused sub-pattern */
+  .pTerm{
+    position:absolute;
+    left:0;top:0;
+    padding:3px 11px 4px 11px;
+    border-radius:999px;
+    background:rgba(255, 247, 232, 0.10);
+    border:1px solid rgba(255, 240, 215, 0.20);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    font-family:'Inter Tight', sans-serif;
+    font-weight:300;
+    font-size:11.5px;
+    letter-spacing:0.03em;
+    color:var(--ink-soft);
+    pointer-events:none;
+    white-space:nowrap;
+    opacity:0;
+    transition:opacity 0.55s ease;
+  }
+  .pTerm.show{ opacity:0.95; }
+
+  #brainHint{
+    position:fixed;
+    left:50%;
+    bottom:11vh;
+    transform:translateX(-50%);
+    font-family:'Cormorant Garamond', serif;
+    font-style:italic;
+    font-size:13px;
+    letter-spacing:0.20em;
+    color:var(--ink-faint);
+    z-index:5;
+    opacity:0;
+    pointer-events:none;
+    transition:opacity 1.2s ease;
+  }
+  #brainHint.show{opacity:1;}
+
+  #reset{
+    position:fixed;
+    bottom:5vh;
+    left:50%;
+    transform:translateX(-50%);
+    background:transparent;border:none;
+    color:var(--ink-soft);
+    font-family:'Cormorant Garamond', serif;
+    font-style:italic;
+    font-size:14px;
+    letter-spacing:0.08em;
+    cursor:pointer;
+    z-index:6;
+    opacity:0;
+    pointer-events:none;
+    transition:opacity 1s ease, color 0.3s ease;
+  }
+  #reset.show{opacity:1; pointer-events:auto;}
+  #reset:hover{color:var(--ink);}
+
+  #notice{
+    position:fixed;
+    top:24px;
+    left:50%;
+    transform:translateX(-50%);
+    background:rgba(0,0,0,0.32);
+    backdrop-filter:blur(8px);
+    -webkit-backdrop-filter:blur(8px);
+    color:var(--ink);
+    padding:10px 18px;
+    border-radius:999px;
+    font-size:12px;
+    letter-spacing:0.04em;
+    z-index:8;
+    opacity:0;
+    transition:opacity 0.6s ease;
+    pointer-events:none;
+    border:1px solid rgba(255,247,236,0.16);
+  }
+  #notice.show{opacity:1;}
+</style>
+</head>
+<body>
+  <canvas id="stage"></canvas>
+
+  <button id="tapTarget" aria-label="Tap to begin"></button>
+
+  <div id="patterns"></div>
+  <div id="transcriptWrap"><div id="transcript"></div></div>
+  <button id="action">Make it clear<span class="arrow">↗</span></button>
+
+  <div id="hint">tap here to start talking</div>
+  <div id="whisper">making sense of it…</div>
+
+  <div id="mapTitle">
+    <div class="eyebrow">a map of what you said</div>
+    <div class="h">the shape of your<br/>inner weather</div>
+  </div>
+  <div id="patternLabels"></div>
+  <div id="brainHint">drag to turn it</div>
+  <button id="reset">return to silence</button>
+
+  <div id="notice"></div>
+
+<script>
+(() => {
+  // ───────── CANVAS ─────────
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d', { alpha: true });
+  let DPR = Math.min(window.devicePixelRatio || 1, 2);
+  let W = 0, H = 0, CX = 0, CY = 0;
+
+  function resize(){
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W * DPR;
+    canvas.height = H * DPR;
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    CX = W / 2;
+    CY = H * 0.42;       // ring is slightly above center while talking
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  // animated center-Y so the final sphere lands at true viewport center
+  // while the ring stays nicely placed during the talking phase
+  let centerY = H * 0.42;
+  function targetCenterY(){
+    return (state === 'map' || state === 'reveal') ? H * 0.50 : H * 0.42;
+  }
+
+  // ───────── LIFE AREAS  (10 top-level groups + rich sub-pattern bank) ─────────
+  // Every term lives in exactly one (area, sub-pattern) pair.  Detection is
+  // longest-first phrase matching with word-boundary checks, so multi-word
+  // phrases win over their single-word components.
+  const LIFE_AREAS = {
+    'Career & Work': {
+      hue: 32,
+      subs: {
+        'Burnout':           ["burned out","burnt out","burnout","exhausted at work","fried","drained at work","dead inside at work","going through the motions","phoning it in","checked out at work","over it","numb at work"],
+        'Workload':          ["too much on my plate","on my plate","pile of work","piling up","piled up","backlog","deadline","deadlines","crunch","crunch time","sprint","release week","fire drill","putting out fires","never enough time","falling behind","behind at work","overworked","understaffed","overtime","long hours","late nights at work","working weekends"],
+        'Boss & Manager':    ["my boss","my manager","new manager","old manager","micromanage","micromanaged","micromanaging","leadership","upper management","higher ups","one-on-one","performance review","review at work","my review"],
+        'Coworkers & Team':  ["coworker","coworkers","colleague","colleagues","my team","teammates","office politics","difficult coworker","toxic coworker","toxic workplace","toxic culture","drama at work"],
+        'Career Direction':  ["career","career change","career path","next step in my career","next move","promotion","got promoted","passed over","raise at work","stuck in my career","plateau","leveling up","where i'm going","where i want to be","my trajectory"],
+        'Job Search':        ["job search","job hunt","job hunting","looking for a new job","applying","applications","interviews","interviewing","recruiter","recruiters","got an offer","an offer","rejected","rejection","quit","quitting","resign","resigning","leave my job","two weeks","laid off","layoff","layoffs","got fired","unemployed","between jobs"],
+        'Meetings & Time':   ["meeting","meetings","back-to-back","back to back meetings","calendar is full","calendar full","no time to think","always in meetings","standup","standups"],
+        'Identity at Work':  ["meaningful work","meaningless","imposter syndrome","feel like a fraud","don't belong here","why am i doing this","is this what i want","my purpose at work","my purpose"],
+        'Where I Work':      ["remote work","work from home","wfh","return to office","rto","hybrid","commute to work","my commute","the office"]
+      }
+    },
+    'Money & Finances': {
+      hue: 44,
+      subs: {
+        'Tight on Money':    ["broke","broke right now","tight on money","money is tight","paycheck to paycheck","can't afford","cant afford","can't really afford","short on cash","short on rent","behind on rent","making ends meet","scraping by","barely making it","ramen","living lean"],
+        'Bills & Rent':      ["rent is due","my rent","the bills","bills are piling up","utilities","electric bill","my bills","overdraft","overdrafted","my bank account"],
+        'Debt':              ["in debt","my debt","credit card debt","credit cards","student loans","my loans","mortgage","minimum payment","collections","interest rate","high interest"],
+        'Saving':            ["saving","savings","my savings","emergency fund","saving up","trying to save","cutting back","saving for"],
+        'Investing':         ["investing","my investments","stocks","the market","my portfolio","retirement","my 401k","401k","roth","ira","index fund","crypto","bitcoin"],
+        'Income':            ["my salary","my paycheck","my income","make more","made more","make less","got a raise","pay cut","side hustle","side income","freelance","commission"],
+        'Spending':          ["budget","budgeting","tracking expenses","spending too much","overspending","my spending","subscriptions","cancel subscriptions"],
+        'Money Anxiety':     ["money stress","financial stress","worried about money","money worries","anxious about money","scared about money","money keeps me up"],
+        'Big Purchases':     ["buying a house","down payment","new car","car payment","wedding cost","wedding budget","saving for a trip","saving for vacation"]
+      }
+    },
+    'Personal Growth': {
+      hue: 56,
+      subs: {
+        'Self-Awareness':    ["i realized","i'm realizing","i realize","i'm noticing","i started noticing","aha moment","a lightbulb","made me realize","becoming aware","starting to see","i see now"],
+        'Self-Doubt':        ["doubt myself","self-doubt","not good enough","not enough","never enough","insecure","insecurity","my inner critic","inner critic","who do i think i am","second-guessing myself","question myself"],
+        'Confidence':        ["more confident","feel confident","stand my ground","trust myself","backing myself","i believe in myself"],
+        'Goals & Discipline':["my goals","setting goals","discipline","more disciplined","staying consistent","consistency","showing up","building habits","new habit","my routine","morning routine","evening routine","work on myself","working on myself","getting better","self-improvement","improving"],
+        'Therapy & Coaching':["therapy","my therapist","in therapy","therapy session","coach","my coach","inner work","the work","doing the work"],
+        'Reading & Learning':["reading a book","i'm reading","listening to a podcast","podcast i love","this audiobook","taking a course","class i'm taking","this workshop","studying","learning about myself"],
+        'Identity & Becoming':["who i am","who i'm becoming","becoming someone","next chapter","new chapter","new version of myself","old version of me","letting go of who i was","evolving","my growth","growing into"],
+        'Setbacks':          ["setback","i failed","feel like a failure","fell off","starting over","starting again","try again","keep going","want to give up","gave up"],
+        'Patterns & Triggers':["my patterns","old patterns","this pattern","triggered","i was triggered","my trigger","reactive","my reaction"]
+      }
+    },
+    'Spiritual & Emotional': {
+      hue: 18,
+      subs: {
+        'Anxiety':           ["anxious","anxiety","panicking","panic attack","panic","worried","worrying","scared","afraid","fearful","fear","dread","nervous","tense","on edge","jittery","racing heart","tight chest","chest is tight","shortness of breath","can't breathe"],
+        'Sadness & Grief':   ["sad","sadness","crying","i cried","in tears","tears","grief","grieving","mourning","heartbroken","heartbreak","devastated","aching","i ache"],
+        'Anger':             ["angry","anger","pissed","pissed off","furious","rage","raging","resentful","resentment","bitter","bitterness","frustrated","frustration","fed up","sick of it"],
+        'Overwhelm':         ["overwhelmed","overwhelming","crushing","drowning","heavy","too much","it's too much","weight of it"],
+        'Numb & Disconnected':["numb","numbness","disconnected","detached","feel empty","feel flat","autopilot","on autopilot","depressed","depression","down","feel down"],
+        'Loneliness':        ["lonely","loneliness","feel alone","so alone","isolated","no one understands","feel invisible"],
+        'Hope & Lightness':  ["hopeful","hope","lighter","softer","feel softer","a little better","gratitude","grateful","thankful","small wins","small win"],
+        'Spirituality':      ["meditation","meditate","meditating","pray","praying","my prayer","faith","trust the universe","the universe","spiritual","my soul","my purpose","meaning in this","connected to something","higher self"],
+        'Overthinking':      ["overthinking","overthink","ruminating","rumination","racing thoughts","stuck in my head","in my head","spiraling","i'm spiraling","replaying","replay","keep replaying"],
+        'Shame & Guilt':     ["ashamed","shame","feel guilty","guilt","embarrassed","mortified","cringed"],
+        'Stress & Pressure': ["stressed","stress","under pressure","the pressure","so much pressure"],
+        'Calm & Breath':     ["just want to breathe","need to breathe","exhale","just exhale","calmer","grounded","centered","at peace"]
+      }
+    },
+    'Physical Health': {
+      hue: 8,
+      subs: {
+        'Sleep':             ["can't sleep","cant sleep","insomnia","awake at night","tossing and turning","wake up at 3am","up at 3am","wake up in the night","3am","nightmare","nightmares","my dreams","weird dreams","unrested","restless sleep","poor sleep","bad sleep","sleep is off"],
+        'Energy & Fatigue':  ["tired","exhausted","no energy","low energy","running on empty","drained","wiped out","wiped","fatigue","fatigued","weary","worn out"],
+        'Pain':              ["back pain","my back","headache","headaches","migraine","migraines","sore","achy","my body aches","in pain","my shoulder","my neck","tension headache","stiff"],
+        'Eating & Diet':     ["eating habits","my diet","junk food","too much sugar","sugar crash","too much coffee","caffeine","cutting caffeine","meal prep","cooking at home","skipping meals","no appetite","emotional eating","stress eating","binge eating"],
+        'Exercise':          ["my workout","work out","working out","exercise","the gym","at the gym","running again","start running","walking more","my walks","yoga","stretching","lifting","strength training","training again"],
+        'Body & Weight':     ["my weight","lost weight","gained weight","in shape","out of shape","body image","how i look","the mirror","not happy with my body"],
+        'Doctors & Medical': ["my doctor","appointment","specialist","my symptoms","diagnosis","medication","my meds","prescription","blood work","test results","physical therapy","pt"],
+        'Sickness':          ["getting sick","feeling sick","caught the flu","a cold","i have covid","fever","not feeling well"],
+        'Substances':        ["drinking too much","drinking a lot","cut back on drinking","sober","sobriety","quit drinking","smoking again","quit smoking","weed","edibles","using too much"]
+      }
+    },
+    'Fun & Recreation': {
+      hue: 64,
+      subs: {
+        'Hobbies':           ["my hobby","my hobbies","side project","creative project","my project","painting","drawing","writing again","my writing","playing music","my guitar","piano","photography","gardening","cooking for fun","baking"],
+        'Entertainment':     ["video games","gaming","playing games","watching a movie","this movie","this show","new show","binge watching","binging","netflix","my watchlist","reading for fun"],
+        'Travel':            ["travel","traveling","my trip","this trip","vacation","need a vacation","getaway","weekend trip","road trip","roadtrip","flight","flying out","destination"],
+        'Outdoors & Nature': ["go outside","get outside","being outside","nature","a hike","hiking","the beach","the mountains","the park","the forest","sunshine","fresh air"],
+        'Play & Joy':        ["having fun","just for fun","play","laughing","laughed","felt joy","felt lighter","pleasure","light hearted","silly","goofy"],
+        'Boredom':           ["bored","boredom","nothing to do","need something new","same old","same routine"],
+        'Rest & Leisure':    ["lazy day","lazy weekend","doing nothing","rest day","this weekend","slow weekend","staycation","my day off"]
+      }
+    },
+    'Physical Environment': {
+      hue: 24,
+      subs: {
+        'Home':              ["my apartment","my home","my house","my place","my room","living situation"],
+        'Clutter & Order':   ["cluttered","the mess","everything's a mess","messy","pile of stuff","piles everywhere","declutter","decluttering","organize","organizing","clean up","tidy up","tidying","spring cleaning"],
+        'Moving':            ["moving","new place","apartment hunting","house hunting","relocate","relocating","my lease","my landlord"],
+        'Neighborhood':      ["my neighborhood","this city","this town","city life","small town","feel safe here","don't feel safe"],
+        'Workspace':         ["my desk","my workspace","home office","my setup","my workstation"],
+        'Atmosphere':        ["cozy","feels cozy","sunlight","sunny room","dark apartment","plants","my plants","candles","comfortable","feels like home","doesn't feel like home"],
+        'Commute':           ["my commute","long commute","traffic","stuck in traffic","the subway","train ride","driving in"],
+        'Climate':           ["the weather","gloomy","cold weather","the snow","the rain","hot here","humid","grey skies"]
+      }
+    },
+    'Friends & Social': {
+      hue: 12,
+      subs: {
+        'Close Friends':     ["best friend","my best friend","close friend","my friends","friend group","friend circle","inner circle","my crew","my people"],
+        'Hanging Out':       ["hang out","hanging out","hung out","meeting up","met up","grab a drink","grabbed a drink","grab coffee","grabbed coffee","dinner with","brunch","plans tonight","plans this weekend","make plans"],
+        'Drift & Distance':  ["drifted","drifting apart","lost touch","haven't seen","havent seen","haven't talked","havent talked","not close anymore","falling out","fell out","ghosted","ghosted me"],
+        'Making Friends':    ["no one to talk to","few friends","no friends here","making friends","making friends as an adult","hard to make friends","trying to make friends"],
+        'Group Chats':       ["group chat","group text","my group chat","the group chat"],
+        'Calls & Texts':     ["text her","texted him","texted her","text him","call her","call him","phone call","facetime"],
+        'Social Events':     ["a party","wedding","this wedding","birthday","gathering","reunion","going out tonight","staying in tonight","the event"],
+        'Social Anxiety':    ["social anxiety","felt awkward","awkward","small talk","didn't know what to say","don't know what to say at parties"]
+      }
+    },
+    'Romance & Intimacy': {
+      hue: 4,
+      subs: {
+        'Partner':           ["my partner","my girlfriend","my boyfriend","my husband","my wife","my fiance","my fiancé","my fiancée","my spouse","my person","we've been together","weve been together"],
+        'Dating':            ["dating","first date","second date","third date","dating apps","tinder","hinge","bumble","got a match","we matched","my crush","have a crush","crushing on","flirting","flirted","meeting someone","seeing someone","someone new"],
+        'Connection':        ["intimacy","intimate","feel close","feel connected","our connection","real connection","chemistry","real spark","the spark"],
+        'Distance':          ["we feel distant","we've been distant","weve been distant","feel distant from","drifted apart","losing the spark","lost the spark","cold lately"],
+        'Conflict':          ["fought with my partner","fight with my partner","we argued","we fought","tension between us","silent treatment","cold shoulder","arguing again"],
+        'Communication':     ["we don't talk","we dont talk","we never talk","open up","shut down on me","shut me out","tried to talk","tried talking","communicate better"],
+        'Physical Intimacy': ["our sex life","sex life","physical intimacy","no affection","sex drive","my libido","not in the mood","wanting more"],
+        'Trust':             ["i don't trust","i dont trust","feel insecure with","jealous","jealousy","cheated","cheated on me","they cheated"],
+        'Breakup & Ex':      ["breakup","broke up","broken up","my ex","getting over","over my ex","still hurts","missing my ex","reaching out to my ex"],
+        'Future Together':   ["future together","engaged","engagement","getting married","newlyweds","forever person","soulmate","kids together","build a life"]
+      }
+    },
+    'Family': {
+      hue: 38,
+      subs: {
+        'Parents':           ["my mom","my mother","my dad","my father","my parents","their expectations","my parents' expectations"],
+        'Siblings':          ["my sister","my brother","my siblings","my older brother","my older sister","my younger brother","my younger sister","my twin"],
+        'Children':          ["my kid","my kids","my son","my daughter","my child","my children","my baby","newborn","parenting","being a parent","as a parent","pregnant","pregnancy","trying to conceive","ttc"],
+        'Extended Family':   ["my grandma","my grandmother","my grandpa","my grandfather","my aunt","my uncle","my cousin","my cousins","my in-laws","mother in law","father in law"],
+        'Family Conflict':   ["family drama","family conflict","fight with my mom","fight with my dad","fight with my brother","fight with my sister","tension at home","haven't spoken to","havent spoken to","estranged","cut them off","no contact","family always","my mom always","my dad always"],
+        'Upbringing':        ["my childhood","as a child","my upbringing","how i was raised","family history","generational","family patterns"],
+        'Caregiving':        ["taking care of my mom","taking care of my dad","caregiving","aging parents","my mom's health","my dad's health"],
+        'Family Events':     ["family gathering","family dinner","family holidays","family reunion","visiting family","going home for","thanksgiving with family","christmas with family"],
+        'Loss':              ["lost my mom","lost my dad","lost my grandma","lost my grandpa","death in the family","passed away","passed last year","funeral","my grief over"]
+      }
+    }
+  };
+  const AREA_NAMES = Object.keys(LIFE_AREAS);
+
+  // Pre-flatten every term into a single sortable list, longest-first.
+  // Each entry knows which (area, sub-pattern) it belongs to so a single
+  // scan over the utterance can update all the right counters.
+  const ALL_TERMS = [];
+  for (const area of AREA_NAMES){
+    const subs = LIFE_AREAS[area].subs;
+    for (const sub of Object.keys(subs)){
+      for (const term of subs[sub]){
+        ALL_TERMS.push({ area, sub, term, normalized: term.toLowerCase() });
+      }
+    }
+  }
+  // Longest-first so multi-word phrases beat their components.
+  ALL_TERMS.sort((a, b) => b.normalized.length - a.normalized.length);
+
+  // ───────── PARTICLES ─────────
+  const N_PARTICLES = (() => {
+    const area = window.innerWidth * window.innerHeight;
+    if (area < 600 * 800) return 1100;
+    if (area < 1200 * 800) return 1700;
+    return 2400;
+  })();
+
+  const particles = [];
+  for (let i = 0; i < N_PARTICLES; i++){
+    const t = i / N_PARTICLES;
+    const layer = Math.random() < 0.55 ? 0 : (Math.random() < 0.7 ? 1 : 2);
+    particles.push({
+      t, layer,
+      x: CX, y: CY,
+      tx: CX, ty: CY,
+      vx: 0, vy: 0,
+      bx: 0, by: 0, bz: 0,        // sphere target (3D, normalized)
+      // focused-state target — recomputed when focus changes; particles
+      // gather toward the focused area on the local tangent disc so the
+      // zoomed-in view feels populated rather than empty.
+      fbx: 0, fby: 0, fbz: 0,
+      focusRho:    Math.pow(Math.random(), 0.55),  // 0..1, biased toward inner
+      focusTheta:  Math.random() * Math.PI * 2,
+      focusJitter: 0.93 + Math.random() * 0.07,    // small radial variation
+      arriveDelay: Math.random()*0.7,
+      // base render
+      size: layer === 0 ? (0.85 + Math.random()*0.55) : layer === 1 ? (1.05 + Math.random()*0.85) : (0.45 + Math.random()*0.45),
+      alpha: layer === 0 ? 0.85 : layer === 1 ? 0.7 : 0.45,
+      glow: 0,
+      depth: 0,
+      // intensity (0..1) — used to vary brightness in sphere phase
+      intensity: 0.55,
+      patternIdx: -1,
+      noiseSeed: Math.random()*1000,
+      jitter: Math.random()*Math.PI*2
+    });
+  }
+
+  // ───────── STATE ─────────
+  let state = 'idle'; // idle | listening | loading | reveal | map
+  let stateStartTime = performance.now();
+  function setState(next){ state = next; stateStartTime = performance.now(); }
+
+  let amplitude = 0, amplitudeRaw = 0, voicePulse = 0;
+  let speechActivity = 0;
+
+  // ───────── HELPERS ─────────
+  const lerp = (a,b,t) => a + (b-a)*t;
+  const smoothstep = (t) => t*t*(3-2*t);
+  const easeOutCubic = (t) => 1 - Math.pow(1-t, 3);
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+  let ringRadius = 0;
+  function computeRingScale(){
+    const m = Math.min(W, H);
+    ringRadius = m * 0.18;
+  }
+  computeRingScale();
+  window.addEventListener('resize', computeRingScale);
+
+  // Idle / listening base shape
+  function shapeCircle(t, layer){
+    const a = t * Math.PI * 2;
+    const r = 1 + layer * 0.05;
+    return { x: Math.cos(a)*r, y: Math.sin(a)*r };
+  }
+
+  function applyShape(p, sx, sy, scale){
+    p.tx = CX + sx * scale;
+    p.ty = centerY + sy * scale;
+  }
+
+  // ───────── SPHERE GEOMETRY ─────────
+  // Place main area nodes on the unit sphere using a Fibonacci-ish lattice,
+  // then scatter each area's detected sub-patterns inside a small disc on
+  // the tangent plane around its parent (clamped back to the surface).
+  function placePatternNodes(areaList){
+    const nodes = [];
+    const n = areaList.length;
+    if (n === 0) return nodes;
+    const golden = Math.PI * (3 - Math.sqrt(5));
+    for (let i = 0; i < n; i++){
+      const tt = (i + 0.5) / n;
+      const phi = Math.acos(1 - 2 * tt);
+      const theta = golden * i;
+      const x = Math.sin(phi) * Math.cos(theta);
+      const y = Math.cos(phi);
+      const z = Math.sin(phi) * Math.sin(theta);
+
+      // Tangent frame at (x, y, z) so sub-nodes scatter on the local plane.
+      const upx = Math.abs(y) < 0.9 ? 0 : 1;
+      const upy = Math.abs(y) < 0.9 ? 1 : 0;
+      const upz = 0;
+      // e1 = normalize(cross(p, up))
+      let e1x = y * upz - z * upy;
+      let e1y = z * upx - x * upz;
+      let e1z = x * upy - y * upx;
+      const e1L = Math.hypot(e1x, e1y, e1z) || 1;
+      e1x /= e1L; e1y /= e1L; e1z /= e1L;
+      // e2 = cross(p, e1)
+      const e2x = y * e1z - z * e1y;
+      const e2y = z * e1x - x * e1z;
+      const e2z = x * e1y - y * e1x;
+
+      const subs = (areaList[i].subs || []).map((s, si) => {
+        const total = areaList[i].subs.length;
+        // Fan the sub-nodes on a small arc in the tangent plane, with a
+        // tiny radial jitter so they don't all sit on a perfect ring.
+        const ang = (si - (total - 1) / 2) * (total > 1 ? 0.65 : 0)  + (si % 2 === 0 ? 0.18 : -0.12);
+        const r   = 0.32 + (si % 3) * 0.05;
+        let sx = x + (Math.cos(ang) * e1x + Math.sin(ang) * e2x) * r;
+        let sy = y + (Math.cos(ang) * e1y + Math.sin(ang) * e2y) * r;
+        let sz = z + (Math.cos(ang) * e1z + Math.sin(ang) * e2z) * r;
+        const sL = Math.hypot(sx, sy, sz) || 1;
+        sx /= sL; sy /= sL; sz /= sL;
+        return {
+          name: s.name,
+          count: s.count,
+          terms: s.terms,
+          x: sx, y: sy, z: sz,
+          labelEl: null,
+          termEls: []
+        };
+      });
+
+      nodes.push({
+        name: areaList[i].name,
+        count: areaList[i].count,
+        hue: areaList[i].hue,
+        x, y, z,
+        labelEl: null,
+        subs
+      });
+    }
+    return nodes;
+  }
+
+  // Build particle target positions on the sphere.  We cluster particles
+  // around each main area node AND around each of its sub-pattern nodes,
+  // so the sphere reads as a denser, richer field of activity rather than
+  // a few isolated dots.  Surface shell + interior wisps fill the rest.
+  function buildSpherePoints(count, patternNodes){
+    const pts = []; // {pos:[x,y,z], intensity, patternIdx}
+    const totalSubs = patternNodes.reduce((s, n) => s + n.subs.length, 0);
+
+    const mainPerArea = patternNodes.length > 0 ? Math.min(80,  Math.floor(count * 0.035)) : 0;
+    const subPerSub   = totalSubs        > 0 ? Math.min(28,  Math.floor(count * 0.012)) : 0;
+    const totalClustered =
+        patternNodes.length * mainPerArea +
+        totalSubs           * subPerSub;
+    const surfaceCount = Math.floor((count - totalClustered) * 0.82);
+    const innerCount   = count - totalClustered - surfaceCount;
+
+    // ── Main-area clusters: bright, tight to the surface ──
+    for (let pi = 0; pi < patternNodes.length; pi++){
+      const node = patternNodes[pi];
+      for (let i = 0; i < mainPerArea; i++){
+        const ox = (Math.random() - 0.5) * 0.40;
+        const oy = (Math.random() - 0.5) * 0.40;
+        const oz = (Math.random() - 0.5) * 0.40;
+        let x = node.x + ox, y = node.y + oy, z = node.z + oz;
+        const len = Math.hypot(x, y, z) || 1;
+        const r = 0.96 + (Math.random() - 0.5) * 0.06;
+        x = x / len * r; y = y / len * r; z = z / len * r;
+        pts.push({ pos: [x, y, z], intensity: 0.85 + Math.random() * 0.15, patternIdx: pi });
+      }
+      // ── Sub-pattern clusters: smaller, gentler, tagged to same area ──
+      for (let si = 0; si < node.subs.length; si++){
+        const sub = node.subs[si];
+        for (let i = 0; i < subPerSub; i++){
+          const ox = (Math.random() - 0.5) * 0.22;
+          const oy = (Math.random() - 0.5) * 0.22;
+          const oz = (Math.random() - 0.5) * 0.22;
+          let x = sub.x + ox, y = sub.y + oy, z = sub.z + oz;
+          const len = Math.hypot(x, y, z) || 1;
+          const r = 0.96 + (Math.random() - 0.5) * 0.05;
+          x = x / len * r; y = y / len * r; z = z / len * r;
+          pts.push({ pos: [x, y, z], intensity: 0.55 + Math.random() * 0.20, patternIdx: pi });
+        }
+      }
+    }
+
+    // Surface shell — main population, varied brightness
+    for (let i = 0; i < surfaceCount; i++){
+      const u = Math.random(), v = Math.random();
+      const theta = 2*Math.PI*u;
+      const phi = Math.acos(2*v - 1);
+      const r = 0.94 + Math.random() * 0.06;
+      pts.push({
+        pos: [
+          r * Math.sin(phi) * Math.cos(theta),
+          r * Math.cos(phi),
+          r * Math.sin(phi) * Math.sin(theta)
+        ],
+        intensity: 0.40 + Math.pow(Math.random(), 1.5) * 0.50,
+        patternIdx: -1
+      });
+    }
+
+    // Interior wisps — soft volumetric feel, dim
+    for (let i = 0; i < innerCount; i++){
+      const u = Math.random(), v = Math.random();
+      const theta = 2*Math.PI*u;
+      const phi = Math.acos(2*v - 1);
+      const r = Math.cbrt(Math.random()) * 0.85;
+      pts.push({
+        pos: [
+          r * Math.sin(phi) * Math.cos(theta),
+          r * Math.cos(phi),
+          r * Math.sin(phi) * Math.sin(theta)
+        ],
+        intensity: 0.20 + Math.random() * 0.30,
+        patternIdx: -1
+      });
+    }
+
+    // Shuffle so that particles arrive at varied positions during reveal
+    for (let i = pts.length - 1; i > 0; i--){
+      const j = Math.floor(Math.random() * (i + 1));
+      [pts[i], pts[j]] = [pts[j], pts[i]];
+    }
+
+    return pts;
+  }
+
+  let patternNodes = [];
+
+  // ───────── SPHERE ROTATION STATE ─────────
+  let sphereYaw = 0;
+  let spherePitch = -0.18;
+  let sphereYawTarget = 0;
+  let spherePitchTarget = -0.18;
+  let dragging = false;
+  let dragLastX = 0, dragLastY = 0;
+  let lastDragTime = 0;
+  let autoRotate = true;
+
+  // zoom for the final sphere (wheel/pinch)
+  let sphereZoom = 1.0;
+  let sphereZoomTarget = 1.0;
+
+  // 0 → 1 blend toward "focused" particle targets.  Animates smoothly so
+  // the gather/release feels like a camera push-in, not a teleport.
+  let focusBlend = 0;
+  let focusBlendTarget = 0;
+
+  function sphereScale(){ return Math.min(W, H) * 0.30 * sphereZoom; }
+
+  function project3D(x, y, z){
+    const cy = Math.cos(sphereYaw), sy = Math.sin(sphereYaw);
+    const x1 = x * cy + z * sy;
+    const z1 = -x * sy + z * cy;
+    const cp = Math.cos(spherePitch), sp = Math.sin(spherePitch);
+    const y1 = y * cp - z1 * sp;
+    const z2 = y * sp + z1 * cp;
+
+    const s = sphereScale();
+    const persp = 1 + z2 * 0.15;
+    return {
+      x: CX + x1 * s * persp,
+      y: centerY + y1 * s * persp,
+      depth: z2
+    };
+  }
+
+  function projectParticleTarget(p){
+    // Blend baseline sphere position with the focused target, preserving
+    // each particle's *own* baseline radius so interior wisps stay
+    // interior and surface particles stay on their shell throughout the
+    // animation.  Direction lerps; magnitude is fixed at the particle's
+    // natural radius — that prevents the "sink into the sphere then pop
+    // back out" artifact while still letting the cluster gather densely.
+    let bx = p.bx, by = p.by, bz = p.bz;
+    if (focusBlend > 0.001){
+      const t = focusBlend;
+      bx = p.bx * (1 - t) + p.fbx * t;
+      by = p.by * (1 - t) + p.fby * t;
+      bz = p.bz * (1 - t) + p.fbz * t;
+      const L = Math.hypot(bx, by, bz) || 1;
+      const r = p.bRadius0 || 0.96;
+      bx = bx / L * r;
+      by = by / L * r;
+      bz = bz / L * r;
+    }
+    const proj = project3D(bx, by, bz);
+    p.tx = proj.x;
+    p.ty = proj.y;
+    p.depth = proj.depth;
+  }
+
+  // ───────── DRAW LOOP ─────────
+  let lastFrame = performance.now();
+  function frame(now){
+    const dt = Math.min(64, now - lastFrame);
+    lastFrame = now;
+    const time = now * 0.001;
+
+    amplitude += (amplitudeRaw - amplitude) * 0.18;
+    voicePulse *= 0.94;
+
+    // animate center toward state-appropriate target
+    centerY += (targetCenterY() - centerY) * 0.06;
+    // animate zoom + focus blend (camera push-in)
+    sphereZoom += (sphereZoomTarget - sphereZoom) * 0.12;
+    focusBlend += (focusBlendTarget - focusBlend) * 0.07;
+
+    // FULL CLEAR each frame — body gradient shows through, no canvas residue
+    ctx.clearRect(0, 0, W, H);
+
+    if (state === 'idle')        updateIdle(time);
+    else if (state === 'listening') updateListening(time);
+    else if (state === 'loading')   updateLoading(time);
+    else if (state === 'reveal')    updateReveal(time);
+    else if (state === 'map')       updateMap(time);
+
+    drawParticles(time);
+
+    if (state === 'reveal' || state === 'map'){
+      drawConnections(time);
+      updatePatternLabels();
+    }
+
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  // ── IDLE ──
+  function updateIdle(time){
+    const breathe = Math.sin(time * 0.7) * 0.018;
+    const scale = ringRadius * (1 + breathe);
+    for (let i = 0; i < particles.length; i++){
+      const p = particles[i];
+      const s = shapeCircle(p.t, p.layer);
+      const drift = Math.sin(time*0.6 + p.noiseSeed) * 0.018 + Math.cos(time*0.8 + p.t*Math.PI*4)*0.012;
+      applyShape(p, s.x*(1+drift), s.y*(1+drift), scale);
+      p.glow += (0.32 - p.glow) * 0.05;
+    }
+  }
+
+  // ── LISTENING ──
+  function updateListening(time){
+    const breathe = Math.sin(time * 0.9) * 0.025;
+    const ampBoost = 1 + amplitude * 0.30;
+    const scale = ringRadius * (1 + breathe) * ampBoost;
+    for (let i = 0; i < particles.length; i++){
+      const p = particles[i];
+      const s = shapeCircle(p.t, p.layer);
+      const nx = Math.sin(time*1.2 + p.t*Math.PI*8 + p.noiseSeed) * 0.04;
+      const ny = Math.cos(time*1.3 + p.t*Math.PI*6 + p.noiseSeed) * 0.04;
+      const ripple = Math.sin(p.t * Math.PI * 6 - time*2.4) * voicePulse * 0.18;
+      const r = 1 + nx + ripple + amplitude * 0.06 * Math.sin(p.t*Math.PI*4 + time);
+      applyShape(p, s.x*r + ny*0.3, s.y*r + nx*0.3, scale);
+      p.glow += (0.55 + amplitude * 0.6 - p.glow) * 0.10;
+    }
+  }
+
+  // ── LOADING ─ simple, faithful to spec ──
+  // Two simultaneous motions, both starting at t = 0:
+  //
+  //   (1) TWIST  (0 → 2s):
+  //       The ring evolves into a 3D figure-8 (∞).
+  //       Anchored at θ = 0 and θ = π (the two "grab points" on the x-axis),
+  //       the y-component morphs from sin θ (1st harmonic = circle) to
+  //       sin(2θ)/2 (2nd harmonic = lemniscate). A z-lift = sinθ rises
+  //       symmetrically off the plane so the morph reads as a real 3D twist
+  //       (one half tilts forward, the other backward) — not a flat squash.
+  //
+  //   (2) ROTATION  (0 → 4.5s):
+  //       Rigid-body rotation around the twist axis (x-axis), constant ω,
+  //       same direction as the twist. Continues for the full loader
+  //       duration, with the body shape locked once t = 1.
+  //
+  // The whole 3D curve has its centroid explicitly subtracted before
+  // orthographic projection, guaranteeing the form stays centered every frame.
+  function updateLoading(time){
+    const elapsed = (performance.now() - stateStartTime) / 1000;
+
+    // ─────────────────────────────────────────────────────────────────────
+    // TWO PARALLEL ANIMATIONS, both starting at elapsed = 0.
+    //
+    // (1) TWIST — real torsion, not a flat squash.
+    //     Grab the ring at θ=0 and θ=π and rotate the loop around the
+    //     x-axis (the line through the two grab points).  The rotation
+    //     angle α(θ) is pinned to 0 at the two grab points and reaches its
+    //     maximum ψ_max mid-arc.  At ψ_max = π the curve is a true 3D
+    //     figure-8 whose xy-shadow is the Gerono lemniscate.
+    //     Linear progress 0 → 1 over 2s, then locked.
+    //
+    // (2) RIGID ROTATION — the whole shape spins around the SAME x-axis,
+    //     in the SAME direction as the twist.  This is NOT additional
+    //     deformation: every particle rotates by the same β(t) regardless
+    //     of θ.  Continues for the full loader (≈4.5 s).
+    // ─────────────────────────────────────────────────────────────────────
+
+    const tw     = clamp(elapsed / 2.0, 0, 1);   // linear, no smoothstep
+    const psiMax = Math.PI * tw;                 // 0 → π
+
+    const rotRate = (2 * Math.PI) / 4.0;         // one full revolution / 4 s
+    const beta    = elapsed * rotRate;
+    const cB = Math.cos(beta), sB = Math.sin(beta);
+
+    // Constant viewpoint tilt around the y-axis so the long axis of the
+    // figure-8 is angled toward the camera and the silhouette never goes
+    // perfectly edge-on as the shape spins around it.
+    const tilt = 0.22;
+    const cT = Math.cos(tilt), sT = Math.sin(tilt);
+
+    const N = particles.length;
+    const buf = updateLoading._buf || (updateLoading._buf = new Float64Array(N * 3));
+
+    // ── Pass 1: torsion → rigid spin → camera tilt; gather centroid ──
+    let cxs = 0, cys = 0, czs = 0;
+    for (let i = 0; i < N; i++){
+      const p = particles[i];
+      const θ  = p.t * Math.PI * 2;
+      const cθ = Math.cos(θ);
+      const sθ = Math.sin(θ);
+
+      // α(θ) — distributed twist that pins the two grab points (θ=0, π).
+      // Linear 0 → ψmax → 0 around the loop; the kink at θ=π sits at a
+      // fixed point of the rotation (on the x-axis), so the resulting
+      // 3D curve is C¹-smooth there.
+      const α = (θ <= Math.PI)
+        ? psiMax * (θ / Math.PI)
+        : psiMax * ((2 * Math.PI - θ) / Math.PI);
+      const cA = Math.cos(α), sA = Math.sin(α);
+
+      // Body point = original ring point rotated by α(θ) around x-axis.
+      //   bx = cos θ           (anchors at ±1 stay put on the twist axis)
+      //   by = sin θ · cos α   ( → sin(2θ)/2 = Gerono shadow at ψ=π )
+      //   bz = sin θ · sin α   ( real out-of-plane lift, opposite signs
+      //                          on the two halves → true 3D figure-8 )
+      const bx = cθ;
+      const by = sθ * cA;
+      const bz = sθ * sA;
+
+      const layerScale = 1 + p.layer * 0.04;
+      const lx = bx * layerScale;
+      const ly = by * layerScale;
+      const lz = bz * layerScale;
+
+      // Rigid rotation of the whole shape around the same x-axis.
+      // x is unchanged; (y, z) rotate by β.  Same axis, same direction.
+      const rx = lx;
+      const ry = ly * cB - lz * sB;
+      const rz = ly * sB + lz * cB;
+
+      // Y-axis camera tilt (constant): long axis of the figure tilts
+      // toward us, giving depth and avoiding perfect edge-on frames.
+      const vx = rx * cT + rz * sT;
+      const vy = ry;
+      const vz = -rx * sT + rz * cT;
+
+      const k = i * 3;
+      buf[k]   = vx;
+      buf[k+1] = vy;
+      buf[k+2] = vz;
+      cxs += vx; cys += vy; czs += vz;
+    }
+
+    const cxMean = cxs / N;
+    const cyMean = cys / N;
+    const czMean = czs / N;
+
+    // ── Pass 2: subtract centroid, project orthographically ──
+    const scale = ringRadius * 1.0;
+    for (let i = 0; i < N; i++){
+      const p = particles[i];
+      const k = i * 3;
+      const xc = buf[k]   - cxMean;
+      const yc = buf[k+1] - cyMean;
+      const zc = buf[k+2] - czMean;
+
+      p.tx = CX + xc * scale;
+      p.ty = centerY + yc * scale;
+      p.depth = zc;
+
+      p.glow += (0.62 + Math.sin(elapsed*2 + p.t*Math.PI*4)*0.16 - p.glow) * 0.10;
+    }
+  }
+
+  // ── REVEAL ─ same particles fly to sphere positions, staggered ─
+  function updateReveal(time){
+    const elapsed = (performance.now() - stateStartTime) / 1000;
+    const totalDur = 2.5;
+
+    for (let i = 0; i < particles.length; i++){
+      const p = particles[i];
+      const localT = clamp((elapsed - p.arriveDelay) / Math.max(0.4, totalDur - p.arriveDelay), 0, 1);
+      const e = easeOutCubic(localT);
+
+      // project sphere target to screen
+      projectParticleTarget(p);
+      const targetX = p.tx;
+      const targetY = p.ty;
+
+      // mid-flight outward burst for organic flow
+      const burstAng = p.t * Math.PI * 2;
+      const burstAmt = Math.sin(localT * Math.PI) * ringRadius * 0.32;
+      const burstX = Math.cos(burstAng) * burstAmt;
+      const burstY = Math.sin(burstAng) * burstAmt;
+
+      p.tx = targetX + burstX * (1 - e);
+      p.ty = targetY + burstY * (1 - e);
+      // glow tracks intensity once near final
+      const target = p.intensity * (0.55 + (p.depth + 1) * 0.30);
+      p.glow += (target * e + (1 - e) * 0.55 - p.glow) * 0.06;
+    }
+
+    if (elapsed > totalDur + 0.2){
+      setState('map');
+      document.getElementById('mapTitle').classList.add('show');
+      document.getElementById('brainHint').classList.add('show');
+      document.getElementById('reset').classList.add('show');
+      canvas.classList.add('draggable');
+    }
+  }
+
+  // ── MAP ─ stable sphere with drag + auto-rotate ─
+  function updateMap(time){
+    if (autoRotate) sphereYawTarget += 0.0030;
+    sphereYaw   += (sphereYawTarget   - sphereYaw)   * 0.10;
+    spherePitch += (spherePitchTarget - spherePitch) * 0.10;
+
+    for (let i = 0; i < particles.length; i++){
+      const p = particles[i];
+      projectParticleTarget(p);
+      const jx = Math.sin(time*0.5 + p.noiseSeed) * 0.4;
+      const jy = Math.cos(time*0.6 + p.noiseSeed) * 0.4;
+      p.tx += jx; p.ty += jy;
+      const target = p.intensity * (0.50 + (p.depth + 1) * 0.40);
+      p.glow += (target - p.glow) * 0.06;
+    }
+  }
+
+  // ── DRAW PARTICLES ──
+  function drawParticles(time){
+    const inSphere = state === 'map' || state === 'reveal';
+    const inLoading = state === 'loading';
+    const focusIdx = focusedNode ? patternNodes.indexOf(focusedNode) : -1;
+    const fb = focusBlend;
+
+    // Glow underlay (additive)
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < particles.length; i++){
+      const p = particles[i];
+      const damping = state === 'reveal' ? 0.080 : 0.110;
+      p.vx += (p.tx - p.x) * damping;
+      p.vy += (p.ty - p.y) * damping;
+      p.vx *= 0.84;
+      p.vy *= 0.84;
+      p.x += p.vx;
+      p.y += p.vy;
+
+      // depth-based fade for 3D states (front brighter, back dimmer)
+      let depthFade = 1.0;
+      let intensityMult = 1.0;
+      if (inSphere){
+        depthFade = clamp(0.30 + (p.depth + 1) * 0.50, 0.20, 1.0);
+        intensityMult = 0.45 + p.intensity * 0.85;
+      } else if (inLoading){
+        // gentler depth shading on the loading loop so 3D rotation reads
+        depthFade = clamp(0.55 + (p.depth + 0.5) * 0.55, 0.40, 1.05);
+      }
+
+      // Focus boost — particles in the focused cluster glow brighter and
+      // larger; particles that have been pulled in (free particles) get a
+      // gentler boost so the disc reads as full and dimensional.
+      let focusBoost = 1.0;
+      if (inSphere && fb > 0.001){
+        if (p.patternIdx === focusIdx)        focusBoost = 1.0 + 0.85 * fb;
+        else if (p.patternIdx === -1)         focusBoost = 1.0 + 0.30 * fb;
+        else                                  focusBoost = 1.0 - 0.35 * fb;
+      }
+
+      const g = p.glow * (0.6 + amplitude*0.6) * depthFade * intensityMult * focusBoost;
+      const haloSize = p.size * (3 + g * 4.5);
+      const a = Math.min(0.72, 0.18 * (0.4 + g * 1.1));
+      const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, haloSize);
+      grad.addColorStop(0, `rgba(255, 235, 205, ${a})`);
+      grad.addColorStop(0.5, `rgba(255, 188, 148, ${a*0.45})`);
+      grad.addColorStop(1, `rgba(255, 188, 148, 0)`);
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, haloSize, 0, Math.PI*2);
+      ctx.fill();
+    }
+
+    // Crisp cores
+    ctx.globalCompositeOperation = 'source-over';
+    for (let i = 0; i < particles.length; i++){
+      const p = particles[i];
+      let depthFade = 1.0, intensityMult = 1.0, sizeMult = 1.0;
+      if (inSphere){
+        depthFade = clamp(0.40 + (p.depth + 1) * 0.45, 0.28, 1.0);
+        intensityMult = 0.55 + p.intensity * 0.75;
+        sizeMult = 0.55 + (p.depth + 1) * 0.30 + p.intensity * 0.35;
+      } else if (inLoading){
+        depthFade = clamp(0.65 + (p.depth + 0.5) * 0.45, 0.50, 1.05);
+        sizeMult = 0.85 + (p.depth + 0.5) * 0.35;
+      }
+
+      // Same focus boost as the glow pass — keeps cores in lockstep with halos.
+      let coreBoost = 1.0;
+      if (inSphere && fb > 0.001){
+        if (p.patternIdx === focusIdx)        coreBoost = 1.0 + 0.65 * fb;
+        else if (p.patternIdx === -1)         coreBoost = 1.0 + 0.20 * fb;
+        else                                  coreBoost = 1.0 - 0.40 * fb;
+      }
+
+      const size = p.size * (1 + p.glow * 0.5) * sizeMult * coreBoost;
+      const core = Math.min(1, 0.65 + p.glow * 0.4) * depthFade * intensityMult * coreBoost;
+      ctx.fillStyle = `rgba(255, 247, 232, ${p.alpha * core})`;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, Math.max(0.4, size), 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
+
+  // ── CONNECTION LINES ─ subtle web between active main areas ──
+  // Each line is a slight chord curve (shrunk toward sphere center) so
+  // the web reads as a structure on the sphere rather than as flat
+  // crossing lines.  Opacity is depth-aware so back-side links fade.
+  function drawConnections(time){
+    if (patternNodes.length < 2 || connectionPairs.length === 0) return;
+    // Project every main node once.
+    const projs = patternNodes.map(n => project3D(n.x, -n.y, n.z));
+    const fb = focusBlend;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.lineCap = 'round';
+
+    // ── Inter-area web (overview) ──
+    // Fades down hard while a focus is engaged so the inner detail web
+    // can take over without the screen looking busy.
+    const webMul = 1 - fb * 0.85;
+    if (webMul > 0.04){
+      for (const [i, j] of connectionPairs){
+        const a = projs[i], b = projs[j];
+        const avgDepth = (a.depth + b.depth) * 0.5;
+        if (avgDepth < -0.55) continue;
+
+        let alpha = clamp(0.14 + (avgDepth + 0.55) * 0.26, 0.08, 0.50) * webMul;
+        if (focusedNode){
+          const involves = (patternNodes[i] === focusedNode) || (patternNodes[j] === focusedNode);
+          alpha *= involves ? 0.7 : 0.30;
+        }
+
+        // Subtle inward bow toward the sphere's projected center so the
+        // line traces the surface rather than cutting through space.
+        const mx = (a.x + b.x) * 0.5;
+        const my = (a.y + b.y) * 0.5;
+        const dx = mx - CX;
+        const dy = my - centerY;
+        const len = Math.hypot(dx, dy) || 1;
+        const bow = 0.10;
+        const cx = mx - (dx / len) * len * bow;
+        const cy = my - (dy / len) * len * bow;
+
+        ctx.strokeStyle = `rgba(255, 240, 215, ${alpha})`;
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.quadraticCurveTo(cx, cy, b.x, b.y);
+        ctx.stroke();
+      }
+    }
+
+    // ── Inner detail web (focused area only) ──
+    // Spokes from the focused main pill out to each of its sub-pattern
+    // nodes — gives the zoomed-in view a sense of structure radiating
+    // outward from the center, the way a deeper layer should feel.
+    if (focusedNode && fb > 0.05){
+      const mainProj = projs[patternNodes.indexOf(focusedNode)];
+      for (const sub of focusedNode.subs){
+        const subProj = project3D(sub.x, -sub.y, sub.z);
+        if (subProj.depth < -0.30) continue;
+        const alpha = clamp(0.10 + (subProj.depth + 0.30) * 0.22, 0.06, 0.36) * fb;
+        ctx.strokeStyle = `rgba(255, 232, 200, ${alpha})`;
+        ctx.lineWidth = 1;
+        // Slight arc toward midpoint so it reads as a soft tendril.
+        const mx = (mainProj.x + subProj.x) * 0.5;
+        const my = (mainProj.y + subProj.y) * 0.5;
+        const ndx = -(subProj.y - mainProj.y);
+        const ndy =  (subProj.x - mainProj.x);
+        const nL  = Math.hypot(ndx, ndy) || 1;
+        const arc = 6;
+        const cx = mx + (ndx / nL) * arc;
+        const cy = my + (ndy / nL) * arc;
+        ctx.beginPath();
+        ctx.moveTo(mainProj.x, mainProj.y);
+        ctx.quadraticCurveTo(cx, cy, subProj.x, subProj.y);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  // ── PATTERN LABELS (DOM) ──
+  const patternLabelsEl = document.getElementById('patternLabels');
+
+  // Focus state.  Sub-pills are now permanent DOM (born with the labels);
+  // focusing an area just brightens its subs and reveals the matched-term
+  // tertiary pills that orbit each sub.
+  let focusedNode = null;
+
+  // Cached K-nearest pairs between main nodes for the subtle web of
+  // interconnections.  Recomputed each time the sphere is rebuilt.
+  let connectionPairs = []; // [[i, j], ...]
+
+  function buildConnectionPairs(){
+    connectionPairs = [];
+    const N = patternNodes.length;
+    if (N < 2) return;
+    // Slightly denser than just nearest-neighbor — 2 links for small
+    // graphs, 3 once there are enough active areas — so the web reads
+    // as a structure without looking like a complete graph.
+    const K = N <= 3 ? 1 : (N <= 5 ? 2 : 3);
+    const seen = new Set();
+    for (let i = 0; i < N; i++){
+      const a = patternNodes[i];
+      const dists = [];
+      for (let j = 0; j < N; j++){
+        if (j === i) continue;
+        const b = patternNodes[j];
+        const d = (a.x-b.x)*(a.x-b.x) + (a.y-b.y)*(a.y-b.y) + (a.z-b.z)*(a.z-b.z);
+        dists.push({ j, d });
+      }
+      dists.sort((p, q) => p.d - q.d);
+      for (let k = 0; k < Math.min(K, dists.length); k++){
+        const j = dists[k].j;
+        const key = i < j ? (i + '-' + j) : (j + '-' + i);
+        if (!seen.has(key)){
+          seen.add(key);
+          connectionPairs.push([Math.min(i, j), Math.max(i, j)]);
+        }
+      }
+    }
+  }
+
+  function buildPatternLabels(){
+    patternLabelsEl.innerHTML = '';
+    for (const node of patternNodes){
+      // Main area pill
+      const el = document.createElement('div');
+      el.className = 'pNode';
+      el.innerHTML = `
+        <span class="pdot" style="color:hsl(${node.hue}, 78%, 80%)"></span>
+        <span class="pname">${escapeHtml(node.name)}</span>
+        <span class="pcount">${node.count}</span>
+      `;
+      el.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (focusedNode === node) clearFocus();
+        else focusPattern(node);
+      });
+      patternLabelsEl.appendChild(el);
+      node.labelEl = el;
+
+      // Sub-pattern pills — always present, faded in overview, brighter on focus.
+      // Each sub also carries its matched terms so they can surface as
+      // tertiary chips when its parent area is the focused one.
+      for (const sub of node.subs){
+        const sEl = document.createElement('div');
+        sEl.className = 'pSub';
+        sEl.innerHTML = `<span class="psName">${escapeHtml(sub.name)}</span>`;
+        sEl.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
+        sEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          // Clicking a sub-pill focuses its parent area
+          if (focusedNode !== node) focusPattern(node);
+        });
+        patternLabelsEl.appendChild(sEl);
+        sub.labelEl = sEl;
+
+        // One small term chip per matched phrase under this sub-pattern.
+        sub.termEls = [];
+        for (const term of sub.terms){
+          const tEl = document.createElement('div');
+          tEl.className = 'pTerm';
+          tEl.textContent = '"' + term + '"';
+          patternLabelsEl.appendChild(tEl);
+          sub.termEls.push(tEl);
+        }
+      }
+    }
+  }
+
+  // Wraps angle to closest equivalent of `current` to avoid long-way rotations
+  function shortestAngle(target, current){
+    let delta = target - current;
+    while (delta > Math.PI) delta -= 2 * Math.PI;
+    while (delta < -Math.PI) delta += 2 * Math.PI;
+    return current + delta;
+  }
+
+  // Compute each particle's "focused" target on the tangent disc around
+  // the focused area.  IMPORTANT: particles store their .by flipped
+  // (.by = -bodyY), so we do the flip ONCE here and then everything
+  // operates in particle coordinates — otherwise the lerp would mix two
+  // coord systems and particles would migrate to the opposite side of
+  // the sphere (visually "disappearing" or collapsing downward).
+  function computeFocusedTargets(focusNode){
+    if (!focusNode) return;
+    const fIdx = patternNodes.indexOf(focusNode);
+    const fx =  focusNode.x;
+    const fy = -focusNode.y;     // ← flip into particle coord system
+    const fz =  focusNode.z;
+
+    // Tangent frame at (fx, fy, fz) in particle coord system.
+    const upx = Math.abs(fy) < 0.9 ? 0 : 1;
+    const upy = Math.abs(fy) < 0.9 ? 1 : 0;
+    let e1x = fy * 0   - fz * upy;
+    let e1y = fz * upx - fx * 0;
+    let e1z = fx * upy - fy * upx;
+    const e1L = Math.hypot(e1x, e1y, e1z) || 1;
+    e1x /= e1L; e1y /= e1L; e1z /= e1L;
+    const e2x = fy * e1z - fz * e1y;
+    const e2y = fz * e1x - fx * e1z;
+    const e2z = fx * e1y - fy * e1x;
+
+    for (const p of particles){
+      const isInFocusCluster = p.patternIdx === fIdx;
+      // Keep cluster particles tight; let everyone else fan out wider.
+      const baseR = isInFocusCluster ? 0.18 : 0.55;
+      const r = p.focusRho * baseR;
+      const a = p.focusTheta;
+      const ca = Math.cos(a), sa = Math.sin(a);
+      let bx = fx + (ca * e1x + sa * e2x) * r;
+      let by = fy + (ca * e1y + sa * e2y) * r;
+      let bz = fz + (ca * e1z + sa * e2z) * r;
+      const L = Math.hypot(bx, by, bz) || 1;
+      // Normalize, then scale by particle's *own* baseline radius so
+      // interior wisps stay interior and surface particles stay on the
+      // surface.  This is what was teleporting interior wisps to the
+      // surface and making the cluster look hollow.
+      const targetR = (p.bRadius0 || 0.96) * p.focusJitter;
+      p.fbx = bx / L * targetR;
+      p.fby = by / L * targetR;
+      p.fbz = bz / L * targetR;
+    }
+  }
+
+  function focusPattern(node){
+    focusedNode = node;
+
+    // Compute the focused target for every particle BEFORE the camera
+    // starts pushing in, so the gather animation begins on the same frame.
+    computeFocusedTargets(node);
+    focusBlendTarget = 1;
+
+    // Bring the clicked area to the front of the sphere
+    const px = node.x, py = node.y, pz = node.z;
+    const rawYaw = -Math.atan2(px, pz);
+    const L = Math.sqrt(px*px + pz*pz);
+    const rawPitch = Math.atan2(-py, L);
+    sphereYawTarget   = shortestAngle(rawYaw, sphereYaw);
+    spherePitchTarget = clamp(rawPitch, -1.2, 1.2);
+
+    // Deep, immersive zoom — feels like entering the area's interior world.
+    sphereZoomTarget = 2.85;
+
+    // Pause auto-rotate
+    autoRotate = false;
+    lastDragTime = performance.now();
+
+    // Update label classes — focused area + its subs become prominent,
+    // every other area dims so the focused one reads clearly.
+    for (const n of patternNodes){
+      if (!n.labelEl) continue;
+      n.labelEl.classList.remove('focused','dim');
+      if (n === node) n.labelEl.classList.add('focused');
+      else            n.labelEl.classList.add('dim');
+      for (const s of n.subs){
+        if (!s.labelEl) continue;
+        s.labelEl.classList.remove('focused','dim');
+        if (n === node) s.labelEl.classList.add('focused');
+        else            s.labelEl.classList.add('dim');
+        for (const tEl of s.termEls){
+          tEl.classList.toggle('show', n === node);
+        }
+      }
+    }
+  }
+
+  function clearFocus(){
+    focusedNode = null;
+    focusBlendTarget = 0;
+    sphereZoomTarget = 1.0;
+    for (const n of patternNodes){
+      if (!n.labelEl) continue;
+      n.labelEl.classList.remove('focused','dim');
+      for (const s of n.subs){
+        if (!s.labelEl) continue;
+        s.labelEl.classList.remove('focused','dim');
+        for (const tEl of s.termEls) tEl.classList.remove('show');
+      }
+    }
+    lastDragTime = performance.now();
+    setTimeout(() => {
+      if (!focusedNode && !dragging && performance.now() - lastDragTime > 1900) autoRotate = true;
+    }, 2000);
+  }
+
+  function updatePatternLabels(){
+    // ── Main-area pills: project from 3D, fade with depth ──
+    for (const node of patternNodes){
+      if (!node.labelEl) continue;
+      const proj = project3D(node.x, -node.y, node.z);
+      let opacity = 0;
+      if (proj.depth > -0.45){
+        opacity = clamp((proj.depth + 0.45) / 0.55, 0.18, 1);
+      }
+      if (focusedNode && node !== focusedNode) opacity *= 0.40;
+
+      const dx = proj.x - CX;
+      const dy = proj.y - centerY;
+      const len = Math.sqrt(dx*dx + dy*dy) || 1;
+      const off = 20;
+      const lx = proj.x + (dx/len) * off;
+      const ly = proj.y + (dy/len) * off;
+      node.labelEl.style.transform = `translate(${lx}px, ${ly}px) translate(-50%, -50%)`;
+      node.labelEl.style.opacity = opacity;
+      node.labelEl._proj = proj;
+    }
+
+    // ── Sub-pattern pills: positioned at their own 3D location near parent ──
+    for (const node of patternNodes){
+      const isFocused = focusedNode === node;
+      const isDimmed  = focusedNode && !isFocused;
+      for (const sub of node.subs){
+        if (!sub.labelEl) continue;
+        const proj = project3D(sub.x, -sub.y, sub.z);
+        let opacity = 0;
+        if (proj.depth > -0.40){
+          opacity = clamp((proj.depth + 0.40) / 0.55, 0, 1);
+          opacity *= isFocused ? 1.0 : 0.45;
+          if (isDimmed) opacity *= 0.20;
+        }
+        // Push subs further from their on-surface point on focus, so the
+        // bigger pills don't crowd the brightened cluster center.
+        const dx = proj.x - CX;
+        const dy = proj.y - centerY;
+        const len = Math.sqrt(dx*dx + dy*dy) || 1;
+        const off = isFocused ? 22 : 8;
+        const lx = proj.x + (dx/len) * off;
+        const ly = proj.y + (dy/len) * off;
+        sub.labelEl.style.transform = `translate(${lx}px, ${ly}px) translate(-50%, -50%)`;
+        sub.labelEl.style.opacity = opacity;
+
+        // Tertiary term chips fan radially OUTWARD from the sub (away from
+        // the sphere's projected center) so they don't crash into the main
+        // pill and stay readable as the camera pushes in.
+        if (isFocused && sub.termEls.length > 0){
+          // Outward radial direction from sphere center to this sub's screen pos
+          const rdx = (lx - CX);
+          const rdy = (ly - centerY);
+          const rdL = Math.hypot(rdx, rdy) || 1;
+          const ux = rdx / rdL, uy = rdy / rdL;     // unit radial
+          const px = -uy, py = ux;                   // unit perpendicular
+          // Spacing scales gently with zoom so the fan stays comfortable
+          // when the camera is deep inside the area.
+          const radial = 38 + Math.max(0, sphereZoom - 1) * 14;
+          const perpStep = 22 + Math.max(0, sphereZoom - 1) * 6;
+          const n = sub.termEls.length;
+          for (let i = 0; i < n; i++){
+            const tEl = sub.termEls[i];
+            const t = n === 1 ? 0 : (i / (n - 1)) - 0.5;
+            const tx = lx + ux * (radial + (i % 2) * 8) + px * (t * perpStep * (n - 1));
+            const ty = ly + uy * (radial + (i % 2) * 8) + py * (t * perpStep * (n - 1));
+            tEl.style.transform = `translate(${tx}px, ${ty}px) translate(-50%, -50%)`;
+            const proj2 = node.labelEl ? node.labelEl._proj : null;
+            const depthOk = proj2 ? proj2.depth > -0.20 : true;
+            tEl.style.opacity = depthOk ? '0.95' : '0';
+          }
+        } else {
+          for (const tEl of sub.termEls){ tEl.style.opacity = '0'; }
+        }
+      }
+    }
+  }
+
+  // ───────── SPEECH ─────────
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let recognition = null;
+  let speechSupported = !!SR;
+  let isRecognizing = false;
+
+  const transcriptEl = document.getElementById('transcript');
+  const transcriptWrap = document.getElementById('transcriptWrap');
+  let allWords = [];
+  let interimText = '';
+
+  // areaState[areaName] = {
+  //   count: total hits across all sub-patterns in this area
+  //   subs: { [subName]: { count, terms: Map<term,count> } }
+  // }
+  const areaState = {};
+  const patternsEl = document.getElementById('patterns');
+  const patternChipEls = {};
+
+  function ensureAreaState(area, sub){
+    if (!areaState[area]) areaState[area] = { count: 0, subs: {} };
+    if (sub && !areaState[area].subs[sub]){
+      areaState[area].subs[sub] = { count: 0, terms: new Map() };
+    }
+  }
+
+  // Detect every (area, sub, term) hit inside a single utterance.  Longest
+  // phrases are matched first and consume their character range, so a
+  // single-word fragment can't double-fire over a multi-word phrase that
+  // already covered it.  Word boundaries prevent matching inside larger words.
+  function detectInUtterance(rawText){
+    const lower = rawText.toLowerCase();
+    const padded = ' ' + lower + ' ';
+    const consumed = new Array(padded.length).fill(false);
+    const hits = []; // {area, sub, term, start, end}  positions in rawText
+
+    const isLetter = (ch) => !!ch && /[a-z']/.test(ch);
+
+    for (const t of ALL_TERMS){
+      const term = t.normalized;
+      const tLen = term.length;
+      let pos = 1;
+      while (pos <= padded.length - tLen){
+        const idx = padded.indexOf(term, pos);
+        if (idx === -1) break;
+        const before = padded[idx - 1];
+        const after  = padded[idx + tLen];
+        if (!isLetter(before) && !isLetter(after)){
+          let overlap = false;
+          for (let i = idx; i < idx + tLen; i++){
+            if (consumed[i]){ overlap = true; break; }
+          }
+          if (!overlap){
+            for (let i = idx; i < idx + tLen; i++) consumed[i] = true;
+            hits.push({ area: t.area, sub: t.sub, term: t.term, start: idx - 1, end: idx - 1 + tLen });
+          }
+        }
+        pos = idx + tLen;
+      }
+    }
+    return hits;
+  }
+
+  function bumpChip(area){
+    let el = patternChipEls[area];
+    const total = areaState[area].count;
+    const hue = LIFE_AREAS[area].hue;
+    if (!el){
+      el = document.createElement('div');
+      el.className = 'chip';
+      el.innerHTML = `<span class="dot" style="color:hsl(${hue}, 75%, 80%)"></span><span class="lbl">${area}</span> <span class="count">${total}</span>`;
+      patternsEl.appendChild(el);
+      patternChipEls[area] = el;
+    } else {
+      el.querySelector('.count').textContent = total;
+      el.classList.remove('bumped');
+      void el.offsetWidth;
+      el.classList.add('bumped');
+    }
+    // Surface the action button once we have meaningful pattern coverage.
+    const activeAreas = Object.keys(areaState).length;
+    if (activeAreas >= 2 || allWords.length >= 16){
+      document.getElementById('action').classList.add('show');
+    }
+  }
+
+  function renderTranscript(){
+    const slice = allWords.slice(-10);
+    let html = '';
+    for (const w of slice){
+      html += `<span class="word ${w.kw ? 'kw' : ''}">${escapeHtml(w.text)}</span>`;
+    }
+    if (interimText){
+      html += `<span class="word interim">${escapeHtml(interimText)}</span>`;
+    }
+    transcriptEl.innerHTML = html;
+  }
+
+  function escapeHtml(s){
+    return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function ingestFinalText(text){
+    const trimmed = text.trim();
+    if (!trimmed){ interimText=''; renderTranscript(); return; }
+
+    // 1. Detect all phrase / keyword hits in the full utterance.
+    const hits = detectInUtterance(trimmed);
+
+    // 2. Tokenize the utterance preserving original positions so we can
+    //    flag tokens that overlap any hit's character range.
+    const tokens = []; // {text, start, end, kw}
+    let i = 0;
+    while (i < trimmed.length){
+      while (i < trimmed.length && /\s/.test(trimmed[i])) i++;
+      if (i >= trimmed.length) break;
+      const start = i;
+      while (i < trimmed.length && !/\s/.test(trimmed[i])) i++;
+      tokens.push({ text: trimmed.slice(start, i), start, end: i, kw: false });
+    }
+    for (const tok of tokens){
+      for (const h of hits){
+        if (tok.start < h.end && tok.end > h.start){ tok.kw = true; break; }
+      }
+    }
+    for (const tok of tokens) allWords.push({ text: tok.text, kw: tok.kw });
+
+    // 3. Update the per-area state and chips.  Each hit increments the
+    //    area total, the sub-pattern total, and the term count, then bumps
+    //    the corresponding life-area chip.
+    const bumpedAreas = new Set();
+    for (const h of hits){
+      ensureAreaState(h.area, h.sub);
+      const a = areaState[h.area];
+      a.count++;
+      const s = a.subs[h.sub];
+      s.count++;
+      s.terms.set(h.term, (s.terms.get(h.term) || 0) + 1);
+      bumpedAreas.add(h.area);
+    }
+    for (const area of bumpedAreas) bumpChip(area);
+
+    interimText = '';
+    renderTranscript();
+    voicePulse = Math.min(1, voicePulse + 0.4);
+    speechActivity = Math.min(1, speechActivity + 0.5);
+  }
+
+  function startRecognition(){
+    if (!speechSupported){
+      showNotice('Voice recognition not supported here — running in demo mode');
+      startDemoMode();
+      return;
+    }
+    try {
+      recognition = new SR();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      recognition.onresult = (e) => {
+        let interim = '';
+        let finalText = '';
+        for (let i = e.resultIndex; i < e.results.length; i++){
+          const r = e.results[i];
+          if (r.isFinal) finalText += r[0].transcript + ' ';
+          else interim += r[0].transcript;
+        }
+        speechActivity = Math.min(1, speechActivity + (finalText ? 0.55 : 0.3));
+        if (finalText) ingestFinalText(finalText);
+        if (interim){
+          interimText = interim.trim();
+          renderTranscript();
+        }
+      };
+      recognition.onerror = (e) => {
+        if (e.error === 'not-allowed' || e.error === 'service-not-allowed'){
+          showNotice('Microphone blocked — running in demo mode');
+          startDemoMode();
+        }
+      };
+      recognition.onstart = () => { isRecognizing = true; };
+      recognition.onend = () => {
+        isRecognizing = false;
+        if (state === 'listening'){
+          setTimeout(() => {
+            if (state === 'listening' && !isRecognizing){
+              try { recognition.start(); } catch(_){}
+            }
+          }, 280);
+        }
+      };
+      try { recognition.start(); } catch(_){}
+    } catch(err){
+      showNotice('Could not start voice — running in demo mode');
+      startDemoMode();
+    }
+  }
+
+  function runAmplitudeLoop(){
+    function loop(){
+      if (state === 'listening'){
+        speechActivity *= 0.93;
+        const breath = (Math.sin(performance.now()*0.0035) * 0.5 + 0.5) * 0.18;
+        const flicker = Math.random() * 0.08;
+        amplitudeRaw = Math.min(1, speechActivity * 0.95 + breath + flicker * (speechActivity > 0.05 ? 1 : 0.3));
+      } else if (state === 'loading'){
+        amplitudeRaw *= 0.92;
+      } else {
+        amplitudeRaw = 0; speechActivity = 0;
+      }
+      requestAnimationFrame(loop);
+    }
+    loop();
+  }
+
+  // ── DEMO MODE ──
+  const DEMO_SCRIPT = [
+    "i don't know why",
+    "but lately i can't sleep",
+    "my mind keeps replaying everything",
+    "work has been overwhelming",
+    "deadlines on top of deadlines",
+    "and my manager keeps adding more",
+    "i feel anxious all the time",
+    "tired but wired",
+    "my partner and i barely talk anymore",
+    "we used to feel so close",
+    "my mom keeps calling",
+    "i don't know what to say to her",
+    "money is tight too",
+    "i'm behind on rent again",
+    "i miss my friends",
+    "haven't seen anyone in weeks",
+    "maybe i need to start running again",
+    "or just take a walk outside",
+    "i want my apartment to feel like home",
+    "everything feels cluttered",
+    "i just want to breathe",
+    "maybe tomorrow it'll be softer"
+  ];
+  let demoTimer = null;
+  function startDemoMode(){
+    let i = 0;
+    function step(){
+      if (state !== 'listening') return;
+      if (i >= DEMO_SCRIPT.length) return;
+      ingestFinalText(DEMO_SCRIPT[i]);
+      i++;
+      demoTimer = setTimeout(step, 1700 + Math.random()*900);
+    }
+    setTimeout(step, 600);
+  }
+
+  function showNotice(msg, ms=4000){
+    const el = document.getElementById('notice');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(showNotice._t);
+    showNotice._t = setTimeout(()=>el.classList.remove('show'), ms);
+  }
+
+  // ───────── INTERACTION ─────────
+  const tapTarget = document.getElementById('tapTarget');
+  const hint = document.getElementById('hint');
+  const action = document.getElementById('action');
+
+  tapTarget.addEventListener('click', () => {
+    if (state !== 'idle') return;
+    setState('listening');
+    hint.classList.add('hide');
+    setTimeout(()=>{ hint.style.display='none'; }, 1100);
+    voicePulse = 1;
+    runAmplitudeLoop();
+    startRecognition();
+    // CRITICAL: stop the tap target from intercepting future drags
+    tapTarget.style.pointerEvents = 'none';
+    tapTarget.style.display = 'none';
+  });
+
+  action.addEventListener('click', () => {
+    if (state !== 'listening') return;
+    try { recognition && recognition.stop(); } catch(_){}
+    if (demoTimer) clearTimeout(demoTimer);
+
+    action.classList.remove('show');
+    transcriptWrap.style.transition = 'opacity 0.7s ease';
+    transcriptWrap.style.opacity = '0';
+    patternsEl.style.transition = 'opacity 0.7s ease';
+    patternsEl.style.opacity = '0';
+
+    const whisper = document.getElementById('whisper');
+    whisper.classList.add('show');
+
+    setState('loading');
+    setTimeout(() => {
+      // Compose triggered-area list, sorted by accumulated hit count.
+      // Each area carries its detected sub-patterns (with the actual
+      // matched terms) so the sphere can show secondary pills around it.
+      const sortedAreas = Object.keys(areaState)
+        .map(name => {
+          const a = areaState[name];
+          const subs = Object.keys(a.subs)
+            .map(subName => ({
+              name: subName,
+              count: a.subs[subName].count,
+              terms: Array.from(a.subs[subName].terms.keys())
+            }))
+            .sort((p, q) => q.count - p.count);
+          return { name, count: a.count, hue: LIFE_AREAS[name].hue, subs };
+        })
+        .sort((a, b) => b.count - a.count);
+
+      patternNodes = placePatternNodes(sortedAreas);
+
+      // Build sphere targets, with clusters around pattern nodes
+      const targets = buildSpherePoints(particles.length, patternNodes);
+      for (let i = 0; i < particles.length; i++){
+        const t = targets[i] || targets[0];
+        particles[i].bx = t.pos[0];
+        particles[i].by = -t.pos[1];   // flip y so positive is up on screen
+        particles[i].bz = t.pos[2];
+        // Preserve each particle's natural radius so interior wisps stay
+        // interior (and surface particles stay on the surface) during the
+        // focus-blend animation.
+        particles[i].bRadius0 = Math.hypot(particles[i].bx, particles[i].by, particles[i].bz) || 0.96;
+        particles[i].intensity = t.intensity;
+        particles[i].patternIdx = t.patternIdx;
+        particles[i].arriveDelay = Math.random() * 0.7;
+      }
+
+      // Build DOM labels for pattern nodes
+      buildPatternLabels();
+      buildConnectionPairs();
+
+      whisper.classList.remove('show');
+      setState('reveal');
+    }, 4500);
+  });
+
+  // ───────── DRAG + ZOOM INTERACTION ─────────
+  // Use Pointer Events with capture for reliable single-pointer drag,
+  // and dedicated touch handlers for two-finger pinch zoom.
+  let activePointerId = null;
+
+  function uiButtonAt(target){
+    return target && target.closest && target.closest('button:not(#tapTarget)');
+  }
+
+  canvas.addEventListener('pointerdown', (e) => {
+    if (state !== 'map') return;
+    if (uiButtonAt(e.target)) return;
+    // Skip if this is a touch event with a sibling already down (pinch path)
+    if (e.pointerType === 'touch' && activeTouches.size > 0) return;
+    dragging = true;
+    autoRotate = false;
+    activePointerId = e.pointerId;
+    dragLastX = e.clientX;
+    dragLastY = e.clientY;
+    canvas.classList.add('dragging');
+    try { canvas.setPointerCapture(e.pointerId); } catch(_){}
+  });
+
+  canvas.addEventListener('pointermove', (e) => {
+    if (!dragging || e.pointerId !== activePointerId) return;
+    if (state !== 'map') return;
+    if (e.pointerType === 'touch' && activeTouches.size >= 2) return; // let pinch handle
+    const dx = e.clientX - dragLastX;
+    const dy = e.clientY - dragLastY;
+    sphereYawTarget   += dx * 0.0085;
+    spherePitchTarget = clamp(spherePitchTarget + dy * 0.0085, -1.2, 1.2);
+    dragLastX = e.clientX;
+    dragLastY = e.clientY;
+    lastDragTime = performance.now();
+  });
+
+  function endPointer(e){
+    if (e && e.pointerId !== activePointerId && activePointerId !== null) return;
+    dragging = false;
+    activePointerId = null;
+    canvas.classList.remove('dragging');
+    setTimeout(() => {
+      if (!dragging && performance.now() - lastDragTime > 1900) autoRotate = true;
+    }, 2000);
+  }
+  canvas.addEventListener('pointerup', endPointer);
+  canvas.addEventListener('pointercancel', endPointer);
+  canvas.addEventListener('pointerleave', (e) => {
+    if (e.pointerType !== 'touch') return; // mouse keeps dragging via capture
+    endPointer(e);
+  });
+
+  // Wheel / trackpad zoom
+  canvas.addEventListener('wheel', (e) => {
+    if (state !== 'map') return;
+    e.preventDefault();
+    // While a deep focus is active, scrolling outward is the natural
+    // "back out" gesture — release focus and return to the full sphere.
+    if (focusedNode && e.deltaY > 0){
+      clearFocus();
+      return;
+    }
+    // Smooth, normalized zoom step
+    const factor = Math.exp(-e.deltaY * 0.0018);
+    sphereZoomTarget = clamp(sphereZoomTarget * factor, 0.45, 3.6);
+    autoRotate = false;
+    lastDragTime = performance.now();
+    setTimeout(() => {
+      if (!dragging && performance.now() - lastDragTime > 1900) autoRotate = true;
+    }, 2000);
+  }, { passive: false });
+
+  // Two-finger pinch zoom (touch)
+  const activeTouches = new Map();
+  let pinchStartDist = 0;
+  let pinchStartZoom = 1;
+
+  function getPinchDist(){
+    const arr = Array.from(activeTouches.values());
+    if (arr.length < 2) return 0;
+    const dx = arr[0].x - arr[1].x;
+    const dy = arr[0].y - arr[1].y;
+    return Math.sqrt(dx*dx + dy*dy);
+  }
+
+  canvas.addEventListener('touchstart', (e) => {
+    if (state !== 'map') return;
+    for (const t of e.changedTouches){
+      activeTouches.set(t.identifier, { x: t.clientX, y: t.clientY });
+    }
+    if (activeTouches.size >= 2){
+      // entering pinch — cancel any single-pointer drag
+      dragging = false;
+      activePointerId = null;
+      pinchStartDist = getPinchDist();
+      pinchStartZoom = sphereZoomTarget;
+      autoRotate = false;
+      e.preventDefault();
+    }
+  }, { passive: false });
+
+  canvas.addEventListener('touchmove', (e) => {
+    if (state !== 'map') return;
+    for (const t of e.changedTouches){
+      if (activeTouches.has(t.identifier)){
+        activeTouches.set(t.identifier, { x: t.clientX, y: t.clientY });
+      }
+    }
+    if (activeTouches.size >= 2){
+      const d = getPinchDist();
+      if (pinchStartDist > 0 && d > 0){
+        // Pinch inward (d shrinking) while focused = release focus, like
+        // the wheel-out gesture.
+        if (focusedNode && d < pinchStartDist * 0.92){
+          clearFocus();
+          pinchStartDist = 0;
+        } else {
+          sphereZoomTarget = clamp(pinchStartZoom * (d / pinchStartDist), 0.45, 3.6);
+        }
+      }
+      lastDragTime = performance.now();
+      e.preventDefault();
+    }
+  }, { passive: false });
+
+  function clearTouch(e){
+    for (const t of e.changedTouches){
+      activeTouches.delete(t.identifier);
+    }
+    if (activeTouches.size < 2){
+      pinchStartDist = 0;
+    }
+  }
+  canvas.addEventListener('touchend', clearTouch);
+  canvas.addEventListener('touchcancel', clearTouch);
+
+  document.getElementById('reset').addEventListener('click', () => {
+    location.reload();
+  });
+
+})();
+</script>
+</body>
+</html>
